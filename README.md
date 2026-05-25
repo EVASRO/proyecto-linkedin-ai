@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NexusAI — SaaS Starter
 
-## Getting Started
+Proyecto SaaS inicial con **Next.js 16** (App Router), **React 19**, **TypeScript** y **Tailwind CSS 4**.
 
-First, run the development server:
+## Estructura
+
+```
+src/
+├── app/
+│   ├── page.tsx              # Landing page
+│   ├── login/page.tsx        # Inicio de sesión (mock)
+│   └── dashboard/            # Panel tras login
+│       ├── layout.tsx
+│       ├── page.tsx
+│       ├── contenido/
+│       ├── analitica/
+│       └── configuracion/
+├── components/
+│   ├── auth/
+│   ├── landing/
+│   ├── layout/
+│   └── ui/
+└── lib/
+```
+
+## Desarrollo
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://127.0.0.1:3000](http://127.0.0.1:3000) (o [http://localhost:3000](http://localhost:3000)).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Si no carga:** puede haber otro proceso usando el puerto 3000. Detén servidores anteriores y vuelve a arrancar:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+lsof -ti:3000 | xargs kill -9
+npm run dev
+```
 
-## Learn More
+Si la terminal muestra otro puerto (p. ej. 3001), abre esa URL en el navegador.
 
-To learn more about Next.js, take a look at the following resources:
+- **/** — Landing corporativa
+- **/login** — Inicio de sesión con Auth.js (credenciales + Google opcional)
+- **/dashboard** — Panel protegido (requiere sesión activa)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Autenticación
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Usa [Auth.js](https://authjs.dev) (NextAuth v5) con middleware que protege `/dashboard/*`.
 
-## Deploy on Vercel
+1. Copia las variables de entorno:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+cp .env.example .env.local
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. Genera `AUTH_SECRET` si no lo tienes:
+
+```bash
+openssl rand -base64 32
+```
+
+3. Credenciales demo por defecto:
+
+| Campo      | Valor              |
+|------------|--------------------|
+| Email      | `demo@nexusai.app` |
+| Contraseña | `demo1234`         |
+
+4. **Google OAuth** (opcional): añade `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env.local` y configura la URI de redirección `http://localhost:3000/api/auth/callback/google` en Google Cloud Console.
+
+## Scripts
+
+| Comando        | Descripción        |
+|----------------|--------------------|
+| `npm run dev`  | Servidor desarrollo |
+| `npm run build`| Build producción   |
+| `npm run start`| Servidor producción |
+| `npm run lint` | ESLint             |
