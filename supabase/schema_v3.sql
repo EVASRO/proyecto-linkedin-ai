@@ -529,3 +529,12 @@ create trigger on_auth_user_created
 -- Total tablas: 20 (era 17 en V2.1)
 -- Total con RLS: 20 (100%)
 -- ============================================================
+
+-- ============================================================
+-- MIGRATION: assigned_agent_id on conversations
+-- Run in Supabase SQL Editor if not applied yet
+-- ============================================================
+alter table conversations
+  add column if not exists assigned_agent_id uuid references agents(id) on delete set null;
+
+notify pgrst, 'reload schema';

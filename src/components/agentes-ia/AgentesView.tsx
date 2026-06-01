@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import {
   Bot, Brain, ChevronRight, MessageSquare, Pause, Play,
   Plus, Send, Sparkles, Target, Trash2, X, Zap,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/browser";
+import {
+  getAgents,
+  upsertAgent,
+  toggleAgentStatus,
+  deleteAgent as deleteAgentAction,
+  type AgentRow,
+} from "@/app/dashboard/agentes-ia/actions";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -651,61 +657,78 @@ function AgentWizard({ initial, onClose, onSave }: {
 
 // ── MAIN VIEW ─────────────────────────────────────────────────────────────────
 
+function mapRowToAgent(row: AgentRow): Agent {
+  return {
+    id:            row.id,
+    name:          row.name,
+    emoji:         row.emoji,
+    tone:          row.tone as AgentTone,
+    objective:     row.objective as AgentObjective,
+    icp:           row.icp as Agent["icp"],
+    valueProp:     row.value_proposition,
+    objections:    row.objections as Objection[],
+    status:        row.status,
+    conversations: 0,
+    meetings:      0,
+  };
+}
+
 export function AgentesView() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [wizardOpen, setWizardOpen] = useState(false);
+  const [agents, setAgents]           = useState<Agent[]>([]);
+  const [wizardOpen, setWizardOpen]   = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [isPending, startTransition]  = useTransition();
 
   useEffect(() => {
-    const supabase = createClient();
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from("agents")
-          .select("*")
-          .order("created_at", { ascending: false });
-        const list: Agent[] = (data ?? []).map((a) => ({
-          id:            String(a.id),
-          name:          String(a.name ?? "Agente"),
-          emoji:         String(a.avatar_emoji ?? "🤖"),
-          tone:          (a.tone as Agent["tone"]) ?? "consultivo",
-          objective:     (a.objective as Agent["objective"]) ?? "agendar_reunion",
-          icp:           { industries: (a.icp_industries as string[]) ?? [], roles: (a.icp_roles as string[]) ?? [], sizes: [] },
-          valueProp:     String(a.value_proposition ?? ""),
-          objections:    (a.objections as Agent["objections"]) ?? [],
-          status:        (a.status as Agent["status"]) ?? "active",
-          conversations: Number(a.conversations_count ?? 0),
-          meetings:      Number(a.meetings_count ?? 0),
-        }));
-        setAgents(list);
-      } catch { setAgents([]); }
-    })();
+    getAgents().then((result) => {
+      if (result.success && result.data) {
+        setAgents(result.data.map(mapRowToAgent));
+      }
+    });
   }, []);
 
   function toggleAgent(id: string) {
+    const agent = agents.find((a) => a.id === id);
+    if (!agent) return;
     setAgents((p) =>
-      p.map((a) =>
-        a.id === id
-          ? { ...a, status: a.status === "active" ? "paused" : "active" }
-          : a
-      )
+      p.map((a) => a.id === id ? { ...a, status: a.status === "active" ? "paused" : "active" } : a)
     );
+    startTransition(async () => {
+      await toggleAgentStatus(id, agent.status);
+    });
   }
 
   function deleteAgent(id: string) {
     setAgents((p) => p.filter((a) => a.id !== id));
+    startTransition(async () => {
+      await deleteAgentAction(id);
+    });
   }
 
   function saveAgent(data: Omit<Agent, "id" | "conversations" | "meetings">) {
-    if (editingAgent) {
-      setAgents((p) => p.map((a) => a.id === editingAgent.id ? { ...a, ...data } : a));
-    } else {
-      setAgents((p) => [...p, {
-        id: `a_${Date.now()}`, conversations: 0, meetings: 0, ...data,
-      }]);
-    }
-    setWizardOpen(false);
-    setEditingAgent(null);
+    startTransition(async () => {
+      const result = await upsertAgent({
+        id:                editingAgent?.id,
+        name:              data.name,
+        emoji:             data.emoji,
+        tone:              data.tone,
+        objective:         data.objective,
+        icp:               data.icp,
+        value_proposition: data.valueProp,
+        objections:        data.objections,
+        status:            data.status,
+      });
+      if (result.success && result.data) {
+        const updated = mapRowToAgent(result.data);
+        if (editingAgent) {
+          setAgents((p) => p.map((a) => a.id === editingAgent.id ? updated : a));
+        } else {
+          setAgents((p) => [...p, updated]);
+        }
+      }
+      setWizardOpen(false);
+      setEditingAgent(null);
+    });
   }
 
   const activeCount = agents.filter((a) => a.status === "active").length;
