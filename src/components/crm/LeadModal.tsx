@@ -6,10 +6,8 @@ import type { CrmLead, TagColor } from "./types";
 import type {
   AISuggestion, Conversation, InboxLead, Message, PipelineStage,
 } from "@/components/smart-inbox/types";
-import { MOCK_CONVERSATIONS } from "@/components/smart-inbox/mock-data";
 import { ChatView }        from "@/components/smart-inbox/ChatView";
 import { LeadDetailPanel } from "@/components/smart-inbox/LeadDetailPanel";
-import { useDemoMode }     from "@/components/providers/demo-mode-provider";
 
 // ── Bridge helpers ────────────────────────────────────────────────────────────
 
@@ -52,28 +50,9 @@ const DEFAULT_SUGGESTIONS: AISuggestion[] = [
   { id: "d3", text: "Tenemos un caso de éxito con una empresa similar. ¿Te lo comparto? Puede ser muy relevante para lo que buscan.",                              intent: "value_prop"},
 ];
 
-function buildConversation(lead: CrmLead, useDemo = true): Conversation {
-  // En modo demo: busca conversación mock por nombre
-  if (useDemo) {
-    const found = MOCK_CONVERSATIONS.find(
-      (c) => c.lead.name.toLowerCase() === lead.name.toLowerCase()
-    );
-    if (found) {
-      return { ...found, lead: { ...found.lead, pipeline: lead.status as PipelineStage } };
-    }
-  }
-
-  // Modo real o sin match: conversación vacía (sin mensajes demo)
+function buildConversation(lead: CrmLead): Conversation {
   const inboxLead = buildInboxLead(lead);
-  const msgs: Message[] = useDemo ? [
-    {
-      id: "auto_1",
-      sender: "ai",
-      text: `Hola ${lead.name.split(" ")[0]}, vi tu perfil y me gustaría conectar para mostrarte cómo NexusAI puede ayudar a ${lead.company} a escalar su prospección B2B.`,
-      timestamp: `${lead.createdAt}T09:00:00Z`,
-      read: true,
-    },
-  ] : [];
+  const msgs: Message[] = [];
 
   return {
     id:              `modal_conv_${lead.id}`,
@@ -107,8 +86,7 @@ interface LeadModalProps {
 }
 
 export function LeadModal({ lead, onClose, onStageChange }: LeadModalProps) {
-  const { demoMode } = useDemoMode();
-  const [conv, setConv] = useState<Conversation>(() => buildConversation(lead, demoMode));
+  const [conv, setConv] = useState<Conversation>(() => buildConversation(lead));
   const [detailOpen, setDetailOpen] = useState(true);
 
   function handleToggleAutopilot(id: string, active: boolean) {

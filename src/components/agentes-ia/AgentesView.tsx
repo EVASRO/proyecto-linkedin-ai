@@ -5,7 +5,6 @@ import {
   Bot, Brain, ChevronRight, MessageSquare, Pause, Play,
   Plus, Send, Sparkles, Target, Trash2, X, Zap,
 } from "lucide-react";
-import { useDemoMode } from "@/components/providers/demo-mode-provider";
 import { createClient } from "@/lib/supabase/browser";
 
 
@@ -42,27 +41,6 @@ interface TestMessage {
 
 // ── Mock data ─────────────────────────────────────────────────────────────────
 
-const MOCK_AGENTS: Agent[] = [
-  {
-    id: "a1", name: "Sofia SDR", emoji: "🤝", tone: "consultivo",
-    objective: "agendar_reunion", status: "active",
-    conversations: 47, meetings: 12,
-    icp: { industries: ["SaaS", "Fintech"], roles: ["CEO", "VP Ventas", "SDR Manager"], sizes: ["10-50", "50-200"] },
-    valueProp: "NexusAI automatiza el 80% del proceso de prospección en LinkedIn, permitiendo que tu equipo se enfoque solo en cerrar deals.",
-    objections: [
-      { id: "o1", question: "No tengo tiempo", answer: "Precisamente para eso existe NexusAI — para que no pierdas tiempo en tareas repetitivas." },
-      { id: "o2", question: "Ya uso otra herramienta", answer: "Cuéntame cuál. En la mayoría de casos somos complementarios, o directamente somos 10x más eficientes." },
-    ],
-  },
-  {
-    id: "a2", name: "Max Reclutador", emoji: "💼", tone: "amigable",
-    objective: "calificar_lead", status: "paused",
-    conversations: 23, meetings: 5,
-    icp: { industries: ["Reclutamiento", "RRHH", "Consultoría"], roles: ["HR Manager", "Talent Acquisition", "Recruiter"], sizes: ["5-20", "20-100"] },
-    valueProp: "Automatiza la búsqueda de candidatos pasivos en LinkedIn y mantén conversaciones personalizadas con cada uno.",
-    objections: [],
-  },
-];
 
 const TEMPLATES = [
   { emoji: "🎯", name: "SDR B2B", tone: "consultivo" as AgentTone, objective: "agendar_reunion" as AgentObjective, desc: "Prospección SaaS/B2B, cierra demos" },
@@ -666,16 +644,11 @@ function AgentWizard({ initial, onClose, onSave }: {
 // ── MAIN VIEW ─────────────────────────────────────────────────────────────────
 
 export function AgentesView() {
-  const { demoMode } = useDemoMode();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
-    if (demoMode) {
-      setAgents(MOCK_AGENTS);
-      return;
-    }
     const supabase = createClient();
     (async () => {
       try {
@@ -699,7 +672,7 @@ export function AgentesView() {
         setAgents(list);
       } catch { setAgents([]); }
     })();
-  }, [demoMode]);
+  }, []);
 
   function toggleAgent(id: string) {
     setAgents((p) =>

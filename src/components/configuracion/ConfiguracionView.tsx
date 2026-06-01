@@ -3,11 +3,10 @@
 import { useState } from "react";
 import {
   AlertTriangle, Check, CheckCircle2, ChevronRight,
-  Clock, Copy, ExternalLink, FlaskConical, Globe, HelpCircle, Key, Link2,
+  Clock, Copy, ExternalLink, Globe, HelpCircle, Key, Link2,
   Mail, Megaphone, Monitor, Plus, RefreshCw, Shield, Sliders, Trash2,
   Webhook, X, Zap,
 } from "lucide-react";
-import { useDemoMode } from "@/components/providers/demo-mode-provider";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -147,7 +146,6 @@ const PLANS = [
 export function ConfiguracionView() {
   const [activeTab, setActiveTab] = useState<Tab>("limites");
   const [saved, setSaved] = useState(false);
-  const { demoMode, setDemoMode } = useDemoMode();
 
   // Límites state
   const [dailyConnections, setDailyConnections]   = useState(30);
@@ -254,32 +252,6 @@ export function ConfiguracionView() {
           <p className="text-xs text-zinc-400">Límites anti-ban, conexiones, tokens y webhooks del workspace</p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Toggle Modo Demo */}
-          <div className={[
-            "flex items-center gap-2 rounded-xl border px-3 py-2 transition-all",
-            demoMode
-              ? "border-amber-300 bg-amber-50"
-              : "border-green-300 bg-green-50",
-          ].join(" ")}>
-            <FlaskConical className={`h-4 w-4 ${demoMode ? "text-amber-500" : "text-green-500"}`} />
-            <span className={`text-xs font-semibold ${demoMode ? "text-amber-700" : "text-green-700"}`}>
-              {demoMode ? "Modo Demo" : "Datos Reales"}
-            </span>
-            <button
-              onClick={() => setDemoMode(!demoMode)}
-              className={[
-                "relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
-                demoMode ? "bg-amber-400" : "bg-green-500",
-              ].join(" ")}
-              title={demoMode ? "Clic para usar datos reales" : "Clic para activar datos demo"}
-            >
-              <span className={[
-                "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200",
-                demoMode ? "translate-x-0" : "translate-x-4",
-              ].join(" ")} />
-            </button>
-          </div>
-
           <button
             onClick={handleSave}
             className={[

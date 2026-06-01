@@ -3,10 +3,9 @@
 import { useState } from "react";
 import {
   AlertTriangle, ArrowRight, BarChart3, CalendarCheck,
-  CheckCircle2, ChevronDown, Filter, FlaskConical, MessageSquareText,
+  CheckCircle2, ChevronDown, Filter, MessageSquareText,
   TrendingDown, TrendingUp, UserCheck, Users, Zap,
 } from "lucide-react";
-import { useDemoMode } from "@/components/providers/demo-mode-provider";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -109,7 +108,6 @@ function KpiCard({ label, value, delta, icon: Icon, color, bg, sublabel }: {
 // ── MAIN VIEW ─────────────────────────────────────────────────────────────────
 
 export function AnalyticsView() {
-  const { demoMode } = useDemoMode();
   const [dateRange, setDateRange]     = useState<DateRange>("30d");
   const [campaign, setCampaign]       = useState<FilterCampaign>("all");
   const [showFilters, setShowFilters] = useState(false);
@@ -126,9 +124,7 @@ export function AnalyticsView() {
 
   // En demo=true: datos escalados por período. En demo=false: vacío (datos reales pendientes de integración directa con Supabase)
   const cfg = RANGE_CONFIG[dateRange];
-  const { campaigns, funnel, weekly } = demoMode
-    ? buildDataset(cfg.scale)
-    : { campaigns: [], funnel: BASE_FUNNEL.map((f) => ({ ...f, value: 0, pct: 0 })), weekly: BASE_WEEKLY.map((d) => ({ ...d, conns: 0, msgs: 0, meetings: 0 })) };
+  const { campaigns, funnel, weekly } = { campaigns: [] as {name:string;status:string;leads:number;accepted:number;replied:number;meetings:number;rate:number}[], funnel: BASE_FUNNEL.map((f) => ({ ...f, value: 0, pct: 0 })), weekly: BASE_WEEKLY.map((d) => ({ ...d, conns: 0, msgs: 0, meetings: 0 })) };
 
   const maxBar = Math.max(...weekly.map((d) => d.conns + d.msgs), 1);
 
@@ -150,7 +146,7 @@ export function AnalyticsView() {
   const replyRate      = totals.leads > 0 ? Math.round((totals.replied  / totals.leads) * 100) : 0;
   const meetingRate    = totals.leads > 0 ? Math.round((totals.meetings / totals.leads) * 100) : 0;
 
-  const activeWarnings = demoMode ? HEALTH_WARNINGS.filter((_, i) => !resolvedWarnings.has(i)) : [];
+  const activeWarnings: typeof HEALTH_WARNINGS = [];
 
   async function resolveConflict(idx: number) {
     setResolving(idx);
@@ -163,19 +159,6 @@ export function AnalyticsView() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      {/* Banner indicador de modo */}
-      <div className={[
-        "flex flex-shrink-0 items-center gap-2 border-b px-6 py-2",
-        demoMode ? "border-amber-200 bg-amber-50" : "border-blue-100 bg-blue-50",
-      ].join(" ")}>
-        <FlaskConical className={`h-3.5 w-3.5 ${demoMode ? "text-amber-500" : "text-blue-500"}`} />
-        <p className={`text-xs font-medium ${demoMode ? "text-amber-700" : "text-blue-700"}`}>
-          {demoMode
-            ? <>Modo Demo — Datos de ejemplo. <a href="/dashboard/configuracion" className="underline font-semibold">Ir a Configuración</a> para datos reales.</>
-            : <>Datos Reales — Las métricas se calcularán a medida que el Ghost Engine ejecute acciones.</>}
-        </p>
-      </div>
-
       {/* Header */}
       <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-6 py-4">
         <div>

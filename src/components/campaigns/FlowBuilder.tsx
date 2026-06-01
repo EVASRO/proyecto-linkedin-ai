@@ -14,7 +14,6 @@ import {
 import { nodeTypes } from "./CustomNodes";
 import { PropertyPanel } from "./PropertyPanel";
 import { Sidebar } from "./Sidebar";
-import { DEFAULT_TEMPLATES } from "./mock-data";
 import type { Campaign, FlowConfig, NodeData, Segment, Template } from "./types";
 
 
@@ -41,7 +40,7 @@ function TemplatesPanel({ onLoad, onClose }: { onLoad: (tpl: Template) => void; 
         <button onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-600">✕</button>
       </div>
       <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100">
-        {DEFAULT_TEMPLATES.map((tpl) => (
+        {([] as Template[]).map((tpl) => (
           <button
             key={tpl.id}
             onClick={() => { onLoad(tpl); onClose(); }}

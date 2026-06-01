@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useDemoMode } from "@/components/providers/demo-mode-provider";
 import {
   BookOpen, Calendar, Check, ChevronLeft, ChevronRight,
   Clock, Copy, Edit3, FileText, Image, Layers, Loader2,
@@ -25,22 +24,6 @@ interface Post {
   createdAt: string;
 }
 
-// ── Mock calendario inicial ───────────────────────────────────────────────────
-
-const INITIAL_POSTS: Post[] = [
-  {
-    id: "p1", type: "post", tone: "profesional",
-    topic: "Automatización en ventas B2B",
-    content: "El 80% del tiempo de un SDR se va en tareas repetitivas. ¿Qué pasaría si pudieras recuperar ese tiempo?\n\nEn NexusAI hemos visto que los equipos que automatizan la prospección consiguen:\n→ 3× más reuniones al mes\n→ 60% menos tiempo en tareas manuales\n→ Mensajes más personalizados, no menos\n\nLa IA no reemplaza al vendedor. Le da superpoderes.\n\n¿Tu equipo ya está automatizando la prospección?",
-    status: "scheduled", scheduledAt: "2026-06-02", createdAt: "2026-05-28",
-  },
-  {
-    id: "p2", type: "carrusel", tone: "educativo",
-    topic: "5 errores en LinkedIn outreach",
-    content: "Slide 1: 5 errores que matan tu tasa de respuesta en LinkedIn\nSlide 2: Error #1 — Mensajes genéricos sin personalización\nSlide 3: Error #2 — Pedir reunión en el primer mensaje\nSlide 4: Error #3 — No seguir up después de la conexión\nSlide 5: Error #4 — Ignorar el perfil del prospecto\nSlide 6: Error #5 — Enviar el mismo mensaje a todos\nSlide 7: La solución: personalización a escala con IA",
-    status: "draft", createdAt: "2026-05-29",
-  },
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -436,13 +419,12 @@ function PostsList({ posts, onDelete }: { posts: Post[]; onDelete: (id: string) 
 type Tab = "crear" | "calendario" | "borradores";
 
 export function InboundView() {
-  const { demoMode }      = useDemoMode();
   const [tab, setTab]     = useState<Tab>("crear");
   const [posts, setPosts] = useState<Post[]>([]);
 
   useEffect(() => {
-    setPosts(demoMode ? INITIAL_POSTS : []);
-  }, [demoMode]);
+    setPosts([]);
+  }, []);
 
   function addPost(p: Post) {
     setPosts((prev) => [p, ...prev]);

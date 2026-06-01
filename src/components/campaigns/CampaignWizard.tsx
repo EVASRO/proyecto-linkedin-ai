@@ -6,7 +6,6 @@ import {
   Sparkles, Users,
 } from "lucide-react";
 import type { CampaignType, WizardData, Template } from "./types";
-import { DEFAULT_TEMPLATES, CRM_SEGMENTS } from "./mock-data";
 import { createClient } from "@/lib/supabase/browser";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -166,7 +165,7 @@ function Step2({
           Selecciona el segmento de contactos del CRM que recibirá esta campaña:
         </p>
         <div className="space-y-2">
-          {CRM_SEGMENTS.map((seg) => (
+          {([] as {id:string;label:string;count:number}[]).map((seg) => (
             <button
               key={seg.id}
               onClick={() => onChange({ crmSegment: seg.id })}
@@ -282,9 +281,7 @@ function Step3({
   data: WizardData;
   onChange: (d: Partial<WizardData>) => void;
 }) {
-  const compatibleTemplates = DEFAULT_TEMPLATES.filter(
-    (t) => !data.campaignType || t.types.includes(data.campaignType)
-  );
+  const compatibleTemplates: import("./types").Template[] = [];
 
   return (
     <div className="space-y-5">
@@ -395,9 +392,7 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
   }
 
   function handleComplete() {
-    const template = data.selectedTemplateId
-      ? (DEFAULT_TEMPLATES.find((t) => t.id === data.selectedTemplateId) ?? null)
-      : null;
+    const template = null;
     onComplete(data, template);
   }
 

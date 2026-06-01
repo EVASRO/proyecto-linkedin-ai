@@ -8,7 +8,6 @@ import {
   Sparkles, UserPlus, Users, XCircle, Zap,
 } from "lucide-react";
 import type { Campaign, CampaignType, Segment, SegmentStatus, Template } from "./types";
-import { DEFAULT_TEMPLATES } from "./mock-data";
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -343,7 +342,7 @@ function TemplateLibrary({
       {/* Tab: Predefinidas */}
       {tab === "predefinidas" && (
         <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
-          {DEFAULT_TEMPLATES.map((tpl) => {
+          {([] as import("./types").Template[]).map((tpl) => {
             const isCompatible = tpl.types.includes(campaignType);
             return (
               <div

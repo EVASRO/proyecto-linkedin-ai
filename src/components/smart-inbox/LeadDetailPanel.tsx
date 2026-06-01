@@ -7,7 +7,6 @@ import {
   Tag, User, X, Zap,
 } from "lucide-react";
 import type { InboxLead, Message, PipelineStage } from "./types";
-import { useDemoMode } from "@/components/providers/demo-mode-provider";
 
 // ── Pipeline stages ───────────────────────────────────────────────────────────
 
@@ -75,20 +74,13 @@ function buildActivityFromMessages(messages: Message[]) {
 }
 
 export function LeadDetailPanel({ lead, messages, onClose, onStageChange }: LeadDetailPanelProps & { messages?: Message[] }) {
-  const { demoMode } = useDemoMode();
   const [notes, setNotes] = useState(lead.notes);
   const [stage, setStage] = useState<PipelineStage>(lead.pipeline);
   const [stageOpen, setStageOpen] = useState(false);
 
   const currentStage = STAGES.find((s) => s.id === stage) ?? STAGES[0];
 
-  const DEMO_ACTIVITY = [
-    { text: "Aceptó la solicitud de conexión", time: "Hace 4 días", dot: "bg-green-400"  },
-    { text: "Vio tu perfil",                   time: "Hace 3 días", dot: "bg-blue-400"   },
-    { text: "Respondió al mensaje inicial",    time: "Hace 2 días", dot: "bg-violet-400" },
-    { text: "Abrió el enlace compartido",      time: "Ayer",        dot: "bg-amber-400"  },
-  ];
-  const activity = demoMode ? DEMO_ACTIVITY : buildActivityFromMessages(messages ?? []);
+  const activity = buildActivityFromMessages(messages ?? []);
 
   function handleStageSelect(s: PipelineStage) {
     setStage(s);
