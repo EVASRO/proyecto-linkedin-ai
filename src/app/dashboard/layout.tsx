@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
+import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { DemoModeProvider } from "@/components/providers/demo-mode-provider";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -11,9 +12,8 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-full bg-background">
-      <DashboardSidebar />
-      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
-    </div>
+    <DemoModeProvider>
+      <DashboardShell>{children}</DashboardShell>
+    </DemoModeProvider>
   );
 }

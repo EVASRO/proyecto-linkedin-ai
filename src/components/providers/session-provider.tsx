@@ -1,7 +1,4 @@
-"use client";
-
-import { SessionProvider as NextAuthSessionProvider } from "next-auth/react";
-
+// Supabase SSR manages sessions via cookies — no React provider needed.
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  return <NextAuthSessionProvider>{children}</NextAuthSessionProvider>;
+  return <>{children}</>;
 }

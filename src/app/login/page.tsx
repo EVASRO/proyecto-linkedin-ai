@@ -9,9 +9,6 @@ export const metadata: Metadata = {
 };
 
 export default function LoginPage() {
-  const googleEnabled = !!(
-    process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-  );
 
   return (
     <div className="flex min-h-full">
@@ -44,7 +41,7 @@ export default function LoginPage() {
             Inicia sesión para acceder a tu panel de control.
           </p>
           <Suspense fallback={<LoginFormSkeleton />}>
-            <LoginForm googleEnabled={googleEnabled} />
+            <LoginForm />
           </Suspense>
           <p className="mt-8 text-center text-sm text-muted">
             ¿No tienes cuenta?{" "}

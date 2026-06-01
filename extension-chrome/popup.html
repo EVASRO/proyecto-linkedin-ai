@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>NexusAI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 380px;
+      min-height: 480px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      font-size: 13px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 900; color: white;
+    }
+    .brand { font-size: 16px; font-weight: 700; color: #a5b4fc; }
+    .version { margin-left: auto; font-size: 10px; color: #475569; }
+
+    /* ── Engine status bar ── */
+    .engine-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .engine-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #475569; flex-shrink: 0;
+    }
+    .engine-dot.running { background: #22c55e; animation: pulse 1.5s infinite; }
+    .engine-dot.processing { background: #f59e0b; animation: pulse 0.7s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+    .engine-label { font-size: 11px; color: #94a3b8; font-weight: 600; }
+    .engine-label span { color: #f1f5f9; }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .tab {
+      flex: 1;
+      padding: 9px 4px;
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.2s;
+      border-bottom: 2px solid transparent;
+    }
+    .tab:hover { color: #94a3b8; }
+    .tab.active { color: #a5b4fc; border-bottom-color: #6366f1; }
+
+    /* ── Content ── */
+    .tab-content { display: none; padding: 14px 16px; }
+    .tab-content.active { display: block; }
+
+    /* ── Status tab ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .stat-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .stat-card .val { font-size: 22px; font-weight: 900; color: #a5b4fc; }
+    .stat-card .lbl { font-size: 10px; color: #64748b; margin-top: 2px; }
+
+    .next-task {
+      font-size: 11px; color: #64748b;
+      background: rgba(255,255,255,0.03);
+      border-radius: 8px; padding: 8px 12px;
+      margin-bottom: 12px;
+    }
+    .next-task span { color: #f59e0b; font-weight: 700; }
+
+    .btn {
+      width: 100%; padding: 10px 14px;
+      border: none; border-radius: 10px;
+      font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-start { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; margin-bottom: 8px; }
+    .btn-start:hover { opacity: 0.9; }
+    .btn-stop { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; margin-bottom: 8px; }
+    .btn-stop:hover { background: rgba(239, 68, 68, 0.25); }
+    .btn-extract { background: linear-gradient(135deg, #6366f1, #7c3aed); color: white; }
+    .btn-extract:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Daily limits */
+    .limits-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .limits-row:last-child { border-bottom: none; }
+    .limits-row .label { font-size: 11px; color: #94a3b8; }
+    .limits-bar-wrap { flex: 1; margin: 0 10px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; }
+    .limits-bar { height: 100%; border-radius: 2px; background: #6366f1; transition: width 0.3s; }
+    .limits-val { font-size: 10px; color: #64748b; min-width: 36px; text-align: right; }
+
+    /* ── Queue tab ── */
+    .queue-empty {
+      text-align: center; padding: 30px 0; color: #475569; font-size: 12px;
+    }
+    .task-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px; padding: 10px 12px;
+      margin-bottom: 8px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .task-icon {
+      width: 28px; height: 28px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; flex-shrink: 0;
+    }
+    .task-meta { flex: 1; min-width: 0; }
+    .task-meta .name { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+    .task-meta .type { font-size: 10px; color: #64748b; margin-top: 2px; }
+    .btn-remove {
+      width: 22px; height: 22px; border-radius: 6px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: #f87171; font-size: 14px; line-height: 1;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .btn-remove:hover { background: rgba(239, 68, 68, 0.25); }
+    .btn-clear-queue {
+      width: 100%; padding: 8px; margin-top: 4px;
+      background: none; border: 1px dashed rgba(239, 68, 68, 0.3);
+      color: #f87171; border-radius: 8px; font-size: 11px; font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* ── LinkedIn tab ── */
+    .li-status {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px; border-radius: 10px;
+      margin-bottom: 12px;
+    }
+    .li-status.connected { background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.2); }
+    .li-status.disconnected { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+    .li-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 900; color: white;
+    }
+    .li-info { flex: 1; }
+    .li-info .name { font-size: 13px; font-weight: 700; color: #f1f5f9; }
+    .li-info .sub  { font-size: 10px; color: #64748b; }
+    .li-badge {
+      font-size: 9px; font-weight: 700; padding: 3px 7px; border-radius: 999px;
+    }
+    .li-badge.ok  { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+    .li-badge.off { background: rgba(148, 163, 184, 0.1); color: #64748b; }
+
+    /* extracted message */
+    .msg-box {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 12px;
+      font-size: 12px; line-height: 1.6; color: #e2e8f0;
+      white-space: pre-wrap; word-break: break-word;
+      margin-top: 10px; display: none;
+    }
+    .msg-box.error { border-color: rgba(239,68,68,0.3); color: #fca5a5; background: rgba(239,68,68,0.05); }
+
+    /* ── Settings tab ── */
+    .settings-section { margin-bottom: 14px; }
+    .settings-section h4 { font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .slider-row { margin-bottom: 10px; }
+    .slider-row label { display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .slider-row label span { color: #a5b4fc; font-weight: 700; }
+    input[type="range"] { width: 100%; accent-color: #6366f1; cursor: pointer; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.05); }
+    .toggle-row:first-child { border-top: none; }
+    .toggle-row .lbl { font-size: 11px; color: #94a3b8; }
+    .toggle { position: relative; width: 36px; height: 20px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute; inset: 0; border-radius: 10px;
+      background: #334155; cursor: pointer; transition: background 0.2s;
+    }
+    .toggle input:checked + .toggle-track { background: #6366f1; }
+    .toggle-thumb {
+      position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: white; transition: transform 0.2s; pointer-events: none;
+    }
+    .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); }
+    .btn-save-settings {
+      width: 100%; padding: 10px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #a5b4fc; border-radius: 10px;
+      font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 4px;
+    }
+    .btn-save-settings:hover { background: rgba(99, 102, 241, 0.25); }
+    .saved-badge { font-size: 10px; color: #22c55e; text-align: center; margin-top: 6px; display: none; }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3); border-top-color: white;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">N</div>
+    <span class="brand">NexusAI</span>
+    <span class="version">v2.0 Ghost Engine</span>
+  </div>
+
+  <!-- Engine status bar -->
+  <div class="engine-bar">
+    <div class="engine-dot" id="engine-dot"></div>
+    <div class="engine-label" id="engine-label">Motor <span>detenido</span></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="status">📊 Estado</button>
+    <button class="tab" data-tab="queue">📋 Cola</button>
+    <button class="tab" data-tab="linkedin">🔗 LinkedIn</button>
+    <button class="tab" data-tab="settings">⚙️ Ajustes</button>
+  </div>
+
+  <!-- TAB: Estado -->
+  <div class="tab-content active" id="tab-status">
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="val" id="stat-queue">0</div>
+        <div class="lbl">Tareas en cola</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-connections">0</div>
+        <div class="lbl">Conexiones hoy</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-messages">0</div>
+        <div class="lbl">Mensajes hoy</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-likes">0</div>
+        <div class="lbl">Likes hoy</div>
+      </div>
+    </div>
+
+    <div class="next-task" id="next-task-info">
+      Próxima acción: <span>—</span>
+    </div>
+
+    <!-- Límites diarios -->
+    <div style="margin-bottom: 14px;">
+      <div id="limits-rows"></div>
+    </div>
+
+    <button class="btn btn-start" id="btn-start">▶ Iniciar Ghost Engine</button>
+    <button class="btn btn-stop" id="btn-stop" style="display:none">⏹ Pausar motor</button>
+    <button class="btn btn-extract" id="btn-extract-msg">
+      <span id="extract-text">💾 Guardar lead y generar mensaje IA</span>
+    </button>
+
+    <div class="msg-box" id="msg-result"></div>
+
+    <!-- Acciones post-generación -->
+    <div id="msg-actions" style="display:none; margin-top:10px; display:none; flex-direction:column; gap:6px;">
+      <div style="display:flex; gap:6px;">
+        <button id="btn-approve-send" style="flex:1; padding:9px 8px; background:linear-gradient(135deg,#22c55e,#16a34a); border:none; border-radius:9px; color:white; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">
+          ✅ Aprobar y enviar
+        </button>
+        <button id="btn-edit-msg" style="flex:1; padding:9px 8px; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); border-radius:9px; color:#a5b4fc; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">
+          ✏️ Editar mensaje
+        </button>
+      </div>
+      <button id="btn-copy-msg" style="width:100%; padding:8px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:9px; color:#64748b; font-size:11px; font-weight:600; cursor:pointer;">
+        📋 Solo copiar
+      </button>
+    </div>
+
+    <!-- Editor inline -->
+    <div id="msg-editor" style="display:none; margin-top:8px;">
+      <textarea id="msg-edit-area" style="width:100%; min-height:100px; background:rgba(255,255,255,0.05); border:1px solid rgba(99,102,241,0.3); border-radius:9px; padding:10px; color:#e2e8f0; font-size:12px; line-height:1.5; resize:vertical; font-family:inherit;"></textarea>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button id="btn-send-edited" style="flex:1; padding:8px; background:linear-gradient(135deg,#22c55e,#16a34a); border:none; border-radius:8px; color:white; font-size:11px; font-weight:700; cursor:pointer;">
+          📤 Enviar editado
+        </button>
+        <button id="btn-cancel-edit" style="padding:8px 12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#64748b; font-size:11px; cursor:pointer;">
+          Cancelar
+        </button>
+      </div>
+    </div>
+
+    <div id="send-status" style="display:none; margin-top:8px; text-align:center; font-size:11px; font-weight:600;"></div>
+  </div>
+
+  <!-- TAB: Cola -->
+  <div class="tab-content" id="tab-queue">
+    <div id="queue-list"><div class="queue-empty">Sin tareas en cola<br><span style="font-size:10px;">Añade leads desde el dashboard NexusAI</span></div></div>
+    <button class="btn-clear-queue" id="btn-clear-queue" style="display:none">🗑 Vaciar cola</button>
+  </div>
+
+  <!-- TAB: LinkedIn -->
+  <div class="tab-content" id="tab-linkedin">
+    <div class="li-status disconnected" id="li-status-box">
+      <div class="li-avatar" id="li-avatar">?</div>
+      <div class="li-info">
+        <div class="name" id="li-name">Sin conectar</div>
+        <div class="sub" id="li-sub">Conecta tu cuenta LinkedIn</div>
+      </div>
+      <div class="li-badge off" id="li-badge">OFF</div>
+    </div>
+
+    <button class="btn btn-start" id="btn-connect-li" style="margin-bottom:8px;">
+      🔗 Conectar LinkedIn (cookie automática)
+    </button>
+    <button class="btn btn-stop" id="btn-disconnect-li" style="display:none; margin-bottom:8px;">
+      Desconectar cuenta
+    </button>
+
+    <div style="background:rgba(255,255,255,0.03); border-radius:10px; padding:12px; border:1px solid rgba(255,255,255,0.07);">
+      <p style="font-size:11px; color:#64748b; line-height:1.5;">
+        <strong style="color:#94a3b8;">¿Cómo funciona?</strong><br>
+        1. Abre LinkedIn en otra pestaña y asegúrate de estar logueado.<br>
+        2. Haz clic en "Conectar" — NexusAI lee la cookie <code style="color:#a5b4fc;">li_at</code> automáticamente.<br>
+        3. ¡Listo! Inicia el Ghost Engine para comenzar.
+      </p>
+    </div>
+
+    <div id="li-error" style="margin-top:10px; font-size:11px; color:#f87171; display:none;"></div>
+  </div>
+
+  <!-- TAB: Ajustes -->
+  <div class="tab-content" id="tab-settings">
+    <div class="settings-section">
+      <h4>Límites diarios</h4>
+      <div class="slider-row">
+        <label>Conexiones <span id="val-conn">30</span>/día</label>
+        <input type="range" id="sl-conn" min="5" max="80" value="30">
+      </div>
+      <div class="slider-row">
+        <label>Mensajes <span id="val-msg">50</span>/día</label>
+        <input type="range" id="sl-msg" min="5" max="150" value="50">
+      </div>
+      <div class="slider-row">
+        <label>InMails <span id="val-inmail">10</span>/día</label>
+        <input type="range" id="sl-inmail" min="1" max="25" value="10">
+      </div>
+      <div class="slider-row">
+        <label>Likes <span id="val-likes">30</span>/día</label>
+        <input type="range" id="sl-likes" min="0" max="80" value="30">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h4>Ghost Engine — retrasos entre acciones</h4>
+      <div class="slider-row">
+        <label>Retraso mínimo <span id="val-dmin">3m 0s</span></label>
+        <input type="range" id="sl-dmin" min="60" max="600" step="30" value="180">
+      </div>
+      <div class="slider-row">
+        <label>Retraso máximo <span id="val-dmax">8m 0s</span></label>
+        <input type="range" id="sl-dmax" min="120" max="900" step="30" value="480">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h4>Seguridad anti-ban</h4>
+      <div class="toggle-row">
+        <span class="lbl">Modo Ultra-Seguro (solo horario oficina)</span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-ultra" checked>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="lbl">Pausar fines de semana</span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-weekend" checked>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+    </div>
+
+    <button class="btn-save-settings" id="btn-save-settings">Guardar ajustes</button>
+    <div class="saved-badge" id="saved-badge">✓ Ajustes guardados</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

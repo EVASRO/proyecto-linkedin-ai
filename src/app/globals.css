@@ -1,14 +1,20 @@
 @import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
+  --background: #f4f4f5;
+  --foreground: #09090b;
+  --muted: #71717a;
+  --border: #e4e4e7;
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --primary-soft: #dcfce7;
+  --accent: #10b981;
   --surface: #ffffff;
-  --sidebar: #0f172a;
+  --sidebar: #09090b;
+  --sidebar-border: #27272a;
+  --sidebar-muted: #a1a1aa;
+  --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
 }
 
 @theme inline {
@@ -18,8 +24,12 @@
   --color-border: var(--border);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
   --color-surface: var(--surface);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-muted: var(--sidebar-muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
