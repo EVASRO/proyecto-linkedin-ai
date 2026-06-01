@@ -1,22 +1,20 @@
 // ============================================================
-// NEXUSAI — GHOST ENGINE (background.js)
-// Service Worker MV3 — Task Queue con retrasos humanos
+// NEXUSAI — GHOST ENGINE v3.0 — background.js
+// Service worker MV3. Sin localhost. Todo via Supabase REST.
 // ============================================================
 
-const BACKEND    = 'http://127.0.0.1:8000';
-const ALARM      = 'nexusai-tick';
-const HEARTBEAT  = 'nexusai-heartbeat'; // sync periódico al dashboard
-const COUNT_POLL = 'nexusai-count-poll'; // polling para contar leads
+importScripts('config.js');
 
-// ── Estado por defecto ────────────────────────────────────────────────────────
+const TICK_ALARM      = 'nexusai-tick';
+const HEARTBEAT_ALARM = 'nexusai-heartbeat';
 
+// ── Límites anti-ban por defecto ──────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
-  maxConnections:   30,
-  maxMessages:      50,
-  maxInmails:       10,
-  maxLikes:         30,
-  delayMinSec:      180,   // 3 min
-  delayMaxSec:      480,   // 8 min
+  maxConnections:   20,
+  maxMessages:      30,
+  maxLikes:         20,
+  delayMinSec:      180,
+  delayMaxSec:      480,
   ultraSafe:        true,
   pauseWeekends:    true,
   activeHoursStart: 8,
@@ -24,777 +22,526 @@ const DEFAULT_SETTINGS = {
   timezone:         'America/Lima',
 };
 
-// ── Storage helpers ───────────────────────────────────────────────────────────
+// ── Arranque ──────────────────────────────────────────────────────────────────
+chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 1   });
+  await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
+  console.log('[NexusAI] Ghost Engine v3.0 instalado — conectado a Supabase');
+});
 
-async function getState() {
+chrome.runtime.onStartup.addListener(async () => {
+  await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 1   });
+  await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === TICK_ALARM)      await processTick();
+  if (alarm.name === HEARTBEAT_ALARM) await sendHeartbeat();
+});
+
+// ── Mensajes desde popup y content script ─────────────────────────────────────
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  (async () => {
+    switch (msg.type) {
+
+      case 'LOGIN':
+        try {
+          await supabaseSignIn(msg.email, msg.password);
+          await loadWorkspaceSettings();
+          sendResponse({ ok: true });
+        } catch (e) {
+          sendResponse({ ok: false, error: e.message });
+        }
+        break;
+
+      case 'LOGOUT':
+        await chrome.storage.local.remove([
+          'supabase_token', 'supabase_refresh_token',
+          'supabase_user_id', 'supabase_workspace_id',
+          'engine_running',
+        ]);
+        sendResponse({ ok: true });
+        break;
+
+      case 'GET_STATUS':
+        sendResponse(await getStatus());
+        break;
+
+      case 'START_ENGINE': {
+        const token = await getStoredToken();
+        if (!token) { sendResponse({ ok: false, error: 'No autenticado' }); break; }
+        await chrome.storage.local.set({ engine_running: true });
+        await sendHeartbeat();
+        sendResponse({ ok: true });
+        break;
+      }
+
+      case 'STOP_ENGINE':
+        await chrome.storage.local.set({ engine_running: false, processing: false });
+        await sendHeartbeat();
+        sendResponse({ ok: true });
+        break;
+
+      case 'ACTION_DONE':
+        await handleActionDone(msg.taskId, msg.result);
+        sendResponse({ ok: true });
+        break;
+
+      case 'PROFILE_EXTRACTED':
+        await handleProfileExtracted(msg.data);
+        sendResponse({ ok: true });
+        break;
+
+      case 'MESSAGE_RECEIVED':
+        await handleMessageReceived(msg.data);
+        sendResponse({ ok: true });
+        break;
+
+      case 'COUNT_RESULT':
+        await handleCountResult(msg.campaignId, msg.segmentId, msg.count);
+        sendResponse({ ok: true });
+        break;
+
+      case 'SAVE_SETTINGS':
+        await chrome.storage.local.set({ settings: msg.settings });
+        sendResponse({ ok: true });
+        break;
+
+      case 'EXTRACT_AND_GENERATE': {
+        // Extraer perfil de la tab activa y generar mensaje via API Next.js
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tabs[0]) { sendResponse({ ok: false, error: 'Sin pestaña activa' }); break; }
+        try {
+          const resp = await chrome.tabs.sendMessage(tabs[0].id, { action: 'extract_profile' });
+          if (!resp?.success) { sendResponse({ ok: false, error: 'No se pudo extraer el perfil' }); break; }
+          const profile = resp.data;
+          // Guardar lead en Supabase
+          const wsId = await getWorkspaceId();
+          if (wsId) {
+            await supabaseFetch('leads', {
+              method: 'POST',
+              prefer: 'return=minimal',
+              body: JSON.stringify({
+                workspace_id: wsId,
+                full_name:    profile.name,
+                headline:     profile.headline ?? '',
+                company:      profile.company  ?? '',
+                linkedin_url: profile.url,
+                status:       'nuevo',
+                value:        0,
+                score:        0,
+                custom_tags:  [],
+              }),
+            });
+          }
+          // Generar mensaje via Next.js API (no backend Python)
+          const leadProfile = [
+            `Nombre: ${profile.name}`,
+            profile.headline ? `Cargo: ${profile.headline}` : '',
+            profile.company  ? `Empresa: ${profile.company}`  : '',
+            profile.url      ? `URL: ${profile.url}`          : '',
+          ].filter(Boolean).join('\n');
+
+          const nexusUrl = 'https://proyecto-linkedin-ai.vercel.app/api/generate-message';
+          const msgRes = await fetch(nexusUrl, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ lead_profile: leadProfile }),
+          });
+          const msgData = await msgRes.json();
+          sendResponse({ ok: true, profile, message: msgData.message ?? '' });
+        } catch (e) {
+          sendResponse({ ok: false, error: e.message });
+        }
+        break;
+      }
+
+      case 'SEND_GENERATED_MESSAGE': {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tabs[0]) { sendResponse({ ok: false, error: 'Sin pestaña activa' }); break; }
+        try {
+          const r = await chrome.tabs.sendMessage(tabs[0].id, {
+            action: 'send_message', payload: { messageText: msg.message },
+          });
+          sendResponse(r ?? { ok: false, error: 'Sin respuesta' });
+        } catch (e) {
+          sendResponse({ ok: false, error: e.message });
+        }
+        break;
+      }
+    }
+  })();
+  return true;
+});
+
+// ── Tick principal ────────────────────────────────────────────────────────────
+async function processTick() {
+  const { engine_running } = await chrome.storage.local.get('engine_running');
+  if (!engine_running) return;
+  if (!await isActiveHour()) return;
+  if (await isWeekendPaused()) return;
+  if (!await checkDailyLimits()) return;
+
+  const wsId = await getWorkspaceId();
+  if (!wsId) return;
+
+  const { processing, next_task_at } = await chrome.storage.local.get(['processing', 'next_task_at']);
+  if (processing) return;
+  if (next_task_at && Date.now() < next_task_at) return;
+
+  try {
+    const tasks = await supabaseFetch(
+      `engine_queue?workspace_id=eq.${wsId}&status=eq.pending&order=priority.asc,scheduled_at.asc&limit=1`
+    );
+    if (!tasks || tasks.length === 0) return;
+
+    const task = tasks[0];
+    await chrome.storage.local.set({ processing: true });
+    await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+      method: 'PATCH',
+      prefer: 'return=minimal',
+      body:   JSON.stringify({ status: 'processing' }),
+    });
+    await executeTask(task);
+  } catch (err) {
+    console.error('[NexusAI] Error en tick:', err.message);
+    await chrome.storage.local.set({ processing: false });
+  }
+}
+
+// ── Ejecutar tarea ────────────────────────────────────────────────────────────
+async function executeTask(task) {
+  let tab = await getLinkedInTab();
+
+  if (!tab) {
+    await chrome.tabs.create({ url: 'https://www.linkedin.com', active: false });
+    await sleep(5000);
+    await chrome.storage.local.set({ processing: false });
+    return;
+  }
+
+  try {
+    const profileUrl = task.payload?.profile_url;
+
+    switch (task.task_type) {
+      case 'view_profile':
+        await chrome.tabs.update(tab.id, { url: profileUrl });
+        await sleep(3000);
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func:   (taskId) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'view_profile', taskId }, '*'),
+          args:   [task.id],
+        });
+        break;
+
+      case 'connect':
+        await chrome.tabs.update(tab.id, { url: profileUrl });
+        await sleep(4000);
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func:   (taskId, note) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'connect', taskId, note }, '*'),
+          args:   [task.id, task.payload?.note ?? ''],
+        });
+        break;
+
+      case 'message':
+        await chrome.tabs.update(tab.id, { url: profileUrl });
+        await sleep(4000);
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func:   (taskId, text) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'message', taskId, text }, '*'),
+          args:   [task.id, task.payload?.message_text ?? ''],
+        });
+        break;
+
+      case 'count_leads':
+        await chrome.tabs.update(tab.id, { url: task.payload?.search_url });
+        await sleep(5000);
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func:   (taskId, cId, sId) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'count_leads', taskId, campaignId: cId, segmentId: sId }, '*'),
+          args:   [task.id, task.payload?.campaign_id, task.payload?.segment_id],
+        });
+        break;
+
+      case 'extract_profile':
+        await chrome.tabs.update(tab.id, { url: profileUrl });
+        await sleep(4000);
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func:   (taskId, leadId) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'extract_profile', taskId, leadId }, '*'),
+          args:   [task.id, task.payload?.lead_id],
+        });
+        break;
+
+      default:
+        await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body:   JSON.stringify({ status: 'failed', last_error: `Unknown task_type: ${task.task_type}` }),
+        });
+        await chrome.storage.local.set({ processing: false });
+        return;
+    }
+
+    const settings = await getSettings();
+    const delay    = randomDelay(settings.delayMinSec, settings.delayMaxSec);
+    await chrome.storage.local.set({ next_task_at: Date.now() + delay * 1000 });
+
+  } catch (err) {
+    await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body:   JSON.stringify({
+        status:     'failed',
+        last_error: err.message,
+        attempts:   (task.attempts ?? 0) + 1,
+      }),
+    });
+    await chrome.storage.local.set({ processing: false });
+  }
+}
+
+// ── Heartbeat ─────────────────────────────────────────────────────────────────
+async function sendHeartbeat() {
+  const wsId = await getWorkspaceId();
+  if (!wsId) return;
+
+  const { engine_running, daily_stats, next_task_at } =
+    await chrome.storage.local.get(['engine_running', 'daily_stats', 'next_task_at']);
+
+  try {
+    await supabaseFetch('ghost_engine_sessions', {
+      method:  'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        workspace_id:       wsId,
+        status:             engine_running ? 'running' : 'stopped',
+        connections_sent:   daily_stats?.connections ?? 0,
+        messages_sent:      daily_stats?.messages    ?? 0,
+        actions_count:      (daily_stats?.connections ?? 0) + (daily_stats?.messages ?? 0),
+        last_heartbeat_at:  new Date().toISOString(),
+        metadata: {
+          connections_today: daily_stats?.connections ?? 0,
+          messages_today:    daily_stats?.messages    ?? 0,
+          likes_today:       daily_stats?.likes       ?? 0,
+          next_task_at:      next_task_at ?? null,
+        },
+      }),
+    });
+  } catch (_) {}
+
+  // Emitir estado al popup si está abierto
+  const status = await getStatus();
+  chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: status }).catch(() => {});
+}
+
+// ── Handlers de resultados del content script ─────────────────────────────────
+async function handleActionDone(taskId, result) {
+  const wsId = await getWorkspaceId();
+
+  await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body:   JSON.stringify({ status: 'done', executed_at: new Date().toISOString() }),
+  });
+
+  // Actualizar stats diarias
+  const { daily_stats } = await chrome.storage.local.get('daily_stats');
+  const stats = daily_stats ?? { connections: 0, messages: 0, likes: 0, date: todayStr() };
+  if (stats.date !== todayStr()) {
+    Object.assign(stats, { connections: 0, messages: 0, likes: 0, date: todayStr() });
+  }
+  if (result.action === 'connect') stats.connections++;
+  if (result.action === 'message') stats.messages++;
+  if (result.action === 'like')    stats.likes++;
+  await chrome.storage.local.set({ daily_stats: stats, processing: false });
+
+  // Registrar en activity_log
+  if (wsId) {
+    await supabaseFetch('activity_log', {
+      method: 'POST', prefer: 'return=minimal',
+      body: JSON.stringify({
+        workspace_id: wsId,
+        lead_id:      result.lead_id     ?? null,
+        campaign_id:  result.campaign_id ?? null,
+        action_type:  result.action,
+        description:  result.description ?? result.action,
+        metadata:     result,
+      }),
+    }).catch(() => {});
+  }
+}
+
+async function handleProfileExtracted(data) {
+  const wsId = await getWorkspaceId();
+  if (!wsId || !data.lead_id) return;
+  await supabaseFetch(`leads?id=eq.${data.lead_id}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: JSON.stringify({
+      full_name:    data.name     ?? null,
+      headline:     data.headline ?? null,
+      company:      data.company  ?? null,
+      linkedin_url: data.url      ?? null,
+      status:       'nuevo',
+    }),
+  }).catch(() => {});
+}
+
+async function handleMessageReceived(data) {
+  const wsId = await getWorkspaceId();
+  if (!wsId) return;
+
+  try {
+    // Buscar o crear conversación
+    let convs = await supabaseFetch(
+      `conversations?workspace_id=eq.${wsId}&lead_id=eq.${data.lead_id}&limit=1`
+    );
+    let convId;
+    if (!convs || convs.length === 0) {
+      const newConv = await supabaseFetch('conversations', {
+        method: 'POST',
+        body:   JSON.stringify({ workspace_id: wsId, lead_id: data.lead_id, status: 'active', unread_count: 1 }),
+      });
+      convId = newConv?.[0]?.id;
+    } else {
+      convId = convs[0].id;
+      await supabaseFetch(`conversations?id=eq.${convId}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body:   JSON.stringify({ unread_count: (convs[0].unread_count ?? 0) + 1 }),
+      });
+    }
+    if (convId) {
+      await supabaseFetch('messages', {
+        method: 'POST', prefer: 'return=minimal',
+        body:   JSON.stringify({
+          workspace_id:        wsId,
+          lead_id:             data.lead_id,
+          conversation_id:     convId,
+          sender:              'prospect',
+          message_text:        data.text,
+          linkedin_message_id: data.linkedin_id ?? null,
+          timestamp:           data.timestamp ?? new Date().toISOString(),
+        }),
+      });
+    }
+  } catch (_) {}
+}
+
+async function handleCountResult(campaignId, segmentId, count) {
+  try {
+    const campaigns = await supabaseFetch(`campaigns?id=eq.${campaignId}&select=workflow_json`);
+    if (!campaigns?.length) return;
+    const wf = campaigns[0].workflow_json ?? {};
+    const segments = (wf.segments ?? []).map((s) =>
+      s.id === segmentId
+        ? { ...s, metrics: { ...(s.metrics ?? {}), totalLeads: count } }
+        : s
+    );
+    await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body:   JSON.stringify({
+        workflow_json: { ...wf, segments },
+        total_leads:   segments.reduce((a, s) => a + (s.metrics?.totalLeads ?? 0), 0),
+      }),
+    });
+  } catch (_) {}
+}
+
+// ── Utilidades ────────────────────────────────────────────────────────────────
+async function getLinkedInTab() {
+  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
+  return tabs[0] ?? null;
+}
+
+async function isActiveHour() {
+  const s = await getSettings();
+  const h = new Date().getHours();
+  return h >= s.activeHoursStart && h < s.activeHoursEnd;
+}
+
+async function isWeekendPaused() {
+  const s = await getSettings();
+  if (!s.pauseWeekends) return false;
+  const d = new Date().getDay();
+  return d === 0 || d === 6;
+}
+
+async function checkDailyLimits() {
+  const { daily_stats } = await chrome.storage.local.get('daily_stats');
+  const stats = daily_stats ?? { connections: 0, messages: 0, likes: 0, date: todayStr() };
+  if (stats.date !== todayStr()) {
+    await chrome.storage.local.set({ daily_stats: { connections: 0, messages: 0, likes: 0, date: todayStr() } });
+    return true;
+  }
+  const s = await getSettings();
+  return stats.connections < s.maxConnections && stats.messages < s.maxMessages;
+}
+
+async function getSettings() {
+  const { settings } = await chrome.storage.local.get('settings');
+  return { ...DEFAULT_SETTINGS, ...(settings ?? {}) };
+}
+
+async function loadWorkspaceSettings() {
+  const wsId = await getWorkspaceId();
+  if (!wsId) return;
+  try {
+    const data = await supabaseFetch(
+      `workspace_settings?workspace_id=eq.${wsId}&select=*&limit=1`
+    );
+    if (data?.length) {
+      await chrome.storage.local.set({
+        settings: {
+          maxConnections:   data[0].daily_connections_limit ?? 20,
+          maxMessages:      data[0].daily_messages_limit    ?? 30,
+          maxLikes:         20,
+          ultraSafe:        data[0].ultra_safe_mode         ?? true,
+          pauseWeekends:    data[0].pause_on_weekends       ?? true,
+          activeHoursStart: data[0].active_hours_start      ?? 8,
+          activeHoursEnd:   data[0].active_hours_end        ?? 20,
+          delayMinSec:      180,
+          delayMaxSec:      480,
+          timezone:         'America/Lima',
+        },
+      });
+    }
+  } catch (_) {}
+}
+
+async function getStatus() {
   const data = await chrome.storage.local.get([
-    'taskQueue', 'dailyStats', 'settings', 'engine', 'linkedinAccount',
+    'engine_running', 'daily_stats', 'next_task_at',
+    'supabase_token', 'processing',
   ]);
+  const wsId = await getWorkspaceId();
+
+  let queueCount = 0;
+  if (wsId) {
+    try {
+      const q = await supabaseFetch(
+        `engine_queue?workspace_id=eq.${wsId}&status=eq.pending&select=id`,
+        { headers: { 'Prefer': 'count=exact' } }
+      );
+      queueCount = q?.length ?? 0;
+    } catch (_) {}
+  }
+
   return {
-    taskQueue:       data.taskQueue       ?? [],
-    dailyStats:      data.dailyStats      ?? freshDailyStats(),
-    settings:        data.settings        ?? { ...DEFAULT_SETTINGS },
-    engine:          data.engine          ?? { running: false, processing: false, nextTaskAt: null },
-    linkedinAccount: data.linkedinAccount ?? { connected: false, cookie: null, profileName: null },
+    connected:  !!data.supabase_token,
+    running:    !!data.engine_running,
+    processing: !!data.processing,
+    stats:      data.daily_stats ?? { connections: 0, messages: 0, likes: 0 },
+    nextTaskAt: data.next_task_at ?? null,
+    queueCount,
   };
 }
 
-async function saveState(patch) {
-  await chrome.storage.local.set(patch);
-}
-
-function freshDailyStats() {
-  return {
-    connections: 0, messages: 0, inmails: 0, likes: 0,
-    date: todayStr(),
-  };
+function randomDelay(minSec, maxSec) {
+  return Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec;
 }
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ── Alarm-based scheduler (sobrevive al sleep del service worker) ─────────────
-
-async function startAlarm() {
-  await chrome.alarms.create(ALARM, { periodInMinutes: 1 });
-}
-
-async function stopAlarm() {
-  await chrome.alarms.clear(ALARM);
-}
-
-async function startHeartbeat() {
-  // Sincroniza estado al dashboard cada 30 segundos, aunque el motor esté pausado
-  await chrome.alarms.create(HEARTBEAT, { periodInMinutes: 0.5 });
-}
-
-// ── Polling: contar leads pendientes desde el backend ─────────────────────────
-
-async function pollCountLeads() {
-  try {
-    const res  = await fetch(`${BACKEND}/api/count-leads/pending`);
-    const data = await res.json();
-    if (!data.pending || !data.url) return;
-
-    const searchUrl = data.url;
-
-    // Buscar o abrir tab de LinkedIn
-    const liTabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
-    let tab = liTabs[0] ?? null;
-    let createdTab = false;
-
-    if (tab) {
-      await chrome.tabs.update(tab.id, { url: searchUrl });
-    } else {
-      tab = await chrome.tabs.create({ url: searchUrl, active: false });
-      createdTab = true;
-    }
-
-    // Esperar carga
-    await new Promise((resolve) => {
-      const listener = (tabId, info) => {
-        if (tabId === tab.id && info.status === 'complete') {
-          chrome.tabs.onUpdated.removeListener(listener);
-          resolve();
-        }
-      };
-      chrome.tabs.onUpdated.addListener(listener);
-      setTimeout(resolve, 10000);
-    });
-
-    // Inyectar content script
-    try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-    } catch (_) {}
-
-    await new Promise((r) => setTimeout(r, 2500));
-
-    // Leer conteo
-    let count = null;
-    try {
-      const r = await chrome.tabs.sendMessage(tab.id, { action: 'count_search_results' });
-      count = r?.count ?? null;
-    } catch (_) {}
-
-    // Reportar al backend
-    await fetch(`${BACKEND}/api/count-leads/result`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ url: searchUrl, count }),
-    });
-
-    // Cerrar tab si la creamos nosotros
-    if (createdTab && tab) {
-      setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 500);
-    }
-  } catch (_) {}
-}
-
-// ── Sync mensajes entrantes de LinkedIn al backend ────────────────────────────
-
-async function syncLinkedInMessages() {
-  // Solo ejecutar si hay una pestaña de LinkedIn abierta
-  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
-  const msgTab = tabs.find((t) => t.url && (t.url.includes('/messaging/') || t.url.includes('/in/')));
-  if (!msgTab) return;
-
-  try {
-    const response = await chrome.tabs.sendMessage(msgTab.id, { action: 'extract_inbox' });
-    if (!response?.success || !response.data?.length) return;
-
-    const messages = response.data;
-    // Enviar al backend para guardar y mostrar en Smart Inbox
-    await fetch(`${BACKEND}/api/messages/sync`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages,
-        tab_url: msgTab.url,
-      }),
-    });
-  } catch (_) {
-    // content.js no inyectado en esa pestaña — ignorar
-  }
-}
-
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === ALARM)     { await tick(); return; }
-  if (alarm.name === HEARTBEAT) {
-    await broadcastStatus();
-    await syncLinkedInMessages();
-    return;
-  }
-  if (alarm.name === COUNT_POLL) {
-    await pollCountLeads();
-    return;
-  }
-});
-
-// ── Tick: se ejecuta cada minuto ──────────────────────────────────────────────
-
-async function tick() {
-  const state = await getState();
-
-  // Reset stats si cambió el día
-  if (state.dailyStats.date !== todayStr()) {
-    await saveState({ dailyStats: freshDailyStats() });
-    state.dailyStats = freshDailyStats();
-  }
-
-  if (!state.engine.running || state.engine.processing) return;
-
-  // Guardrails de tiempo
-  if (!isWithinAllowedTime(state.settings)) {
-    console.log('[NexusAI] Fuera del horario permitido — esperando');
-    return;
-  }
-
-  // ¿Hay tareas en cola?
-  if (state.taskQueue.length === 0) return;
-
-  // ¿Es momento de ejecutar la próxima tarea?
-  const now = Date.now();
-  if (state.engine.nextTaskAt && now < state.engine.nextTaskAt) return;
-
-  // Procesar tarea
-  await processNextTask(state);
-}
-
-// ── Guardrails ────────────────────────────────────────────────────────────────
-
-function isWithinAllowedTime(settings) {
-  const tz   = settings.timezone || 'America/Lima';
-  const now  = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-
-  const day   = local.getDay(); // 0=Dom, 6=Sáb
-  const hour  = local.getHours();
-
-  if (settings.pauseWeekends && (day === 0 || day === 6)) return false;
-  if (settings.ultraSafe) {
-    if (hour < settings.activeHoursStart || hour >= settings.activeHoursEnd) return false;
-  }
-  return true;
-}
-
-function hasCapacity(type, stats, settings) {
-  const limits = {
-    send_connection: { key: 'connections', max: settings.maxConnections },
-    send_message:    { key: 'messages',    max: settings.maxMessages    },
-    send_inmail:     { key: 'inmails',     max: settings.maxInmails     },
-    like_post:       { key: 'likes',       max: settings.maxLikes       },
-    visit_profile:   { key: null,          max: Infinity                },
-    extract_profile: { key: null,          max: Infinity                },
-  };
-  const rule = limits[type];
-  if (!rule || !rule.key) return true;
-  return (stats[rule.key] ?? 0) < rule.max;
-}
-
-function incrementStat(type, stats) {
-  const map = {
-    send_connection: 'connections',
-    send_message:    'messages',
-    send_inmail:     'inmails',
-    like_post:       'likes',
-  };
-  const key = map[type];
-  if (key) stats[key] = (stats[key] ?? 0) + 1;
-  return stats;
-}
-
-// ── Task Queue ────────────────────────────────────────────────────────────────
-
-async function enqueueTask(task) {
-  const state = await getState();
-  const newTask = {
-    id:          `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    type:        task.type,        // send_connection | send_message | like_post | visit_profile | extract_profile
-    leadData:    task.leadData,    // { name, profileUrl, company, headline }
-    payload:     task.payload,     // { note, messageText, etc. }
-    campaignId:  task.campaignId,
-    attempts:    0,
-    createdAt:   Date.now(),
-    status:      'pending',
-  };
-  state.taskQueue.push(newTask);
-
-  // Si el motor no está corriendo y no hay nextTaskAt, arrancar
-  if (!state.engine.nextTaskAt) {
-    state.engine.nextTaskAt = Date.now() + randomDelay(state.settings);
-  }
-
-  await saveState({ taskQueue: state.taskQueue, engine: state.engine });
-  broadcastStatus();
-  return newTask.id;
-}
-
-async function dequeueTask(taskId) {
-  const state = await getState();
-  state.taskQueue = state.taskQueue.filter((t) => t.id !== taskId);
-  await saveState({ taskQueue: state.taskQueue });
-}
-
-function randomDelay(settings) {
-  const min = (settings.delayMinSec ?? 180) * 1000;
-  const max = (settings.delayMaxSec ?? 480) * 1000;
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// ── Process task ──────────────────────────────────────────────────────────────
-
-async function processNextTask(state) {
-  const task = state.taskQueue[0];
-  if (!task) return;
-
-  // Verificar límites diarios
-  if (!hasCapacity(task.type, state.dailyStats, state.settings)) {
-    console.log(`[NexusAI] Límite diario alcanzado para: ${task.type}`);
-    await saveState({
-      engine: { ...state.engine, running: false, processing: false },
-    });
-    broadcastStatus();
-    notify('NexusAI — Límite alcanzado', `Límite diario de ${task.type} alcanzado. El motor se pausó.`);
-    return;
-  }
-
-  // Marcar como procesando
-  await saveState({ engine: { ...state.engine, processing: true, currentTask: task } });
-  broadcastStatus();
-
-  console.log(`[NexusAI] Procesando: ${task.type} → ${task.leadData?.name}`);
-
-  let success = false;
-  try {
-    success = await executeTask(task, state);
-  } catch (err) {
-    console.error('[NexusAI] Error ejecutando tarea:', err);
-  }
-
-  // Actualizar stats y cola
-  if (success) {
-    state.dailyStats = incrementStat(task.type, state.dailyStats);
-    await dequeueTask(task.id);
-    console.log(`[NexusAI] ✅ Completado: ${task.type} → ${task.leadData?.name}`);
-
-    // Notificar al backend
-    await logActivityToBackend(task, state.linkedinAccount);
-  } else {
-    // Reintentar hasta 3 veces, luego descartar
-    if ((task.attempts ?? 0) >= 2) {
-      await dequeueTask(task.id);
-      console.log(`[NexusAI] ❌ Descartado después de 3 intentos: ${task.id}`);
-    } else {
-      const updated = state.taskQueue.map((t) =>
-        t.id === task.id ? { ...t, attempts: (t.attempts ?? 0) + 1 } : t
-      );
-      await saveState({ taskQueue: updated });
-    }
-  }
-
-  // Calcular próximo delay
-  const nextDelay = randomDelay(state.settings);
-  const nextAt    = Date.now() + nextDelay;
-  const nextState = await getState();
-
-  await saveState({
-    dailyStats: state.dailyStats,
-    engine: {
-      ...nextState.engine,
-      processing: false,
-      currentTask: null,
-      nextTaskAt: nextState.taskQueue.length > 0 ? nextAt : null,
-    },
-  });
-
-  console.log(`[NexusAI] Próxima acción en ${Math.round(nextDelay / 60000)}m ${Math.round((nextDelay % 60000) / 1000)}s`);
-  broadcastStatus();
-}
-
-// ── Execute task: inyecta content.js en la pestaña de LinkedIn ────────────────
-
-async function executeTask(task, state) {
-  // Encontrar pestaña LinkedIn abierta
-  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
-
-  let tab = tabs.find((t) => t.url && t.url.includes('linkedin.com'));
-
-  if (!tab && task.leadData?.profileUrl) {
-    // Abrir la URL en una nueva pestaña si es necesario
-    tab = await chrome.tabs.create({ url: task.leadData.profileUrl, active: false });
-    await sleep(3000); // esperar carga inicial
-  }
-
-  if (!tab) {
-    console.warn('[NexusAI] No hay pestaña LinkedIn disponible');
-    return false;
-  }
-
-  // Navegar al perfil si la tarea lo requiere
-  if (task.leadData?.profileUrl && !tab.url.includes(task.leadData.profileUrl)) {
-    await chrome.tabs.update(tab.id, { url: task.leadData.profileUrl });
-    await sleep(4000);
-  }
-
-  // Enviar mensaje al content script
-  try {
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      action:  task.type,
-      payload: task.payload ?? {},
-      lead:    task.leadData,
-    });
-    return response?.success === true;
-  } catch (err) {
-    // content.js no está inyectado aún, inyectarlo manualmente
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files:  ['content.js'],
-      });
-      await sleep(1000);
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        action:  task.type,
-        payload: task.payload ?? {},
-        lead:    task.leadData,
-      });
-      return response?.success === true;
-    } catch (e) {
-      console.error('[NexusAI] No se pudo inyectar content.js:', e);
-      return false;
-    }
-  }
-}
-
-// ── Backend sync ──────────────────────────────────────────────────────────────
-
-async function logActivityToBackend(task, account) {
-  try {
-    await fetch(`${BACKEND}/api/activity`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        action_type:  task.type,
-        lead_name:    task.leadData?.name,
-        lead_url:     task.leadData?.profileUrl,
-        campaign_id:  task.campaignId,
-        li_account:   account?.profileName,
-      }),
-    });
-  } catch (_) {
-    // Backend no disponible — continuar sin log
-  }
-}
-
-async function extractAndSendProfile(tabId) {
-  try {
-    // content.js es event-driven — usar sendMessage en vez de executeScript+return
-    const profile = await chrome.tabs.sendMessage(tabId, { action: 'extract_profile' })
-      .then((r) => r?.success ? r.data : null)
-      .catch(() => null);
-    if (!profile?.name) return null;
-
-    const res = await fetch(`${BACKEND}/api/generate-message`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        lead_profile: `Nombre: ${profile.name}\nTitular: ${profile.headline}\nEmpresa: ${profile.company}\nURL: ${profile.url}`,
-      }),
-    });
-    const data = await res.json();
-    return { profile, message: data.message };
-  } catch (err) {
-    return null;
-  }
-}
-
-// ── Cookie li_at ──────────────────────────────────────────────────────────────
-
-async function extractLinkedInCookie() {
-  try {
-    const cookie = await chrome.cookies.get({
-      url:  'https://www.linkedin.com',
-      name: 'li_at',
-    });
-    return cookie?.value ?? null;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function connectLinkedIn() {
-  const cookie = await extractLinkedInCookie();
-  if (!cookie) return { success: false, error: 'Cookie li_at no encontrada. Asegúrate de estar logueado en LinkedIn.' };
-
-  // Obtener nombre del perfil desde la pestaña activa
-  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
-  let profileName = null;
-  if (tabs.length > 0) {
-    try {
-      const res = await chrome.tabs.sendMessage(tabs[0].id, { action: 'extract_profile' });
-      profileName = res?.success ? (res.data?.name ?? null) : null;
-    } catch (_) {}
-  }
-
-  const account = { connected: true, cookie, profileName: profileName ?? 'Cuenta LinkedIn' };
-  await saveState({ linkedinAccount: account });
-  broadcastStatus();
-  return { success: true, account };
-}
-
-// ── Engine controls ───────────────────────────────────────────────────────────
-
-async function startEngine() {
-  const state = await getState();
-  if (!state.linkedinAccount.connected) {
-    return { success: false, error: 'Conecta tu cuenta de LinkedIn primero.' };
-  }
-  state.engine.running = true;
-  if (!state.engine.nextTaskAt && state.taskQueue.length > 0) {
-    state.engine.nextTaskAt = Date.now() + randomDelay(state.settings);
-  }
-  await saveState({ engine: state.engine });
-  await startAlarm();
-  broadcastStatus();
-  notify('NexusAI — Ghost Engine activo', `${state.taskQueue.length} tareas en cola.`);
-  return { success: true };
-}
-
-async function stopEngine() {
-  const state = await getState();
-  state.engine.running    = false;
-  state.engine.processing = false;
-  await saveState({ engine: state.engine });
-  await stopAlarm();
-  broadcastStatus();
-  return { success: true };
-}
-
-async function clearQueue() {
-  await saveState({ taskQueue: [] });
-  broadcastStatus();
-}
-
-// ── Broadcast estado al popup ─────────────────────────────────────────────────
-
-async function broadcastStatus() {
-  const state = await getState();
-
-  // Notificar al popup (puede estar cerrado)
-  try { chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state }); } catch (_) {}
-
-  // Sincronizar estado con el backend para que el dashboard lo muestre en tiempo real
-  const queueByType = state.taskQueue.reduce((acc, t) => {
-    acc[t.type] = (acc[t.type] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  // Sync al backend — await para que el SW no se duerma antes de completar
-  try {
-    await fetch(`${BACKEND}/api/engine/sync`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        engine:          state.engine,
-        taskQueue:       state.taskQueue,
-        byType:          queueByType,
-        dailyStats: {
-          send_connection: state.dailyStats.connections ?? 0,
-          send_message:    state.dailyStats.messages    ?? 0,
-          visit_profile:   state.dailyStats.visits      ?? 0,
-          like_post:       state.dailyStats.likes       ?? 0,
-        },
-        linkedinAccount: state.linkedinAccount,
-      }),
-    });
-  } catch (_) {} // backend puede no estar disponible
-}
-
-// ── Notifications ─────────────────────────────────────────────────────────────
-
-function notify(title, message) {
-  chrome.notifications.create({
-    type:    'basic',
-    iconUrl: 'icons/icon48.png',
-    title,
-    message,
-  });
-}
-
-// ── Util ──────────────────────────────────────────────────────────────────────
-
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
-
-// ── Message handler (desde popup y content.js) ────────────────────────────────
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  (async () => {
-    switch (msg.type) {
-
-      case 'GET_STATUS': {
-        const state = await getState();
-        sendResponse({ state });
-        break;
-      }
-
-      case 'START_ENGINE': {
-        const result = await startEngine();
-        sendResponse(result);
-        break;
-      }
-
-      case 'STOP_ENGINE': {
-        const result = await stopEngine();
-        sendResponse(result);
-        break;
-      }
-
-      case 'CONNECT_LINKEDIN': {
-        const result = await connectLinkedIn();
-        sendResponse(result);
-        break;
-      }
-
-      case 'DISCONNECT_LINKEDIN': {
-        await saveState({ linkedinAccount: { connected: false, cookie: null, profileName: null } });
-        await stopEngine();
-        sendResponse({ success: true });
-        break;
-      }
-
-      case 'ENQUEUE_TASK': {
-        const taskId = await enqueueTask(msg.task);
-        sendResponse({ success: true, taskId });
-        break;
-      }
-
-      case 'REMOVE_TASK': {
-        await dequeueTask(msg.taskId);
-        broadcastStatus();
-        sendResponse({ success: true });
-        break;
-      }
-
-      case 'CLEAR_QUEUE': {
-        await clearQueue();
-        sendResponse({ success: true });
-        break;
-      }
-
-      case 'SAVE_SETTINGS': {
-        await saveState({ settings: msg.settings });
-        broadcastStatus();
-        sendResponse({ success: true });
-        break;
-      }
-
-      case 'COUNT_SEARCH_LEADS': {
-        // Abre la URL de búsqueda en una tab de LinkedIn y lee el conteo del DOM
-        const { url: searchUrl } = msg;
-        if (!searchUrl) { sendResponse({ success: false, count: null }); break; }
-
-        let tab = null;
-        let createdTab = false;
-        try {
-          // Buscar tab de LinkedIn existente para no crear una nueva visible
-          const liTabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
-          if (liTabs.length > 0) {
-            tab = liTabs[0];
-            await chrome.tabs.update(tab.id, { url: searchUrl });
-          } else {
-            tab = await chrome.tabs.create({ url: searchUrl, active: false });
-            createdTab = true;
-          }
-
-          // Esperar a que cargue la página
-          await new Promise((resolve) => {
-            const listener = (tabId, info) => {
-              if (tabId === tab.id && info.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-                resolve();
-              }
-            };
-            chrome.tabs.onUpdated.addListener(listener);
-            setTimeout(resolve, 8000); // timeout máximo
-          });
-
-          // Inyectar content script si no está cargado
-          try {
-            await chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              files:  ['content.js'],
-            });
-          } catch (_) { /* ya inyectado */ }
-
-          await new Promise((r) => setTimeout(r, 2000)); // esperar render
-
-          const response = await chrome.tabs.sendMessage(tab.id, { action: 'count_search_results' });
-          sendResponse({ success: true, count: response?.count ?? null });
-        } catch (err) {
-          sendResponse({ success: false, count: null, error: err.message });
-        } finally {
-          if (createdTab && tab) {
-            setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 1000);
-          }
-        }
-        break;
-      }
-
-      case 'EXTRACT_PROFILE_URL': {
-        // Extrae perfil desde una URL — usa la pestaña activa de LinkedIn si coincide,
-        // o navega silenciosamente. NUNCA usa Playwright (riesgo de ban).
-        const { url: profileUrl } = msg;
-        if (!profileUrl) { sendResponse({ success: false, error: 'Sin URL' }); break; }
-
-        // Buscar pestaña LinkedIn ya abierta con esa URL
-        const allTabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
-        let targetTab = allTabs.find((t) => t.url && t.url.includes(profileUrl.split('?')[0]));
-
-        if (!targetTab && allTabs.length > 0) {
-          // Navegar una pestaña existente de LinkedIn a la URL del perfil
-          targetTab = allTabs[0];
-          await chrome.tabs.update(targetTab.id, { url: profileUrl });
-          await new Promise((r) => setTimeout(r, 4000)); // esperar carga
-        }
-
-        if (!targetTab) {
-          // Como último recurso, extraer nombre del slug sin abrir LinkedIn
-          sendResponse({ success: false, error: 'Abre LinkedIn en una pestaña primero' });
-          break;
-        }
-
-        try {
-          const r = await chrome.tabs.sendMessage(targetTab.id, { action: 'extract_profile' });
-          if (r?.success && r.data?.name) {
-            sendResponse({ success: true, data: r.data });
-          } else {
-            sendResponse({ success: false, error: 'No se pudo extraer el perfil' });
-          }
-        } catch {
-          sendResponse({ success: false, error: 'Error de comunicación con la pestaña' });
-        }
-        break;
-      }
-
-      case 'EXTRACT_AND_GENERATE': {
-        // Extraer perfil + guardar en CRM + generar mensaje con Claude
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tabs[0]) { sendResponse({ success: false, error: 'Sin pestaña activa' }); break; }
-        const result = await extractAndSendProfile(tabs[0].id);
-        if (result?.profile) {
-          // Guardar lead en CRM via backend
-          fetch(`${BACKEND}/api/leads`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              full_name:    result.profile.name,
-              headline:     result.profile.headline ?? '',
-              company:      result.profile.company ?? '',
-              linkedin_url: result.profile.url ?? tabs[0].url,
-              status:       'nuevo',
-              value:        0,
-            }),
-          }).catch(() => {});
-          // Registrar actividad
-          logActivityToBackend({ type: 'lead_created', leadData: { name: result.profile.name, profileUrl: result.profile.url } }, null);
-        }
-        sendResponse(result ? { success: true, ...result } : { success: false, error: 'No se pudo extraer perfil. Abre un perfil de LinkedIn primero.' });
-        break;
-      }
-
-      case 'SEND_GENERATED_MESSAGE': {
-        // Enviar el mensaje directamente en el chat de LinkedIn abierto
-        const { message } = msg;
-        if (!message) { sendResponse({ success: false, error: 'Sin mensaje' }); break; }
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tabs[0]) { sendResponse({ success: false, error: 'Sin pestaña activa' }); break; }
-        try {
-          const r = await chrome.tabs.sendMessage(tabs[0].id, {
-            action:  'send_message',
-            payload: { messageText: message },
-          });
-          if (r?.success) {
-            // Registrar en activity log
-            logActivityToBackend({ type: 'message_sent', leadData: { name: 'Perfil activo', profileUrl: tabs[0].url } }, null);
-          }
-          sendResponse(r ?? { success: false, error: 'Sin respuesta del content script' });
-        } catch (err) {
-          sendResponse({ success: false, error: 'No se pudo enviar — asegúrate de estar en un chat de LinkedIn abierto' });
-        }
-        break;
-      }
-
-      default:
-        sendResponse({ success: false, error: `Acción desconocida: ${msg.type}` });
-    }
-  })();
-  return true; // mantener canal abierto para async
-});
-
-// ── Instalación / startup ──────────────────────────────────────────────────────
-
-chrome.runtime.onInstalled.addListener(async () => {
-  console.log('[NexusAI] Extensión instalada v2.0');
-  await chrome.storage.local.set({
-    settings:        { ...DEFAULT_SETTINGS },
-    taskQueue:       [],
-    dailyStats:      freshDailyStats(),
-    engine:          { running: false, processing: false, nextTaskAt: null, currentTask: null },
-    linkedinAccount: { connected: false, cookie: null, profileName: null },
-  });
-  await startHeartbeat();
-  await chrome.alarms.create(COUNT_POLL, { periodInMinutes: 0.1 }); // cada ~6s
-});
-
-chrome.runtime.onStartup.addListener(async () => {
-  const state = await getState();
-  await startHeartbeat();
-  await chrome.alarms.create(COUNT_POLL, { periodInMinutes: 0.1 }); // cada ~6s
-  if (state.engine.running) {
-    await startAlarm();
-    console.log('[NexusAI] Motor reanudado al iniciar Chrome');
-  }
-  await broadcastStatus(); // sync inmediato al arrancar
-});

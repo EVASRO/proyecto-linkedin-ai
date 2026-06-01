@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Activity, ArrowRight, BarChart3, Bot,
@@ -8,7 +8,8 @@ import {
   Columns3, Inbox, Megaphone, MessageSquare,
   TrendingUp, Users, Zap,
 } from "lucide-react";
-import type { ActivityRow } from "@/app/dashboard/actions";
+import { createClient } from "@/lib/supabase/browser";
+import { getGhostEngineStatus, type GhostEngineSession, type ActivityRow } from "@/app/dashboard/actions";
 
 // ── Quick links ───────────────────────────────────────────────────────────────
 
@@ -42,36 +43,119 @@ function KpiCard({ label, value, icon: Icon, color, bg, sublabel }: {
   );
 }
 
-// ── Ghost Engine Panel — estado estático (requiere backend Python) ─────────────
+// ── Ghost Engine Panel ────────────────────────────────────────────────────────
 
 function GhostEnginePanel() {
+  const [session, setSession] = useState<GhostEngineSession>({
+    status: 'stopped',
+    connections_sent: 0,
+    messages_sent: 0,
+    actions_count: 0,
+    last_heartbeat_at: null,
+    metadata: {},
+  });
+
+  useEffect(() => {
+    getGhostEngineStatus().then((res) => {
+      if (res.success && res.data) setSession(res.data);
+    });
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel('ghost-engine-status')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ghost_engine_sessions' },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          if (!row) return;
+          const lastBeat = row.last_heartbeat_at
+            ? new Date(row.last_heartbeat_at as string).getTime()
+            : 0;
+          const stale = Date.now() - lastBeat > 2 * 60 * 1000;
+          setSession({
+            status:            stale ? 'stopped' : ((row.status as GhostEngineSession['status']) ?? 'stopped'),
+            connections_sent:  (row.connections_sent as number) ?? 0,
+            messages_sent:     (row.messages_sent    as number) ?? 0,
+            actions_count:     (row.actions_count    as number) ?? 0,
+            last_heartbeat_at: (row.last_heartbeat_at as string) ?? null,
+            metadata:          (row.metadata as Record<string, unknown>) ?? {},
+          });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const isRunning = session.status === 'running';
+  const meta = session.metadata as {
+    connections_today?: number;
+    messages_today?: number;
+    likes_today?: number;
+    next_task_at?: number;
+  };
+
   return (
-    <div className="rounded-2xl border-2 border-zinc-200 bg-zinc-50/60 p-5">
+    <div className={`rounded-2xl border-2 p-5 transition-all duration-500 ${
+      isRunning ? 'border-emerald-200 bg-emerald-50/40' : 'border-zinc-200 bg-zinc-50/60'
+    }`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100">
-            <Zap className="h-5 w-5 text-zinc-300" />
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+            isRunning ? 'bg-emerald-100' : 'bg-zinc-100'
+          }`}>
+            <Zap className={`h-5 w-5 ${isRunning ? 'text-emerald-600' : 'text-zinc-300'}`} />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <p className="text-sm font-bold text-zinc-900">Ghost Engine</p>
-              <span className="flex items-center gap-1 rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-bold text-zinc-500">
-                <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
-                Motor no conectado
+              <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                isRunning ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-200 text-zinc-500'
+              }`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${
+                  isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
+                }`} />
+                {isRunning ? 'Motor activo' : 'Motor no conectado'}
               </span>
             </div>
             <p className="mt-0.5 text-[12px] text-zinc-400">
-              Inicia el backend FastAPI para activar el Ghost Engine
+              {isRunning
+                ? `${meta.connections_today ?? session.connections_sent} conexiones · ${meta.messages_today ?? session.messages_sent} mensajes hoy`
+                : 'Activa el Ghost Engine en la extensión de Chrome'}
             </p>
           </div>
         </div>
-        <span
-          title="Requiere backend Python activo"
-          className="cursor-not-allowed rounded-xl border border-zinc-200 px-3 py-2 text-xs text-zinc-400"
-        >
-          Próximamente
-        </span>
+        {isRunning && (
+          <div className="flex flex-col items-end gap-1">
+            <span className="rounded-xl bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-700">
+              En línea
+            </span>
+            {session.last_heartbeat_at && (
+              <span className="text-[10px] text-zinc-400">
+                Última señal: {timeAgo(session.last_heartbeat_at)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
+
+      {isRunning && (
+        <div className="mt-4 grid grid-cols-3 gap-3 border-t border-emerald-100 pt-4">
+          <div className="text-center">
+            <p className="text-lg font-black text-zinc-900">{meta.connections_today ?? session.connections_sent}</p>
+            <p className="text-[10px] text-zinc-500">Conexiones hoy</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-black text-zinc-900">{meta.messages_today ?? session.messages_sent}</p>
+            <p className="text-[10px] text-zinc-500">Mensajes hoy</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-black text-zinc-900">{meta.likes_today ?? 0}</p>
+            <p className="text-[10px] text-zinc-500">Likes hoy</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

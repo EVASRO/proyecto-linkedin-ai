@@ -93,3 +93,57 @@ export async function getDashboardData(): Promise<Result<{
     return { success: false, error: String(err) };
   }
 }
+
+// ── getGhostEngineStatus ──────────────────────────────────────────────────────
+
+export type GhostEngineSession = {
+  status: 'running' | 'stopped' | 'paused';
+  connections_sent: number;
+  messages_sent: number;
+  actions_count: number;
+  last_heartbeat_at: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export async function getGhostEngineStatus(): Promise<Result<GhostEngineSession>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { data, error } = await supabase
+      .from("ghost_engine_sessions")
+      .select("status, connections_sent, messages_sent, actions_count, last_heartbeat_at, metadata")
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    if (error || !data) {
+      return {
+        success: true,
+        data: {
+          status: 'stopped',
+          connections_sent: 0,
+          messages_sent: 0,
+          actions_count: 0,
+          last_heartbeat_at: null,
+          metadata: {},
+        },
+      };
+    }
+
+    const lastBeat = data.last_heartbeat_at ? new Date(data.last_heartbeat_at).getTime() : 0;
+    const stale = Date.now() - lastBeat > 2 * 60 * 1000;
+    const effectiveStatus = stale ? 'stopped' : (data.status as GhostEngineSession['status']);
+
+    return {
+      success: true,
+      data: {
+        status: effectiveStatus,
+        connections_sent: data.connections_sent ?? 0,
+        messages_sent:    data.messages_sent    ?? 0,
+        actions_count:    data.actions_count    ?? 0,
+        last_heartbeat_at: data.last_heartbeat_at,
+        metadata: (data.metadata as Record<string, unknown>) ?? {},
+      },
+    };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
