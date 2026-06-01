@@ -1,9 +1,32 @@
-import { redirect } from "next/navigation";
 import { getProfileData } from "./actions";
 import { PerfilView } from "@/components/perfil/PerfilView";
 
 export default async function PerfilPage() {
   const result = await getProfileData();
-  if (!result.success || !result.data) redirect("/login");
+
+  if (!result.success || !result.data) {
+    return (
+      <PerfilView
+        initialData={{
+          profile: {
+            id: "", full_name: "", email: "", role: "admin",
+            job_title: "", company: "", phone: "",
+            avatar_gradient: 0, workspace_id: "",
+          },
+          workspace:    { id: "", name: "Mi Workspace", plan_type: "growth", logo_url: null },
+          settings:     {
+            workspace_id: "", timezone: "America/Lima",
+            daily_connections_limit: 30, daily_messages_limit: 50,
+            ultra_safe_mode: true, pause_on_weekends: true,
+            active_hours_start: 8, active_hours_end: 20,
+          },
+          linkedinAccounts: [],
+          emailConnections: [],
+          webhooks:         [],
+        }}
+      />
+    );
+  }
+
   return <PerfilView initialData={result.data} />;
 }
