@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, Link2, Mail, Phone, Users, Zap } from "lucide-react";
+import { Clock, Globe, Link2, Mail, Phone, Users, Zap } from "lucide-react";
 import type { CrmLead, TagColor } from "./types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -115,13 +115,22 @@ export function LeadCard({ lead, isDragging }: LeadCardProps) {
         </div>
       )}
 
+      {/* Extraction pending badge */}
+      {lead.nextTask === "Extracción de perfil pendiente" && (
+        <div className="mt-2">
+          <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-semibold text-amber-700 w-fit">
+            <Clock className="h-2.5 w-2.5" /> Perfil pendiente
+          </span>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="mt-2.5 flex items-center justify-between border-t border-zinc-100 pt-2">
         <div className="flex items-center gap-1 text-zinc-400">
           <Icon className="h-3 w-3" />
           <span className="text-[10px]">{lead.source}</span>
         </div>
-        {lead.nextTask ? (
+        {lead.nextTask && lead.nextTask !== "Extracción de perfil pendiente" ? (
           <div className="flex max-w-[130px] items-center gap-1">
             <Zap className="h-3 w-3 flex-shrink-0 text-amber-400" />
             <span className="truncate text-[10px] font-medium text-amber-600">

@@ -342,7 +342,38 @@ export async function upsertAutomation(data: {
   }
 }
 
-// ── 9. toggleAutomation ───────────────────────────────────────────────────────
+// ── 9. enqueueProfileExtraction ──────────────────────────────────────────────
+
+export async function enqueueProfileExtraction(data: {
+  lead_id: string;
+  linkedin_url: string;
+}): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { error } = await supabase
+      .from("engine_queue")
+      .insert({
+        workspace_id: workspaceId,
+        lead_id:      data.lead_id,
+        task_type:    "extract_profile",
+        payload: {
+          profile_url: data.linkedin_url,
+          lead_id:     data.lead_id,
+        },
+        priority: 3,
+        status:   "pending",
+      });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── 10. toggleAutomation ──────────────────────────────────────────────────────
 
 export async function toggleAutomation(id: string, is_active: boolean): Promise<Result> {
   try {

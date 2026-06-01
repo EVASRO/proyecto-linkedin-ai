@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/browser";
 import {
   CheckCircle2, ChevronDown, Columns3, Filter, LayoutList,
   Megaphone, Plus, Settings, TrendingUp, X, Zap,
@@ -17,7 +18,6 @@ import { CreateLeadModal } from "./CreateLeadModal";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
 import type { WizardData, Template } from "@/components/campaigns/types";
 import {
-  createLead as dbCreateLead,
   updateLeadStatus as dbUpdateLeadStatus,
   upsertAutomation as dbUpsertAutomation,
   toggleAutomation as dbToggleAutomation,
@@ -92,6 +92,35 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
   const [automations, setAutomations] = useState<AutomationTrigger[]>(() => initialAutomations.map(mapDbAutomation));
   const [crmError,    setCrmError]    = useState("");
 
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("crm-leads")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "leads" },
+        (payload) => {
+          const updated = payload.new as DbLead;
+          setLeads((prev) =>
+            prev.map((l) =>
+              l.id === updated.id
+                ? {
+                    ...l,
+                    name:        updated.full_name    ?? l.name,
+                    company:     updated.company      ?? l.company,
+                    linkedinUrl: updated.linkedin_url ?? l.linkedinUrl,
+                    nextTask:    updated.next_task    !== undefined ? updated.next_task : l.nextTask,
+                  }
+                : l
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   const [view,              setView]              = useState<View>("kanban");
   const [selectedLead,      setSelectedLead]      = useState<CrmLead | null>(null);
   const [settingsOpen,      setSettingsOpen]      = useState(false);
@@ -153,28 +182,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
   // ── Create lead ──────────────────────────────────────────────────────────────
 
   function handleCreate(lead: CrmLead) {
-    // Optimistic: add immediately
+    // Modal already persisted to DB — just add to local state
     setLeads((prev) => [lead, ...prev]);
-    startTransition(async () => {
-      const res = await dbCreateLead({
-        full_name:    lead.name,
-        company:      lead.company !== "—" ? lead.company : undefined,
-        email:        lead.email,
-        phone:        lead.phone,
-        linkedin_url: lead.linkedinUrl,
-        value:        lead.value,
-        status:       lead.status,
-        next_task:    lead.nextTask ?? undefined,
-      });
-      if (!res.success) {
-        setCrmError(res.error ?? "Error al crear lead");
-        // Revert optimistic
-        setLeads((prev) => prev.filter((l) => l.id !== lead.id));
-      } else if (res.data) {
-        // Replace temp id with real DB id
-        setLeads((prev) => prev.map((l) => l.id === lead.id ? { ...l, id: res.data!.id } : l));
-      }
-    });
   }
 
   // ── Lead modal stage change ───────────────────────────────────────────────────
