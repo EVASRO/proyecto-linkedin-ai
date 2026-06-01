@@ -226,13 +226,13 @@ function AgentWizard({ initial, onClose, onSave }: {
     }
   }
 
-  function handleSave() {
+  function handleSave(status: "active" | "draft" = "active") {
     if (!name.trim()) { setStep("identidad"); return; }
     onSave({
       name, emoji, tone, objective,
       icp: { industries, roles, sizes },
       valueProp, objections,
-      status: "active",
+      status,
     });
   }
 
@@ -626,13 +626,21 @@ function AgentWizard({ initial, onClose, onSave }: {
                 Siguiente <ChevronRight className="h-4 w-4" />
               </button>
             ) : (
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-1.5 rounded-xl bg-green-600 px-5 py-2 text-sm font-semibold text-white hover:bg-green-700"
-              >
-                <Zap className="h-4 w-4" />
-                Activar agente
-              </button>
+              <>
+                <button
+                  onClick={() => handleSave("draft")}
+                  className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                >
+                  Guardar borrador
+                </button>
+                <button
+                  onClick={() => handleSave("active")}
+                  className="flex items-center gap-1.5 rounded-xl bg-green-600 px-5 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                >
+                  <Zap className="h-4 w-4" />
+                  Activar agente
+                </button>
+              </>
             )}
           </div>
         </div>

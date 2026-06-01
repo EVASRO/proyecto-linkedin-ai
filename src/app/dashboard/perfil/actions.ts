@@ -21,7 +21,7 @@ async function getAuthContext() {
     .eq("id", user.id)
     .single();
 
-  if (!profile?.workspace_id) {
+  if (!profile?.workspace_id || profile.workspace_id === "") {
     const { data: ws } = await supabase
       .from("workspaces")
       .insert({ name: "Mi Workspace", plan_type: "growth" })

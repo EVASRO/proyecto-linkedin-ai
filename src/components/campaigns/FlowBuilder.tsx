@@ -15,6 +15,7 @@ import { nodeTypes } from "./CustomNodes";
 import { PropertyPanel } from "./PropertyPanel";
 import { Sidebar } from "./Sidebar";
 import type { Campaign, FlowConfig, NodeData, Segment, Template } from "./types";
+import { updateCampaignWorkflow, updateCampaignStatus } from "@/app/dashboard/campanas/actions";
 
 
 // ── ID generator ──────────────────────────────────────────────────────────────
@@ -72,10 +73,12 @@ function LaunchModal({ campaign, segments, flowConfig, onClose, onDone }: Launch
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
 
-  function submit(status: "active" | "draft") {
+  async function submit(status: "active" | "draft") {
     setLoading(true);
     setError("");
-    // onSave persists the flow via Server Action (called from parent)
+    await updateCampaignWorkflow(campaign.id, flowConfig as Record<string, unknown>);
+    await updateCampaignStatus(campaign.id, status);
+    setLoading(false);
     onDone(status);
   }
 
