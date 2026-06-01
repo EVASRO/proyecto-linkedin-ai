@@ -14,6 +14,7 @@ import {
   createCampaign,
   updateCampaignWorkflow,
   updateCampaignStatus as dbUpdateStatus,
+  launchCampaign,
 } from "@/app/dashboard/campanas/actions";
 import type { CampaignRow } from "@/app/dashboard/campanas/actions";
 
@@ -252,13 +253,39 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     if (selected?.id === activeFlow.id) {
       setSelected((prev) => prev ? { ...prev, status } : prev);
     }
-    // Persist status in Supabase
+
     startTransition(async () => {
-      await dbUpdateStatus(activeFlow.id, status);
-      router.refresh(); // resync server state
+      if (status === "active") {
+        const res = await launchCampaign(activeFlow.id);
+        if (!res.success) {
+          setError(res.error ?? "Error al lanzar campaña");
+          return;
+        }
+      } else {
+        await dbUpdateStatus(activeFlow.id, status);
+      }
+      router.refresh();
     });
+
     setView(selected ? "detail" : "list");
     setActiveFlow(null);
+  }
+
+  function handleDirectLaunch(campaignId: string) {
+    startTransition(async () => {
+      const res = await launchCampaign(campaignId);
+      if (res.success) {
+        setCampaigns((prev) =>
+          prev.map((c) => c.id === campaignId ? { ...c, status: "active" } : c)
+        );
+        if (selected?.id === campaignId) {
+          setSelected((prev) => prev ? { ...prev, status: "active" } : prev);
+        }
+        router.refresh();
+      } else {
+        setError(res.error ?? "Error al lanzar campaña");
+      }
+    });
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -296,6 +323,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
           onSegmentRename={(segId, name)           => handleSegmentRename(selected.id, segId, name)}
           onSegmentDelete={(segId)                 => handleSegmentDelete(selected.id, segId)}
           onSegmentAdd={(seg)                      => handleSegmentAdd(selected.id, seg)}
+          onLaunch={handleDirectLaunch}
         />
       </div>
     );

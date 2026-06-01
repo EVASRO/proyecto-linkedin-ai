@@ -188,7 +188,79 @@ export async function deleteCampaign(id: string): Promise<Result> {
   }
 }
 
-// ── 6. duplicateCampaign ──────────────────────────────────────────────────────
+// ── 6. launchCampaign ────────────────────────────────────────────────────────
+
+export async function launchCampaign(campaignId: string): Promise<Result<{ queued: number }>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    const { data: campaign, error: campErr } = await supabase
+      .from("campaigns")
+      .select("id, name, type, workflow_json, status")
+      .eq("id", campaignId)
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    if (campErr || !campaign) return { success: false, error: "Campaña no encontrada" };
+    if (campaign.status === "active") return { success: false, error: "La campaña ya está activa" };
+
+    const { data: leads } = await supabase
+      .from("leads")
+      .select("id, linkedin_url, full_name")
+      .eq("workspace_id", workspaceId)
+      .in("status", ["nuevo", "pendiente"])
+      .not("linkedin_url", "is", null)
+      .limit(100);
+
+    if (!leads || leads.length === 0) {
+      await supabase
+        .from("campaigns")
+        .update({ status: "active" })
+        .eq("id", campaignId)
+        .eq("workspace_id", workspaceId);
+      return { success: true, data: { queued: 0 } };
+    }
+
+    const tasks = leads.map((lead, i) => ({
+      workspace_id: workspaceId,
+      campaign_id:  campaignId,
+      lead_id:      lead.id,
+      task_type:    "connect",
+      payload: {
+        linkedin_url:      lead.linkedin_url,
+        lead_name:         lead.full_name,
+        campaign_name:     campaign.name,
+        message_template:  (campaign.workflow_json as Record<string, unknown>)?.connection_message ?? "",
+      },
+      status:       "pending",
+      priority:     5,
+      // Escalonar 4 min por tarea — anti-ban LinkedIn
+      scheduled_at: new Date(Date.now() + i * 4 * 60 * 1000).toISOString(),
+    }));
+
+    const { error: queueErr } = await supabase.from("engine_queue").insert(tasks);
+    if (queueErr) return { success: false, error: queueErr.message };
+
+    await supabase
+      .from("campaigns")
+      .update({ status: "active", total_leads: leads.length })
+      .eq("id", campaignId)
+      .eq("workspace_id", workspaceId);
+
+    await supabase.from("activity_log").insert({
+      workspace_id: workspaceId,
+      action_type:  "campaign_launched",
+      description:  `Campaña "${campaign.name}" lanzada con ${leads.length} leads en cola`,
+      metadata:     { campaign_id: campaignId, queued: leads.length },
+    });
+
+    return { success: true, data: { queued: leads.length } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── 7. duplicateCampaign ──────────────────────────────────────────────────────
 
 export async function duplicateCampaign(id: string): Promise<Result<CampaignRow>> {
   try {

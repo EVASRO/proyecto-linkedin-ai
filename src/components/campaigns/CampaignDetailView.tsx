@@ -552,6 +552,7 @@ interface CampaignDetailViewProps {
   onSegmentRename: (segId: string, name: string) => void;
   onSegmentDelete: (segId: string) => void;
   onSegmentAdd: (seg: Segment) => void;
+  onLaunch?: (campaignId: string) => void;
 }
 
 export function CampaignDetailView({
@@ -563,6 +564,7 @@ export function CampaignDetailView({
   onSegmentRename,
   onSegmentDelete,
   onSegmentAdd,
+  onLaunch,
 }: CampaignDetailViewProps) {
   const TypeIcon = TYPE_ICON[campaign.type];
 
@@ -618,6 +620,15 @@ export function CampaignDetailView({
           <p className="text-sm font-bold text-zinc-900">{campaign.name}</p>
           <p className="text-[10px] text-zinc-400">{TYPE_LABEL[campaign.type]}</p>
         </div>
+        {campaign.status !== "active" && onLaunch && (
+          <button
+            onClick={() => onLaunch(campaign.id)}
+            className="ml-auto flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 transition-colors"
+          >
+            <Play className="h-4 w-4" />
+            Lanzar campaña
+          </button>
+        )}
       </div>
 
       {/* ── Scrollable body ── */}
