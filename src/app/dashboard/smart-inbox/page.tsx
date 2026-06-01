@@ -1,8 +1,8 @@
-import { getInboxData } from "./actions";
+import { getConversationsWithMessages } from "./actions";
 import { InboxLayout } from "@/components/smart-inbox/InboxLayout";
 
 export default async function SmartInboxPage() {
-  const result = await getInboxData();
+  const result = await getConversationsWithMessages();
   const conversations = result.data?.conversations ?? [];
   return (
     <div className="flex flex-1 overflow-hidden">

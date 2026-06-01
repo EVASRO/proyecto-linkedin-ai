@@ -195,6 +195,8 @@ interface ChatViewProps {
   onSendMessage: (id: string, text: string) => void;
   onShowDetail: () => void;
   onArchive?: (id: string) => void;
+  onRequestAISuggestion?: () => Promise<string>;
+  isPending?: boolean;
 }
 
 export function ChatView({
@@ -203,10 +205,13 @@ export function ChatView({
   onSendMessage,
   onShowDetail,
   onArchive,
+  onRequestAISuggestion,
+  isPending,
 }: ChatViewProps) {
-  const [input, setInput]             = useState("");
-  const [showSugg, setShowSugg]       = useState(true);
+  const [input, setInput]                 = useState("");
+  const [showSugg, setShowSugg]           = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [aiLoading, setAiLoading]         = useState(false);
   const bottomRef                     = useRef<HTMLDivElement>(null);
   const lastMsg                       = conv.messages[conv.messages.length - 1];
   const hasUnreplied                  = lastMsg?.sender === "lead";
@@ -226,6 +231,17 @@ export function ChatView({
   function useSuggestion(s: AISuggestion) {
     setInput(s.text);
     setShowSugg(false);
+  }
+
+  async function handleAISuggest() {
+    if (!onRequestAISuggestion || aiLoading) return;
+    setAiLoading(true);
+    try {
+      const suggestion = await onRequestAISuggestion();
+      if (suggestion) setInput(suggestion);
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   return (
@@ -355,6 +371,19 @@ export function ChatView({
             <button className="flex-shrink-0 text-zinc-400 hover:text-zinc-600 transition-colors">
               <Paperclip className="h-4 w-4" />
             </button>
+            {onRequestAISuggestion && (
+              <button
+                onClick={handleAISuggest}
+                disabled={aiLoading || isPending}
+                title="Sugerir con IA"
+                className="flex-shrink-0 transition-colors disabled:opacity-40 text-purple-400 hover:text-purple-600"
+              >
+                {aiLoading
+                  ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+                  : <Sparkles className="h-4 w-4" />
+                }
+              </button>
+            )}
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
