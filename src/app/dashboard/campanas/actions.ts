@@ -227,10 +227,14 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
       lead_id:      lead.id,
       task_type:    "connect",
       payload: {
+        profile_url:       lead.linkedin_url,   // campo que lee executeTask en background.js
         linkedin_url:      lead.linkedin_url,
+        lead_id:           lead.id,
         lead_name:         lead.full_name,
         campaign_name:     campaign.name,
-        message_template:  (campaign.workflow_json as Record<string, unknown>)?.connection_message ?? "",
+        campaign_id:       campaignId,
+        note:              (campaign.workflow_json as Record<string, unknown>)?.connection_message as string ?? "",
+        message_text:      (campaign.workflow_json as Record<string, unknown>)?.connection_message as string ?? "",
       },
       status:       "pending",
       priority:     5,
