@@ -335,7 +335,7 @@ async function sendHeartbeat() {
     await chrome.storage.local.get(['engine_running', 'daily_stats', 'next_task_at']);
 
   try {
-    await supabaseFetch('ghost_engine_sessions', {
+    await supabaseFetch('ghost_engine_sessions?on_conflict=workspace_id', {
       method:  'POST',
       headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({
