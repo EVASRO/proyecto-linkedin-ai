@@ -22,6 +22,16 @@ const DEFAULT_SETTINGS = {
   timezone:         'America/Lima',
 };
 
+// ── Auto-init al despertar el service worker ──────────────────────────────────
+async function ensureInitialized() {
+  const { supabase_token, supabase_workspace_id } = await chrome.storage.local.get([
+    'supabase_token', 'supabase_workspace_id'
+  ]);
+  if (supabase_token && !supabase_workspace_id) {
+    await getWorkspaceId();
+  }
+}
+
 // ── Arranque ──────────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 1   });
@@ -35,6 +45,7 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  await ensureInitialized();
   if (alarm.name === TICK_ALARM)      await processTick();
   if (alarm.name === HEARTBEAT_ALARM) await sendHeartbeat();
 });
@@ -70,6 +81,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case 'START_ENGINE': {
         const token = await getStoredToken();
         if (!token) { sendResponse({ ok: false, error: 'No autenticado' }); break; }
+        const wsId = await getWorkspaceId();
+        if (!wsId) { sendResponse({ ok: false, error: 'No se pudo obtener workspace. Cierra sesión y vuelve a entrar.' }); break; }
         await chrome.storage.local.set({ engine_running: true });
         await sendHeartbeat();
         sendResponse({ ok: true });
@@ -239,8 +252,10 @@ async function executeTask(task) {
         await sleep(4000);
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func:   (taskId, note) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'connect', taskId, note }, '*'),
-          args:   [task.id, task.payload?.note ?? ''],
+          func:   (taskId, note, leadId, campaignId) => window.postMessage(
+            { type: 'NEXUSAI_TASK', task: 'connect', taskId, note, leadId, campaignId }, '*'
+          ),
+          args:   [task.id, task.payload?.note ?? '', task.payload?.lead_id ?? null, task.payload?.campaign_id ?? null],
         });
         break;
 
@@ -249,8 +264,10 @@ async function executeTask(task) {
         await sleep(4000);
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func:   (taskId, text) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'message', taskId, text }, '*'),
-          args:   [task.id, task.payload?.message_text ?? ''],
+          func:   (taskId, text, leadId, campaignId) => window.postMessage(
+            { type: 'NEXUSAI_TASK', task: 'message', taskId, text, leadId, campaignId }, '*'
+          ),
+          args:   [task.id, task.payload?.message_text ?? '', task.payload?.lead_id ?? null, task.payload?.campaign_id ?? null],
         });
         break;
 
@@ -338,12 +355,13 @@ async function sendHeartbeat() {
 async function handleActionDone(taskId, result) {
   const wsId = await getWorkspaceId();
 
+  // 1. Marcar tarea como done en engine_queue
   await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
     method: 'PATCH', prefer: 'return=minimal',
     body:   JSON.stringify({ status: 'done', executed_at: new Date().toISOString() }),
   });
 
-  // Actualizar stats diarias
+  // 2. Actualizar stats diarias
   const { daily_stats } = await chrome.storage.local.get('daily_stats');
   const stats = daily_stats ?? { connections: 0, messages: 0, likes: 0, date: todayStr() };
   if (stats.date !== todayStr()) {
@@ -354,8 +372,47 @@ async function handleActionDone(taskId, result) {
   if (result.action === 'like')    stats.likes++;
   await chrome.storage.local.set({ daily_stats: stats, processing: false });
 
-  // Registrar en activity_log
+  // 3. Actualizar el lead en el CRM según la acción completada
+  if (wsId && result.lead_id) {
+    try {
+      if (result.action === 'connect') {
+        await supabaseFetch(`leads?id=eq.${result.lead_id}&workspace_id=eq.${wsId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            status:    'contactado',
+            next_task: 'Esperar aceptación de conexión',
+          }),
+        });
+      } else if (result.action === 'connect_accepted') {
+        await supabaseFetch(`leads?id=eq.${result.lead_id}&workspace_id=eq.${wsId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            status:    'conectado',
+            next_task: 'Enviar mensaje de seguimiento',
+          }),
+        });
+      } else if (result.action === 'message') {
+        await supabaseFetch(`leads?id=eq.${result.lead_id}&workspace_id=eq.${wsId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            next_task: 'Esperar respuesta',
+          }),
+        });
+      }
+    } catch (err) {
+      console.error('[NexusAI] Error actualizando lead:', err);
+    }
+  }
+
+  // 4. Registrar en activity_log
   if (wsId) {
+    const descriptions = {
+      connect:          'Solicitud de conexión enviada',
+      connect_accepted: 'Conexión aceptada',
+      message:          'Mensaje enviado',
+      like:             'Post likeado',
+      view_profile:     'Perfil visitado',
+    };
     await supabaseFetch('activity_log', {
       method: 'POST', prefer: 'return=minimal',
       body: JSON.stringify({
@@ -363,7 +420,7 @@ async function handleActionDone(taskId, result) {
         lead_id:      result.lead_id     ?? null,
         campaign_id:  result.campaign_id ?? null,
         action_type:  result.action,
-        description:  result.description ?? result.action,
+        description:  descriptions[result.action] ?? result.action,
         metadata:     result,
       }),
     }).catch(() => {});
@@ -388,41 +445,101 @@ async function handleProfileExtracted(data) {
 async function handleMessageReceived(data) {
   const wsId = await getWorkspaceId();
   if (!wsId) return;
+  if (!data.text?.trim()) return;
 
   try {
+    let leadId = data.lead_id;
+
+    // Resolver lead por linkedin_url si no viene lead_id
+    if (!leadId && data.profile_url) {
+      const cleanUrl = data.profile_url.replace(/\/$/, '').split('?')[0];
+      const leads = await supabaseFetch(
+        `leads?workspace_id=eq.${wsId}&linkedin_url=eq.${encodeURIComponent(cleanUrl)}&select=id&limit=1`
+      );
+      leadId = leads?.[0]?.id ?? null;
+    }
+
+    // Fallback: buscar por nombre
+    if (!leadId && data.contact_name) {
+      const leads = await supabaseFetch(
+        `leads?workspace_id=eq.${wsId}&full_name=ilike.${encodeURIComponent(data.contact_name)}&select=id&limit=1`
+      );
+      leadId = leads?.[0]?.id ?? null;
+    }
+
+    // Fallback final: crear lead placeholder
+    if (!leadId) {
+      const newLead = await supabaseFetch('leads', {
+        method: 'POST',
+        body: JSON.stringify({
+          workspace_id: wsId,
+          full_name:    data.contact_name ?? 'Contacto LinkedIn',
+          linkedin_url: data.profile_url  ?? null,
+          status:       'respondio',
+          source:       'inbox',
+        }),
+      });
+      leadId = newLead?.[0]?.id ?? null;
+    }
+
+    if (!leadId) return;
+
     // Buscar o crear conversación
-    let convs = await supabaseFetch(
-      `conversations?workspace_id=eq.${wsId}&lead_id=eq.${data.lead_id}&limit=1`
+    const convs = await supabaseFetch(
+      `conversations?workspace_id=eq.${wsId}&lead_id=eq.${leadId}&limit=1`
     );
+
     let convId;
     if (!convs || convs.length === 0) {
       const newConv = await supabaseFetch('conversations', {
         method: 'POST',
-        body:   JSON.stringify({ workspace_id: wsId, lead_id: data.lead_id, status: 'active', unread_count: 1 }),
+        body: JSON.stringify({
+          workspace_id: wsId,
+          lead_id:      leadId,
+          status:       'active',
+          unread_count: 1,
+        }),
       });
       convId = newConv?.[0]?.id;
     } else {
       convId = convs[0].id;
       await supabaseFetch(`conversations?id=eq.${convId}`, {
-        method: 'PATCH', prefer: 'return=minimal',
+        method: 'PATCH',
+        prefer: 'return=minimal',
         body:   JSON.stringify({ unread_count: (convs[0].unread_count ?? 0) + 1 }),
       });
     }
-    if (convId) {
-      await supabaseFetch('messages', {
-        method: 'POST', prefer: 'return=minimal',
-        body:   JSON.stringify({
-          workspace_id:        wsId,
-          lead_id:             data.lead_id,
-          conversation_id:     convId,
-          sender:              'prospect',
-          message_text:        data.text,
-          linkedin_message_id: data.linkedin_id ?? null,
-          timestamp:           data.timestamp ?? new Date().toISOString(),
-        }),
-      });
-    }
-  } catch (_) {}
+
+    if (!convId) return;
+
+    await supabaseFetch('messages', {
+      method: 'POST',
+      prefer: 'return=minimal',
+      body: JSON.stringify({
+        workspace_id:        wsId,
+        lead_id:             leadId,
+        conversation_id:     convId,
+        sender:              'prospect',
+        message_text:        data.text,
+        linkedin_message_id: data.linkedin_id ?? null,
+        timestamp:           data.timestamp ?? new Date().toISOString(),
+      }),
+    });
+
+    await supabaseFetch('activity_log', {
+      method: 'POST',
+      prefer: 'return=minimal',
+      body: JSON.stringify({
+        workspace_id: wsId,
+        action_type:  'message_received',
+        description:  `Mensaje recibido de ${data.contact_name ?? 'contacto'}`,
+        metadata:     { lead_id: leadId, conversation_id: convId },
+      }),
+    }).catch(() => {});
+
+  } catch (err) {
+    console.error('[NexusAI] handleMessageReceived error:', err);
+  }
 }
 
 async function handleCountResult(campaignId, segmentId, count) {
