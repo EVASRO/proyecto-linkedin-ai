@@ -34,17 +34,26 @@ async function ensureInitialized() {
 
 // ── Arranque ──────────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.alarms.clearAll();
   await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 1   });
   await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
-  console.log('[NexusAI] Ghost Engine v3.0 instalado — conectado a Supabase');
+  console.log('[NexusAI] Alarms initialized on install/update');
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+  await chrome.alarms.clearAll();
   await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 1   });
   await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
+  console.log('[NexusAI] Alarms initialized on startup');
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  // Self-healing: ensure alarms exist
+  const allAlarms = await chrome.alarms.getAll();
+  const names = allAlarms.map(a => a.name);
+  if (!names.includes(TICK_ALARM))      await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 1   });
+  if (!names.includes(HEARTBEAT_ALARM)) await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
+
   await ensureInitialized();
   if (alarm.name === TICK_ALARM)      await processTick();
   if (alarm.name === HEARTBEAT_ALARM) await sendHeartbeat();
