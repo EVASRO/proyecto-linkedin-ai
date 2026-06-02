@@ -129,7 +129,7 @@ export async function getGhostEngineStatus(): Promise<Result<GhostEngineSession>
     }
 
     const lastBeat = data.last_heartbeat_at ? new Date(data.last_heartbeat_at).getTime() : 0;
-    const stale = Date.now() - lastBeat > 2 * 60 * 1000;
+    const stale = Date.now() - lastBeat > 5 * 60 * 1000;
     const effectiveStatus = stale ? 'stopped' : (data.status as GhostEngineSession['status']);
 
     return {

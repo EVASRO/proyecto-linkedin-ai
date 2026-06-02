@@ -85,7 +85,16 @@ function GhostEnginePanel() {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    const interval = setInterval(() => {
+      getGhostEngineStatus().then((res) => {
+        if (res.success && res.data) setSession(res.data);
+      });
+    }, 60_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
   }, []);
 
   const isRunning = session.status === 'running';
