@@ -3,6 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders });
+}
+
 export async function POST(req: NextRequest) {
   const { lead_profile, tone = "consultivo", objective = "agendar_reunion" } = await req.json();
 
@@ -41,8 +51,8 @@ Reglas:
       .join("")
       .trim();
 
-    return NextResponse.json({ message, tone, objective });
+    return NextResponse.json({ message, tone, objective }, { headers: corsHeaders });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 502 });
+    return NextResponse.json({ error: String(err) }, { status: 502, headers: corsHeaders });
   }
 }
