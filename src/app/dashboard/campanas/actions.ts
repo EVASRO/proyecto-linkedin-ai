@@ -18,6 +18,8 @@ export type CampaignRow = {
   workflow_json: Record<string, unknown>;
   total_leads: number;
   segment_count: number;
+  leads_total: number;
+  leads_queued: number;
   linkedin_account_id: string | null;
   created_at: string;
 };
@@ -290,6 +292,16 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
       .eq("id", campaignId)
       .eq("workspace_id", workspaceId);
 
+    // Trigger scraping via Ghost Engine
+    await supabase.from("engine_queue").insert({
+      workspace_id: workspaceId,
+      action_type:  "start_campaign_scraping",
+      payload:      { campaign_id: campaignId },
+      status:       "pending",
+      priority:     1, // highest priority so it runs before regular tasks
+      scheduled_at: new Date().toISOString(),
+    });
+
     await supabase.from("activity_log").insert({
       workspace_id: workspaceId,
       action_type:  "campaign_launched",
@@ -335,6 +347,34 @@ export async function duplicateCampaign(id: string): Promise<Result<CampaignRow>
 
     if (insertErr) return { success: false, error: insertErr.message };
     return { success: true, data: copy as CampaignRow };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── 8. getActiveCampaignStats ─────────────────────────────────────────────────
+
+export type CampaignStats = {
+  id: string;
+  status: string;
+  leads_total: number;
+  leads_queued: number;
+};
+
+export async function getActiveCampaignStats(
+  campaignId: string
+): Promise<Result<CampaignStats>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { data, error } = await supabase
+      .from("campaigns")
+      .select("id, status, leads_total, leads_queued")
+      .eq("id", campaignId)
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data as CampaignStats };
   } catch (err) {
     return { success: false, error: String(err) };
   }

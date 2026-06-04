@@ -10,6 +10,25 @@
   if (window.__nexusai_loaded__) return;
   window.__nexusai_loaded__ = true;
 
+  // ── Wrappers seguros para APIs de extensión ───────────────────────────────
+  // Evitan crash por "Extension context invalidated" tras reload/update
+
+  function safeSendMessage(msg) {
+    try {
+      chrome.runtime.sendMessage(msg).catch(() => {});
+    } catch (_) {
+      // Extension context invalidated — ignorar
+    }
+  }
+
+  async function safeStorageSet(data) {
+    try {
+      await chrome.storage.local.set(data);
+    } catch (_) {
+      // Extension context invalidated — ignorar
+    }
+  }
+
   // ── Utilidades DOM ────────────────────────────────────────────────────────
 
   function getText(selectors) {
@@ -346,7 +365,7 @@
       await sleep(300 + Math.random() * 400);
     }
     await sleep(3000 + Math.random() * 4000);
-    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'view_profile', success: true } });
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'view_profile', success: true } });
   }
 
   async function executeConnect(taskId, note, leadId, campaignId) {
@@ -372,12 +391,12 @@
           el.innerText?.toLowerCase().includes('conectar') || el.innerText?.toLowerCase().includes('connect')
         );
         if (!menuItem) {
-          chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
+          safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
           return;
         }
         simulateClick(menuItem);
       } else {
-        chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
+        safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
         return;
       }
     } else {
@@ -406,7 +425,7 @@
     if (sendBtn) simulateClick(sendBtn);
 
     await sleep(800);
-    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: true, lead_id: leadId, campaign_id: campaignId } });
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: true, lead_id: leadId, campaign_id: campaignId } });
   }
 
   async function executeMessage(taskId, text, leadId, campaignId) {
@@ -420,7 +439,7 @@
     });
 
     if (!msgBtn) {
-      chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
+      safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
       return;
     }
 
@@ -443,7 +462,7 @@
     }
 
     await sleep(800);
-    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: true, lead_id: leadId, campaign_id: campaignId } });
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: true, lead_id: leadId, campaign_id: campaignId } });
   }
 
   async function executeCountLeads(taskId, campaignId, segmentId) {
@@ -477,8 +496,8 @@
       }
     }
 
-    chrome.runtime.sendMessage({ type: 'COUNT_RESULT', campaignId, segmentId, count });
-    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'count_leads', count, campaign_id: campaignId } });
+    safeSendMessage({ type: 'COUNT_RESULT', campaignId, segmentId, count });
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'count_leads', count, campaign_id: campaignId } });
   }
 
   async function executeExtractProfile(taskId, leadId) {
@@ -488,8 +507,8 @@
 
     const profile = isSalesNavigator() ? extractSalesNavProfile() : extractLinkedInProfile();
 
-    chrome.runtime.sendMessage({ type: 'PROFILE_EXTRACTED', data: { ...profile, lead_id: leadId } });
-    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'extract_profile', success: true, lead_id: leadId } });
+    safeSendMessage({ type: 'PROFILE_EXTRACTED', data: { ...profile, lead_id: leadId } });
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'extract_profile', success: true, lead_id: leadId } });
   }
 
   // ── Observer de inbox para mensajes recibidos ─────────────────────────────
@@ -548,7 +567,7 @@
 
             const contact = getActiveConversationContact();
 
-            chrome.runtime.sendMessage({
+            safeSendMessage({
               type: 'MESSAGE_RECEIVED',
               data: {
                 text,
@@ -557,7 +576,7 @@
                 profile_url:  contact.profileUrl,
                 lead_id:      null, // background.js lo resolverá con profile_url
               },
-            }).catch(() => {});
+            });
           }
         }
       }
@@ -620,6 +639,64 @@
             result = extractSearchCount();
             sendResponse({ success: true, count: result, url: window.location.href });
             break;
+
+          case 'count_leads_quick': {
+            // Conteo rápido para estimación en el wizard — sin navegación
+            const href = window.location.href;
+            const onLinkedIn = href.includes('linkedin.com/sales') || href.includes('linkedin.com/search');
+            if (!onLinkedIn) {
+              sendResponse({ count: null, error: 'NOT_ON_LINKEDIN', needsNavigation: true });
+              break;
+            }
+            // Delay humano antes de leer DOM
+            await sleep(500 + Math.random() * 1000);
+            const snEl = document.querySelector('.search-results__total-results')
+              || document.querySelector('[data-view-name="search-results-header"] span')
+              || document.querySelector('.list-header-count')
+              || document.querySelector('[data-anonymize="result-count"]');
+            const liEl = document.querySelector('.search-results-container .pb2 h2')
+              || document.querySelector('.search-results-container h2')
+              || document.querySelector('.artdeco-card h2');
+            const raw = (snEl || liEl)?.textContent?.trim() ?? '';
+            const count = parseInt(raw.replace(/[^0-9]/g, ''), 10) || null;
+            sendResponse({ count, error: count ? null : 'COUNT_NOT_FOUND' });
+            break;
+          }
+
+          case 'scrape_profiles': {
+            // Extrae perfiles de la página actual de resultados de búsqueda
+            await sleep(500 + Math.random() * 1000);
+            const profiles = [];
+            // Sales Navigator
+            document.querySelectorAll(
+              '.artdeco-entity-lockup__title a, [data-view-name="search-result-entity-lockup"] a'
+            ).forEach((el) => {
+              const url = el.href?.split('?')[0];
+              const name = el.textContent?.trim();
+              if (url && (url.includes('/in/') || url.includes('/sales/lead/'))) {
+                const container = el.closest('[data-view-name]') || el.closest('li');
+                const headline = container?.querySelector(
+                  '.artdeco-entity-lockup__subtitle, [data-anonymize="headline"]'
+                )?.textContent?.trim() ?? '';
+                profiles.push({ url, name, headline });
+              }
+            });
+            // LinkedIn estándar (fallback)
+            if (profiles.length === 0) {
+              document.querySelectorAll('.entity-result__title-text a').forEach((el) => {
+                const url = el.href?.split('?')[0];
+                const name = el.querySelector('.visually-hidden')?.textContent?.trim()
+                  ?? el.textContent?.trim();
+                if (url && url.includes('/in/')) {
+                  const card = el.closest('.entity-result');
+                  const headline = card?.querySelector('.entity-result__primary-subtitle')?.textContent?.trim() ?? '';
+                  profiles.push({ url, name, headline });
+                }
+              });
+            }
+            sendResponse({ profiles });
+            break;
+          }
 
           default:
             sendResponse({ success: false, error: `Acción desconocida: ${msg.action}` });
@@ -722,8 +799,8 @@
       detected_at:  new Date().toISOString(),
     };
 
-    chrome.storage.local.set({ linkedin_profile: profile });
-    chrome.runtime.sendMessage({ type: 'LINKEDIN_PROFILE_DETECTED', profile }).catch(() => {});
+    safeStorageSet({ linkedin_profile: profile });
+    safeSendMessage({ type: 'LINKEDIN_PROFILE_DETECTED', profile });
   }
 
   // Run on feed and /in/me pages, with retries for SPA load
@@ -751,10 +828,10 @@
         : extractLinkedInProfile();
 
       if (profile.name && profile.name !== 'No encontrado') {
-        chrome.runtime.sendMessage({
+        safeSendMessage({
           type:    'PROFILE_LOADED',
           profile,
-        }).catch(() => {}); // background puede no estar escuchando
+        });
       }
     }, 2000);
   }

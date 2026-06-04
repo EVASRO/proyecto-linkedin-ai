@@ -1,12 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   ArrowLeft, ArrowRight, Check, Link2, Loader2, Mail, X, FileText,
   Sparkles, Users,
 } from "lucide-react";
 import type { CampaignType, WizardData, Template } from "./types";
-import { createClient } from "@/lib/supabase/browser";
+
+// chrome.runtime is only available inside a Chrome extension content/popup context.
+// When the wizard runs inside Next.js (web), it falls back to the manual flow.
+type ChromeRuntime = { sendMessage: (msg: unknown) => Promise<unknown> };
+declare const chrome: { runtime: ChromeRuntime } | undefined;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -117,6 +121,14 @@ function isValidLinkedInUrl(url: string, type: CampaignType | null): boolean {
 
 // ── Step 2 — Segmentación ─────────────────────────────────────────────────────
 
+type CountState =
+  | { status: "idle" }
+  | { status: "counting" }
+  | { status: "done"; count: number }
+  | { status: "needs_nav" }
+  | { status: "manual" }
+  | { status: "error"; msg: string };
+
 function Step2({
   data,
   onChange,
@@ -124,39 +136,56 @@ function Step2({
   data: WizardData;
   onChange: (d: Partial<WizardData>) => void;
 }) {
-  const [leadCount, setLeadCount] = useState<number | null>(null);
-  const [counting, setCounting]   = useState(false);
-  const lastCountedUrl            = useRef("");
-  const DAILY_RATE                = 30;
+  const [countState, setCountState] = useState<CountState>({ status: "idle" });
+  const [manualInput, setManualInput] = useState("");
+  const DAILY_RATE = 30;
 
   const urlValid   = isValidLinkedInUrl(data.segmentationUrl, data.campaignType);
   const urlTouched = data.segmentationUrl.length > 0;
   const urlError   = urlTouched && !urlValid;
 
-  // Al validar URL: consultar leads existentes en Supabase con esa searchUrl
+  // Reset count state when URL changes
   useEffect(() => {
-    if (!urlValid || data.segmentationUrl === lastCountedUrl.current) return;
-    lastCountedUrl.current = data.segmentationUrl;
-    setLeadCount(null);
-    setCounting(true);
+    setCountState({ status: "idle" });
+  }, [data.segmentationUrl]);
 
-    const supabase = createClient();
-    (async () => {
-      try {
-        const { count } = await supabase
-          .from("leads")
-          .select("*", { count: "exact", head: true })
-          .eq("linkedin_url", data.segmentationUrl);
-        const n = count ?? 0;
-        setLeadCount(n);
-        onChange({ estimatedLeads: n });
-      } catch { /* ignore */ } finally {
-        setCounting(false);
+  async function handleCount() {
+    setCountState({ status: "counting" });
+    try {
+      if (typeof chrome === "undefined" || !chrome?.runtime?.sendMessage) {
+        setCountState({ status: "manual" });
+        return;
       }
-    })();
-  }, [urlValid, data.segmentationUrl]);
+      const resp = await chrome!.runtime.sendMessage({ type: "NEXUSAI_COUNT_LEADS" }) as {
+        count: number | null;
+        needsNavigation?: boolean;
+        error?: string;
+      };
+      if (resp.needsNavigation) {
+        setCountState({ status: "needs_nav" });
+        return;
+      }
+      if (resp.count && resp.count > 0) {
+        setCountState({ status: "done", count: resp.count });
+        onChange({ estimatedLeads: resp.count });
+      } else {
+        setCountState({ status: "manual" });
+      }
+    } catch {
+      setCountState({ status: "manual" });
+    }
+  }
 
-  const estimatedDays = leadCount ? Math.ceil(leadCount / DAILY_RATE) : null;
+  function applyManual() {
+    const n = parseInt(manualInput.replace(/[^0-9]/g, ""), 10);
+    if (!isNaN(n) && n > 0) {
+      onChange({ estimatedLeads: n });
+      setCountState({ status: "done", count: n });
+    }
+  }
+
+  const estimatedLeads = countState.status === "done" ? countState.count : (data.estimatedLeads ?? 0);
+  const estimatedDays  = estimatedLeads > 0 ? Math.ceil(estimatedLeads / DAILY_RATE) : null;
 
   if (data.campaignType === "email") {
     return (
@@ -165,7 +194,7 @@ function Step2({
           Selecciona el segmento de contactos del CRM que recibirá esta campaña:
         </p>
         <div className="space-y-2">
-          {([] as {id:string;label:string;count:number}[]).map((seg) => (
+          {([] as { id: string; label: string; count: number }[]).map((seg) => (
             <button
               key={seg.id}
               onClick={() => onChange({ crmSegment: seg.id })}
@@ -190,6 +219,7 @@ function Step2({
 
   return (
     <div className="space-y-5">
+      {/* URL input */}
       <div>
         <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-400">
           URL de segmentación
@@ -221,6 +251,7 @@ function Step2({
         )}
       </div>
 
+      {/* How-to hint */}
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
         <p className="font-semibold mb-2">¿Cómo obtener la URL?</p>
         <ol className="list-decimal space-y-1 pl-4 text-[12px] leading-relaxed text-blue-700">
@@ -230,42 +261,109 @@ function Step2({
         </ol>
       </div>
 
+      {/* Count leads panel */}
       {urlValid && (
-        <div className="flex flex-col gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-3 text-xs text-green-700">
-          <div className="flex items-center gap-2">
-            <Check className="h-3.5 w-3.5 flex-shrink-0" />
-            URL válida — la extensión abrirá LinkedIn y contará los resultados
-          </div>
-
-          <div className="flex items-center gap-4 border-t border-green-200 pt-2">
-            {counting ? (
-              <div className="flex items-center gap-2 text-green-600">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span className="text-[11px]">Contando leads en LinkedIn...</span>
-              </div>
-            ) : leadCount !== null ? (
-              <>
-                <div className="flex flex-col items-center">
-                  <span className="text-lg font-black text-green-800">{leadCount.toLocaleString("es-PE")}</span>
-                  <span className="text-[10px] text-green-600">leads en lista</span>
-                </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-lg font-black text-green-800">{DAILY_RATE}/día</span>
-                  <span className="text-[10px] text-green-600">velocidad segura</span>
-                </div>
-                {estimatedDays && (
-                  <div className="flex flex-col items-center">
-                    <span className="text-lg font-black text-green-800">~{estimatedDays} días</span>
-                    <span className="text-[10px] text-green-600">duración estimada</span>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-[11px] text-zinc-500">
-                Extensión no disponible — el conteo se realizará al iniciar la campaña
-              </p>
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-zinc-700">Número estimado de leads</p>
+            {countState.status === "idle" && (
+              <button
+                onClick={handleCount}
+                className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 transition-colors"
+              >
+                Contar leads
+              </button>
             )}
           </div>
+
+          {countState.status === "counting" && (
+            <div className="flex items-center gap-2 text-indigo-600">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span className="text-[11px]">Consultando LinkedIn…</span>
+            </div>
+          )}
+
+          {countState.status === "done" && (
+            <div className="flex items-center gap-4">
+              <div className="flex flex-col">
+                <span className="text-xl font-black tabular-nums text-zinc-900">~{countState.count.toLocaleString("es-PE")}</span>
+                <span className="text-[10px] text-zinc-500">leads estimados</span>
+              </div>
+              {estimatedDays && (
+                <>
+                  <div className="h-8 w-px bg-zinc-200" />
+                  <div className="flex flex-col">
+                    <span className="text-xl font-black tabular-nums text-zinc-900">~{estimatedDays}d</span>
+                    <span className="text-[10px] text-zinc-500">duración estimada</span>
+                  </div>
+                  <div className="h-8 w-px bg-zinc-200" />
+                  <div className="flex flex-col">
+                    <span className="text-xl font-black tabular-nums text-zinc-900">{DAILY_RATE}/día</span>
+                    <span className="text-[10px] text-zinc-500">velocidad segura</span>
+                  </div>
+                </>
+              )}
+              <button
+                onClick={() => setCountState({ status: "idle" })}
+                className="ml-auto text-[10px] text-zinc-400 hover:text-zinc-600 underline"
+              >
+                Recontar
+              </button>
+            </div>
+          )}
+
+          {countState.status === "needs_nav" && (
+            <div className="space-y-2">
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+                Abre la URL del segmento en LinkedIn y vuelve a hacer click en "Contar leads", o ingresa el número manualmente.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  placeholder="Nº estimado de leads"
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+                <button
+                  onClick={applyManual}
+                  disabled={!manualInput}
+                  className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-zinc-700 disabled:opacity-40"
+                >
+                  Aplicar
+                </button>
+                <button onClick={handleCount} className="text-[11px] text-indigo-600 hover:underline">Reintentar</button>
+              </div>
+            </div>
+          )}
+
+          {(countState.status === "manual" || countState.status === "error") && (
+            <div className="space-y-2">
+              <p className="text-[11px] text-zinc-500">
+                La extensión no pudo leer el conteo automáticamente. Ingresa el número estimado:
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  placeholder="Ej: 1500"
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+                <button
+                  onClick={applyManual}
+                  disabled={!manualInput}
+                  className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-zinc-700 disabled:opacity-40"
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[10px] text-zinc-400 italic">
+            Número estimado — la extensión contará con precisión al lanzar la campaña.
+          </p>
         </div>
       )}
     </div>

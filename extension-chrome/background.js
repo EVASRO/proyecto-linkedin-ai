@@ -137,6 +137,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
 
+      case 'NEXUSAI_COUNT_LEADS': {
+        // Conteo rápido desde el wizard — usa tab de LinkedIn existente, sin abrir nueva
+        const liTabs = await chrome.tabs.query({ url: ['*://*.linkedin.com/search/*', '*://*.linkedin.com/sales/*'] });
+        if (!liTabs.length) {
+          sendResponse({ count: null, needsNavigation: true });
+          break;
+        }
+        try {
+          const resp = await Promise.race([
+            chrome.tabs.sendMessage(liTabs[0].id, { action: 'count_leads_quick' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+          ]);
+          sendResponse(resp ?? { count: null, error: 'NO_RESPONSE' });
+        } catch (e) {
+          sendResponse({ count: null, error: e.message === 'timeout' ? 'TIMEOUT' : e.message });
+        }
+        break;
+      }
+
       case 'EXTRACT_AND_GENERATE': {
         // Extraer perfil de la tab activa y generar mensaje via API Next.js
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -212,6 +231,13 @@ async function processTick() {
   if (await isWeekendPaused()) return;
   if (!await checkDailyLimits()) return;
 
+  // Validate token before hitting Supabase — avoids "Failed to fetch" on expiry
+  const token = await getStoredToken();
+  if (!token) {
+    console.warn('[NexusAI] Token inválido, saltando tick');
+    return;
+  }
+
   const wsId = await getWorkspaceId();
   if (!wsId) return;
 
@@ -251,9 +277,20 @@ async function executeTask(task) {
   }
 
   try {
-    const profileUrl = task.payload?.profile_url;
+    const profileUrl = task.payload?.profile_url ?? task.payload?.linkedin_url ?? null;
 
-    switch (task.task_type) {
+    // Cases that navigate to a profile URL need it to be present
+    const needsProfileUrl = ['view_profile', 'connect', 'message', 'extract_profile'];
+    if (needsProfileUrl.includes(task.action_type) && !profileUrl) {
+      await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body:   JSON.stringify({ status: 'failed', last_error: 'Missing profile_url in payload' }),
+      });
+      await chrome.storage.local.set({ processing: false });
+      return;
+    }
+
+    switch (task.action_type) {
       case 'view_profile':
         await chrome.tabs.update(tab.id, { url: profileUrl });
         await sleep(3000);
@@ -308,10 +345,28 @@ async function executeTask(task) {
         });
         break;
 
+      case 'start_campaign_scraping': {
+        // Mark done immediately — scraping runs async in background
+        await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body:   JSON.stringify({ status: 'done', executed_at: new Date().toISOString() }),
+        });
+        await chrome.storage.local.set({ processing: false });
+        const campRows = await supabaseFetch(
+          `campaigns?id=eq.${task.payload?.campaign_id}&select=*`
+        );
+        if (campRows?.[0]) {
+          startCampaignScraping(campRows[0]).catch((err) =>
+            console.error('[NexusAI Scraper] Fatal error:', err)
+          );
+        }
+        return; // skip normal delay scheduling
+      }
+
       default:
         await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
           method: 'PATCH', prefer: 'return=minimal',
-          body:   JSON.stringify({ status: 'failed', last_error: `Unknown task_type: ${task.task_type}` }),
+          body:   JSON.stringify({ status: 'failed', last_error: `Unknown action_type: ${task.action_type}` }),
         });
         await chrome.storage.local.set({ processing: false });
         return;
@@ -393,7 +448,9 @@ async function sendHeartbeat() {
         },
       }),
     });
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[NexusAI] Heartbeat failed:', err?.message ?? err);
+  }
 
   // Emitir estado al popup si está abierto
   const status = await getStatus();
@@ -451,6 +508,16 @@ async function handleActionDone(taskId, result) {
     } catch (err) {
       console.error('[NexusAI] Error actualizando lead:', err);
     }
+  }
+
+  // 3b. Incrementar leads_queued en la campaña al enviar conexión exitosa
+  if (wsId && result.campaign_id && result.action === 'connect' && result.success !== false) {
+    try {
+      await supabaseFetch('rpc/increment_leads_queued', {
+        method: 'POST',
+        body:   JSON.stringify({ campaign_id: result.campaign_id }),
+      });
+    } catch (_) {}
   }
 
   // 4. Registrar en activity_log
@@ -609,6 +676,159 @@ async function handleCountResult(campaignId, segmentId, count) {
       }),
     });
   } catch (_) {}
+}
+
+// ── Scraping de leads ─────────────────────────────────────────────────────────
+
+const SCRAPER_MAX_TOTAL      = 500;
+const SCRAPER_PAGE_DELAY_MIN = 8000;
+const SCRAPER_PAGE_DELAY_MAX = 15000;
+const SCRAPER_TASK_STAGGER   = 4 * 60 * 1000; // 4 min entre tareas en cola
+
+async function startCampaignScraping(campaign) {
+  const segments    = campaign.workflow_json?.segments ?? [];
+  const workspaceId = campaign.workspace_id;
+
+  for (const segment of segments) {
+    if (segment.status !== 'active') continue;
+    const searchUrl = segment.searchUrl || segment.url || segment.salesNavUrl;
+    if (!searchUrl) continue;
+
+    await supabaseFetch(`campaigns?id=eq.${campaign.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body:   JSON.stringify({
+        scraping_status:     'running',
+        scraping_started_at: new Date().toISOString(),
+      }),
+    }).catch(() => {});
+
+    await scrapeAndQueueLeads(campaign.id, workspaceId, searchUrl, campaign.workflow_json);
+  }
+}
+
+async function scrapeAndQueueLeads(campaignId, workspaceId, searchUrl, workflowJson) {
+  let page         = 1;
+  let totalQueued  = 0;
+  let keepGoing    = true;
+
+  // Determine first action from workflow nodes
+  const firstNode     = workflowJson?.nodes?.[0]?.data;
+  const actionType    = firstNode?.nodeType === 'connect' ? 'send_connection' : (firstNode?.nodeType ?? 'send_connection');
+  const noteMessage   = firstNode?.messageA ?? firstNode?.note ?? '';
+
+  while (keepGoing && totalQueued < SCRAPER_MAX_TOTAL) {
+    const pageUrl = `${searchUrl}&page=${page}`;
+    console.log(`[NexusAI Scraper] Page ${page}: navigating…`);
+
+    let profiles = [];
+    try {
+      profiles = await sendToLinkedInTab(pageUrl, 'scrape_profiles');
+    } catch (err) {
+      console.warn(`[NexusAI Scraper] Page ${page} error:`, err.message);
+      // Check for captcha / block
+      if (err.message?.includes('blocked') || err.message?.includes('captcha')) {
+        await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body:   JSON.stringify({ scraping_status: 'blocked' }),
+        }).catch(() => {});
+        chrome.notifications.create(`scraper-blocked-${campaignId}`, {
+          type:    'basic',
+          iconUrl: 'icons/icon48.png',
+          title:   'NexusAI — Scraping bloqueado',
+          message: 'LinkedIn detectó actividad inusual. El scraping se pausó.',
+        });
+        return;
+      }
+      break;
+    }
+
+    console.log(`[NexusAI Scraper] Page ${page}: ${profiles.length} profiles found`);
+
+    if (!profiles || profiles.length === 0) break;
+
+    for (const profile of profiles) {
+      if (totalQueued >= SCRAPER_MAX_TOTAL) break;
+      const executeAt = new Date(Date.now() + totalQueued * SCRAPER_TASK_STAGGER);
+
+      await supabaseFetch('engine_queue', {
+        method: 'POST', prefer: 'return=minimal',
+        body:   JSON.stringify({
+          workspace_id: workspaceId,
+          action_type:  actionType,
+          payload: {
+            profile_url:  profile.url,
+            linkedin_url: profile.url,
+            full_name:    profile.name  ?? '',
+            headline:     profile.headline ?? '',
+            campaign_id:  campaignId,
+            note:         noteMessage,
+            message_text: noteMessage,
+          },
+          status:      'pending',
+          priority:    5,
+          execute_at:  executeAt.toISOString(),
+          scheduled_at: executeAt.toISOString(),
+        }),
+      }).catch((err) => console.warn('[NexusAI Scraper] Insert queue error:', err.message));
+
+      totalQueued++;
+    }
+
+    // Update progress in real-time
+    await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body:   JSON.stringify({ leads_total: totalQueued }),
+    }).catch(() => {});
+
+    // Last page if fewer than 25 results
+    if (profiles.length < 25) keepGoing = false;
+
+    // Anti-ban delay between pages
+    const delay = SCRAPER_PAGE_DELAY_MIN + Math.random() * (SCRAPER_PAGE_DELAY_MAX - SCRAPER_PAGE_DELAY_MIN);
+    await sleep(delay);
+    page++;
+  }
+
+  await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body:   JSON.stringify({ scraping_status: 'completed', leads_total: totalQueued }),
+  }).catch(() => {});
+
+  console.log(`[NexusAI Scraper] Done. Total queued: ${totalQueued}`);
+}
+
+// Navigate a LinkedIn tab to the given URL and ask the content script to run an action.
+// Reuses an existing LinkedIn tab if available; never opens more than 1 scraping tab.
+async function sendToLinkedInTab(url, action) {
+  let tab = await getLinkedInTab();
+
+  if (tab) {
+    // Only navigate if we're not already on the right URL
+    if (!tab.url?.startsWith(url.split('&page=')[0])) {
+      await chrome.tabs.update(tab.id, { url });
+      await sleep(6000 + Math.random() * 3000); // wait for page load
+    }
+  } else {
+    const newTab = await chrome.tabs.create({ url, active: false });
+    tab = newTab;
+    await sleep(8000 + Math.random() * 4000);
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), 20000);
+    chrome.tabs.sendMessage(tab.id, { action }, (response) => {
+      clearTimeout(timer);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (response?.profiles) {
+        resolve(response.profiles);
+      } else {
+        resolve([]);
+      }
+    });
+  });
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────────

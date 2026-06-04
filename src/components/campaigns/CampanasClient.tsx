@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type {
   Campaign, Segment, WizardData, Template,
@@ -15,6 +15,7 @@ import {
   updateCampaignWorkflow,
   updateCampaignStatus as dbUpdateStatus,
   launchCampaign,
+  getActiveCampaignStats,
 } from "@/app/dashboard/campanas/actions";
 import type { CampaignRow } from "@/app/dashboard/campanas/actions";
 
@@ -38,8 +39,12 @@ function mapRow(c: CampaignRow): Campaign {
     createdAt:    c.created_at?.slice(0, 10) ?? "",
     segmentCount: c.segment_count ?? 0,
     totalLeads:   c.total_leads  ?? 0,
+    leadsTotal:   c.leads_total  ?? 0,
+    leadsQueued:  c.leads_queued ?? 0,
   };
 }
+
+const POLL_INTERVAL_MS = 30_000;
 
 function extractSegments(c: CampaignRow): Segment[] {
   const wf = c.workflow_json;
@@ -99,6 +104,52 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
   const [activeFlow, setActiveFlow] = useState<ActiveFlow | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [error,      setError]      = useState("");
+  const [toast,      setToast]      = useState<string | null>(null);
+  const pollRef                     = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  // ── Polling para campañas activas ─────────────────────────────────────────
+
+  useEffect(() => {
+    const activeCampaigns = campaigns.filter((c) => c.status === "active");
+
+    if (activeCampaigns.length === 0) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+
+    async function poll() {
+      const results = await Promise.allSettled(
+        activeCampaigns.map((c) => getActiveCampaignStats(c.id))
+      );
+      setCampaigns((prev) =>
+        prev.map((c) => {
+          const idx = activeCampaigns.findIndex((ac) => ac.id === c.id);
+          if (idx === -1) return c;
+          const res = results[idx];
+          if (res.status === "fulfilled" && res.value.success && res.value.data) {
+            const s = res.value.data;
+            return {
+              ...c,
+              status:      (s.status as CampaignStatus) ?? c.status,
+              leadsTotal:  s.leads_total  ?? c.leadsTotal,
+              leadsQueued: s.leads_queued ?? c.leadsQueued,
+            };
+          }
+          return c;
+        })
+      );
+    }
+
+    poll();
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns.filter((c) => c.status === "active").map((c) => c.id).join(",")]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -319,17 +370,32 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
   function handleDirectLaunch(campaignId: string) {
     startTransition(async () => {
       const res = await launchCampaign(campaignId);
-      if (res.success) {
-        setCampaigns((prev) =>
-          prev.map((c) => c.id === campaignId ? { ...c, status: "active" } : c)
-        );
-        if (selected?.id === campaignId) {
-          setSelected((prev) => prev ? { ...prev, status: "active" } : prev);
-        }
-        router.refresh();
-      } else {
+      if (!res.success) {
         setError(res.error ?? "Error al lanzar campaña");
+        return;
       }
+
+      // Activate all draft segments
+      const campaignSegs = segments.filter((s) => s.campaignId === campaignId);
+      const activatedSegs = campaignSegs.map((s) =>
+        s.status === "draft" ? { ...s, status: "active" as SegmentStatus } : s
+      );
+      await updateCampaignWorkflow(campaignId, { segments: activatedSegs });
+
+      // Optimistic update
+      setCampaigns((prev) =>
+        prev.map((c) => c.id === campaignId ? { ...c, status: "active" } : c)
+      );
+      setSegments((prev) => [
+        ...prev.filter((s) => s.campaignId !== campaignId),
+        ...activatedSegs,
+      ]);
+      if (selected?.id === campaignId) {
+        setSelected((prev) => prev ? { ...prev, status: "active" } : prev);
+      }
+
+      showToast("Campaña lanzada. Los leads están siendo procesados.");
+      router.refresh();
     });
   }
 
@@ -380,6 +446,12 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
         <div className="flex items-center gap-3 bg-red-500 px-5 py-2 text-sm text-white">
           <span className="flex-1">{error}</span>
           <button onClick={() => setError("")} className="opacity-80 hover:opacity-100">✕</button>
+        </div>
+      )}
+      {toast && (
+        <div className="flex items-center gap-3 border-b border-green-200 bg-green-50 px-5 py-2 text-sm font-medium text-green-800">
+          <span className="flex-1">{toast}</span>
+          <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">✕</button>
         </div>
       )}
       {isPending && (

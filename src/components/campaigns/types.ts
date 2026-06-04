@@ -12,6 +12,8 @@ export type Campaign = {
   createdAt: string;
   segmentCount: number;
   totalLeads: number;
+  leadsTotal?: number;
+  leadsQueued?: number;
 };
 
 export type WizardData = {

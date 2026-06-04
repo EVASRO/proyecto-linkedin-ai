@@ -8,6 +8,7 @@ import {
   Sparkles, UserPlus, Users, XCircle, Zap,
 } from "lucide-react";
 import type { Campaign, CampaignType, Segment, SegmentStatus, Template } from "./types";
+import { CampaignStatusBanner } from "./CampaignStatusBanner";
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -553,6 +554,7 @@ interface CampaignDetailViewProps {
   onSegmentDelete: (segId: string) => void;
   onSegmentAdd: (seg: Segment) => void;
   onLaunch?: (campaignId: string) => void;
+  onSegmentStatusGuard?: () => boolean;
 }
 
 export function CampaignDetailView({
@@ -565,8 +567,25 @@ export function CampaignDetailView({
   onSegmentDelete,
   onSegmentAdd,
   onLaunch,
+  onSegmentStatusGuard,
 }: CampaignDetailViewProps) {
   const TypeIcon = TYPE_ICON[campaign.type];
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  function handleSegmentToggle(segId: string, current: SegmentStatus) {
+    if (campaign.status === "draft") {
+      showToast("Primero lanza la campaña para activar segmentos");
+      return;
+    }
+    if (onSegmentStatusGuard && !onSegmentStatusGuard()) return;
+    const next: SegmentStatus = current === "active" ? "paused" : "active";
+    onSegmentStatusChange(segId, next);
+  }
 
   // Summary totals
   const totals = segments.reduce(
@@ -631,8 +650,23 @@ export function CampaignDetailView({
         )}
       </div>
 
+      {/* ── Toast ── */}
+      {toast && (
+        <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs font-semibold text-amber-800">
+          <span className="flex-1">{toast}</span>
+          <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">✕</button>
+        </div>
+      )}
+
       {/* ── Scrollable body ── */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+        {/* Status banner */}
+        <CampaignStatusBanner
+          campaign={campaign}
+          leadsQueued={campaign.leadsQueued ?? 0}
+          leadsTotal={campaign.leadsTotal ?? totals.leads}
+        />
+
         {/* Summary row */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <div className="rounded-xl border border-zinc-100 bg-white p-3.5 shadow-sm">
@@ -712,7 +746,13 @@ export function CampaignDetailView({
                 key={seg.id}
                 segment={seg}
                 onOpenFlow={(s) => onOpenFlow(campaign, s)}
-                onStatusChange={onSegmentStatusChange}
+                onStatusChange={(id, status) => {
+                  if (campaign.status === "draft" && (status === "active" || status === "paused")) {
+                    handleSegmentToggle(id, seg.status);
+                  } else {
+                    onSegmentStatusChange(id, status);
+                  }
+                }}
                 onRename={onSegmentRename}
                 onDelete={onSegmentDelete}
               />
