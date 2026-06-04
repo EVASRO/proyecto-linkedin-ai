@@ -94,6 +94,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!wsId) { sendResponse({ ok: false, error: 'No se pudo obtener workspace. Cierra sesión y vuelve a entrar.' }); break; }
         await chrome.storage.local.set({ engine_running: true });
         await sendHeartbeat();
+        await syncLinkedInAccount();
         sendResponse({ ok: true });
         break;
       }
@@ -108,6 +109,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await handleActionDone(msg.taskId, msg.result);
         sendResponse({ ok: true });
         break;
+
+      case 'LINKEDIN_PROFILE_DETECTED': {
+        await chrome.storage.local.set({ linkedin_profile: msg.profile });
+        await syncLinkedInAccount();
+        sendResponse({ ok: true });
+        break;
+      }
 
       case 'PROFILE_EXTRACTED':
         await handleProfileExtracted(msg.data);
@@ -326,10 +334,42 @@ async function executeTask(task) {
   }
 }
 
+// ── LinkedIn account sync ─────────────────────────────────────────────────────
+async function syncLinkedInAccount() {
+  const wsId  = await getWorkspaceId();
+  const token = await getStoredToken();
+  if (!wsId || !token) return;
+
+  const { linkedin_profile } = await chrome.storage.local.get('linkedin_profile');
+  if (!linkedin_profile?.name) return;
+
+  try {
+    await supabaseFetch('linkedin_accounts?on_conflict=workspace_id', {
+      method:  'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        workspace_id:            wsId,
+        name:                    linkedin_profile.name,
+        profile_url:             linkedin_profile.profile_url ?? '',
+        headline:                linkedin_profile.headline    ?? '',
+        avatar_url:              linkedin_profile.avatar_url  ?? '',
+        status:                  'active',
+        connection_mode:         'extension',
+        daily_connection_limit:  20,
+        daily_message_limit:     30,
+      }),
+    });
+    console.log('[NexusAI] LinkedIn account synced:', linkedin_profile.name);
+  } catch (_) {}
+}
+
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
 async function sendHeartbeat() {
   const wsId = await getWorkspaceId();
   if (!wsId) return;
+
+  // Sync LinkedIn account on every heartbeat (idempotent upsert)
+  await syncLinkedInAccount();
 
   const { engine_running, daily_stats, next_task_at } =
     await chrome.storage.local.get(['engine_running', 'daily_stats', 'next_task_at']);

@@ -1,16 +1,22 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { supabase as adminSupabase } from "@/lib/supabase";
 import Anthropic from "@anthropic-ai/sdk";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Result<T = undefined> = T extends undefined
   ? { success: boolean; error?: string }
   : { success: boolean; error?: string; data?: T };
 
+export type AgentType = "connection" | "followup" | "autopilot" | "qualifier";
+
 export type AgentRow = {
   id: string;
   name: string;
   emoji: string;
+  type: AgentType;
+  system_prompt: string;
   tone: string;
   objective: string;
   icp: Record<string, unknown>;
@@ -54,7 +60,9 @@ function toAgentRow(a: Record<string, unknown>): AgentRow {
   return {
     id:                String(a.id),
     name:              String(a.name ?? "Agente"),
-    emoji:             String(a.avatar_emoji ?? "🤖"),
+    emoji:             String(a.avatar_emoji ?? a.emoji ?? "🤖"),
+    type:              (a.type as AgentType) ?? "connection",
+    system_prompt:     String(a.system_prompt ?? ""),
     tone:              String(a.tone ?? "consultivo"),
     objective:         String(a.objective ?? "agendar_reunion"),
     icp: {
@@ -208,107 +216,128 @@ export async function assignAgentToConversation(
   }
 }
 
+// ── Core autopilot logic (sin sesión, usa service role) ───────────────────────
+
+async function runAutopilotCore(
+  supabase: SupabaseClient,
+  workspaceId: string
+): Promise<{ processed: number }> {
+  const { data: convRows, error: convErr } = await supabase
+    .from("conversations")
+    .select(`
+      id, lead_id,
+      leads!inner ( full_name, linkedin_url ),
+      agents!assigned_agent_id (
+        name, tone, objective, value_proposition, objections
+      )
+    `)
+    .eq("workspace_id", workspaceId)
+    .eq("autopilot_active", true)
+    .eq("status", "ai_handling")
+    .not("assigned_agent_id", "is", null);
+
+  if (convErr) throw new Error(convErr.message);
+
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  let processed = 0;
+
+  for (const conv of convRows ?? []) {
+    const lead  = conv.leads  as unknown as Record<string, unknown>;
+    const agent = conv.agents as unknown as Record<string, unknown> | null;
+    if (!agent) continue;
+
+    const { data: msgRows } = await supabase
+      .from("messages")
+      .select("sender, message_text, timestamp")
+      .eq("conversation_id", conv.id)
+      .order("timestamp", { ascending: false })
+      .limit(6);
+
+    const msgs = (msgRows ?? []).reverse();
+    if (msgs.length === 0) continue;
+    const lastMsg = msgs[msgs.length - 1];
+    if (lastMsg.sender !== "prospect") continue;
+
+    const history: Anthropic.MessageParam[] = [];
+    for (const m of msgs) {
+      const role: "user" | "assistant" =
+        m.sender === "prospect" ? "user" : "assistant";
+      const last = history[history.length - 1];
+      if (last && last.role === role) {
+        last.content = `${last.content}\n${m.message_text}`;
+      } else {
+        history.push({ role, content: String(m.message_text ?? "") });
+      }
+    }
+    if (history.length === 0 || history[0].role !== "user") continue;
+
+    const objList = (agent.objections as { question: string; answer: string }[] ?? [])
+      .map((o) => `- "${o.question}" → "${o.answer}"`)
+      .join("\n");
+
+    const response = await client.messages.create({
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 150,
+      system: [
+        `Eres ${agent.name}, un agente de ventas con tono ${agent.tone}.`,
+        `Objetivo: ${agent.objective}.`,
+        `Propuesta de valor: ${agent.value_proposition}.`,
+        objList ? `Objeciones entrenadas:\n${objList}` : "",
+        "Responde en máx 2 oraciones. Solo devuelve el texto de la respuesta, sin explicaciones.",
+      ].filter(Boolean).join("\n"),
+      messages: history,
+    });
+
+    const replyText = (response.content[0] as Anthropic.TextBlock).text.trim();
+
+    await supabase.from("messages").insert({
+      workspace_id:    workspaceId,
+      lead_id:         conv.lead_id,
+      conversation_id: conv.id,
+      sender:          "ai",
+      message_text:    replyText,
+      status:          "sending",
+      timestamp:       new Date().toISOString(),
+    });
+
+    await supabase.from("engine_queue").insert({
+      workspace_id: workspaceId,
+      lead_id:      conv.lead_id,
+      task_type:    "message",
+      status:       "pending",
+      priority:     1,
+      payload: {
+        message_text: replyText,
+        profile_url:  lead.linkedin_url ?? "",
+        lead_id:      conv.lead_id,
+      },
+    });
+
+    processed++;
+  }
+
+  return { processed };
+}
+
+// ── runAutopilotForWorkspace: llamable sin sesión (webhook/cron) ──────────────
+
+export async function runAutopilotForWorkspace(
+  workspaceId: string
+): Promise<Result<{ processed: number }>> {
+  try {
+    const { processed } = await runAutopilotCore(adminSupabase, workspaceId);
+    return { success: true, data: { processed } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
 // ── processAutopilotConversations ─────────────────────────────────────────────
 
 export async function processAutopilotConversations(): Promise<Result<{ processed: number }>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
-
-    const { data: convRows, error: convErr } = await supabase
-      .from("conversations")
-      .select(`
-        id, lead_id,
-        leads!inner ( full_name, linkedin_url ),
-        agents!assigned_agent_id (
-          name, tone, objective, value_proposition, objections
-        )
-      `)
-      .eq("workspace_id", workspaceId)
-      .eq("autopilot_active", true)
-      .eq("status", "ai_handling")
-      .not("assigned_agent_id", "is", null);
-
-    if (convErr) return { success: false, error: convErr.message };
-
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    let processed = 0;
-
-    for (const conv of convRows ?? []) {
-      const lead  = conv.leads  as unknown as Record<string, unknown>;
-      const agent = conv.agents as unknown as Record<string, unknown> | null;
-      if (!agent) continue;
-
-      const { data: msgRows } = await supabase
-        .from("messages")
-        .select("sender, message_text, timestamp")
-        .eq("conversation_id", conv.id)
-        .order("timestamp", { ascending: false })
-        .limit(6);
-
-      const msgs = (msgRows ?? []).reverse();
-      if (msgs.length === 0) continue;
-      const lastMsg = msgs[msgs.length - 1];
-      if (lastMsg.sender !== "prospect") continue; // only reply to prospect messages
-
-      // Build alternating message history for Anthropic
-      const history: Anthropic.MessageParam[] = [];
-      for (const m of msgs) {
-        const role: "user" | "assistant" =
-          m.sender === "prospect" ? "user" : "assistant";
-        const last = history[history.length - 1];
-        if (last && last.role === role) {
-          last.content = `${last.content}\n${m.message_text}`;
-        } else {
-          history.push({ role, content: String(m.message_text ?? "") });
-        }
-      }
-      if (history.length === 0 || history[0].role !== "user") continue;
-
-      const objList = (agent.objections as { question: string; answer: string }[] ?? [])
-        .map((o) => `- "${o.question}" → "${o.answer}"`)
-        .join("\n");
-
-      const response = await client.messages.create({
-        model:      "claude-haiku-4-5-20251001",
-        max_tokens: 150,
-        system: [
-          `Eres ${agent.name}, un agente de ventas con tono ${agent.tone}.`,
-          `Objetivo: ${agent.objective}.`,
-          `Propuesta de valor: ${agent.value_proposition}.`,
-          objList ? `Objeciones entrenadas:\n${objList}` : "",
-          "Responde en máx 2 oraciones. Solo devuelve el texto de la respuesta, sin explicaciones.",
-        ].filter(Boolean).join("\n"),
-        messages: history,
-      });
-
-      const replyText = (response.content[0] as Anthropic.TextBlock).text.trim();
-
-      await supabase.from("messages").insert({
-        workspace_id:    workspaceId,
-        lead_id:         conv.lead_id,
-        conversation_id: conv.id,
-        sender:          "ai",
-        message_text:    replyText,
-        status:          "sending",
-        timestamp:       new Date().toISOString(),
-      });
-
-      await supabase.from("engine_queue").insert({
-        workspace_id: workspaceId,
-        lead_id:      conv.lead_id,
-        task_type:    "message",
-        status:       "pending",
-        priority:     1,
-        payload: {
-          message_text: replyText,
-          profile_url:  lead.linkedin_url ?? "",
-          lead_id:      conv.lead_id,
-        },
-      });
-
-      processed++;
-    }
-
+    const { processed } = await runAutopilotCore(supabase, workspaceId);
     return { success: true, data: { processed } };
   } catch (err) {
     return { success: false, error: String(err) };

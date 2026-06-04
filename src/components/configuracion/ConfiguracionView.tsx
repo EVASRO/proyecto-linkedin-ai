@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import {
   AlertTriangle, Check, CheckCircle2, ChevronRight,
   Clock, Copy, ExternalLink, Globe, HelpCircle, Key, Link2,
   Mail, Megaphone, Monitor, Plus, RefreshCw, Shield, Sliders, Trash2,
   Webhook, X, Zap,
 } from "lucide-react";
+import {
+  saveSettings, upsertWebhook as upsertWebhookAction,
+  deleteWebhook as deleteWebhookAction, toggleWebhookActive as toggleWebhookActiveAction,
+  type WorkspaceSettingsRow, type WebhookRow,
+} from "@/app/dashboard/configuracion/actions";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +25,13 @@ interface WebhookItem {
 }
 
 type Tab = "limites" | "tokens" | "webhooks" | "integraciones";
+
+type Toast = { type: "success" | "error"; msg: string } | null;
+
+interface ConfiguracionViewProps {
+  initialSettings: WorkspaceSettingsRow | null;
+  initialWebhooks: WebhookRow[];
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -143,47 +155,70 @@ const PLANS = [
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 
-export function ConfiguracionView() {
-  const [activeTab, setActiveTab] = useState<Tab>("limites");
-  const [saved, setSaved] = useState(false);
+function mapWebhook(row: WebhookRow): WebhookItem {
+  return {
+    id:       row.id,
+    name:     row.name,
+    url:      row.url,
+    events:   row.events ?? [],
+    isActive: row.is_active,
+    secret:   row.secret_token ?? "",
+  };
+}
 
-  // Límites state
-  const [dailyConnections, setDailyConnections]   = useState(30);
-  const [dailyMessages, setDailyMessages]         = useState(50);
-  const [dailyInmails, setDailyInmails]           = useState(10);
-  const [dailyLikes, setDailyLikes]               = useState(30);
-  const [delayMin, setDelayMin]                   = useState(180);
-  const [delayMax, setDelayMax]                   = useState(480);
-  const [ultraSafe, setUltraSafe]                 = useState(true);
-  const [pauseWeekends, setPauseWeekends]         = useState(true);
-  const [warmupEnabled, setWarmupEnabled]         = useState(false);
-  const [activeHoursStart, setActiveHoursStart]   = useState(8);
-  const [activeHoursEnd, setActiveHoursEnd]       = useState(20);
+export function ConfiguracionView({ initialSettings, initialWebhooks }: ConfiguracionViewProps) {
+  const [activeTab, setActiveTab]     = useState<Tab>("limites");
+  const [toast, setToast]             = useState<Toast>(null);
+  const [isPending, startTransition]  = useTransition();
+
+  function showToast(type: "success" | "error", msg: string) {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  // Límites state — seeded from Supabase
+  const s = initialSettings;
+  const [dailyConnections, setDailyConnections] = useState(s?.daily_connections_limit ?? 30);
+  const [dailyMessages, setDailyMessages]       = useState(s?.daily_messages_limit    ?? 50);
+  const [dailyInmails, setDailyInmails]         = useState(10);
+  const [dailyLikes, setDailyLikes]             = useState(30);
+  const [delayMin, setDelayMin]                 = useState(180);
+  const [delayMax, setDelayMax]                 = useState(480);
+  const [ultraSafe, setUltraSafe]               = useState(s?.ultra_safe_mode      ?? true);
+  const [pauseWeekends, setPauseWeekends]       = useState(s?.pause_on_weekends    ?? true);
+  const [warmupEnabled, setWarmupEnabled]       = useState(false);
+  const [activeHoursStart, setActiveHoursStart] = useState(s?.active_hours_start   ?? 8);
+  const [activeHoursEnd, setActiveHoursEnd]     = useState(s?.active_hours_end     ?? 20);
 
   // LinkedIn connection mode state
-  const [linkedinMode, setLinkedinMode] = useState<"extension" | "direct">("extension");
+  const [linkedinMode, setLinkedinMode]         = useState<"extension" | "direct">("extension");
   const [linkedinConnected, setLinkedinConnected] = useState(false);
-  const [liAtCookie, setLiAtCookie]               = useState("");
-  const [showCookieInput, setShowCookieInput]     = useState(false);
+  const [liAtCookie, setLiAtCookie]             = useState("");
+  const [showCookieInput, setShowCookieInput]   = useState(false);
 
-  // Webhooks state
-  const [webhooks, setWebhooks] = useState<WebhookItem[]>([
-    {
-      id: "wh1", name: "CRM Interno", isActive: true, secret: "sk_wh_abc123",
-      url: "https://hooks.ejemplo.com/nexus/leads",
-      events: ["lead.created", "meeting.booked"],
-    },
-  ]);
+  // Webhooks state — seeded from Supabase
+  const [webhooks, setWebhooks]       = useState<WebhookItem[]>(() => initialWebhooks.map(mapWebhook));
   const [showWebhookForm, setShowWebhookForm] = useState(false);
-  const [newWebhook, setNewWebhook] = useState({ name: "", url: "", events: [] as string[] });
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [newWebhook, setNewWebhook]   = useState({ name: "", url: "", events: [] as string[] });
+  const [copiedId, setCopiedId]       = useState<string | null>(null);
 
   // Integrations
   const [connectedApps, setConnectedApps] = useState<string[]>([]);
 
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
   function handleSave() {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    startTransition(async () => {
+      const res = await saveSettings({
+        daily_connections_limit: dailyConnections,
+        daily_messages_limit:    dailyMessages,
+        ultra_safe_mode:         ultraSafe,
+        pause_on_weekends:       pauseWeekends,
+        active_hours_start:      activeHoursStart,
+        active_hours_end:        activeHoursEnd,
+      });
+      showToast(res.success ? "success" : "error", res.success ? "Configuración guardada" : (res.error ?? "Error al guardar"));
+    });
   }
 
   function handleCopy(text: string, id: string) {
@@ -201,35 +236,50 @@ export function ConfiguracionView() {
 
   function addWebhook() {
     if (!newWebhook.name.trim() || !newWebhook.url.trim() || !newWebhook.events.length) return;
-    setWebhooks((p) => [
-      ...p,
-      {
-        id: `wh_${Date.now()}`,
-        name: newWebhook.name,
-        url: newWebhook.url,
-        events: newWebhook.events,
-        isActive: true,
-        secret: `sk_wh_${Math.random().toString(36).slice(2, 10)}`,
-      },
-    ]);
-    setNewWebhook({ name: "", url: "", events: [] });
-    setShowWebhookForm(false);
+    startTransition(async () => {
+      const res = await upsertWebhookAction({
+        name:      newWebhook.name,
+        url:       newWebhook.url,
+        events:    newWebhook.events,
+        is_active: true,
+      });
+      if (res.success && res.data) {
+        setWebhooks((p) => [...p, mapWebhook(res.data!)]);
+        setNewWebhook({ name: "", url: "", events: [] });
+        setShowWebhookForm(false);
+        showToast("success", "Webhook creado");
+      } else {
+        showToast("error", res.error ?? "Error al crear webhook");
+      }
+    });
   }
 
   function removeWebhook(id: string) {
     setWebhooks((p) => p.filter((w) => w.id !== id));
+    startTransition(async () => {
+      const res = await deleteWebhookAction(id);
+      if (!res.success) {
+        setWebhooks((p) => [...p]); // revert handled by router.refresh not needed — optimistic is fine
+        showToast("error", res.error ?? "Error al eliminar webhook");
+      } else {
+        showToast("success", "Webhook eliminado");
+      }
+    });
   }
 
   function toggleWebhookActive(id: string) {
     setWebhooks((p) => p.map((w) => w.id === id ? { ...w, isActive: !w.isActive } : w));
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) return;
+    startTransition(async () => {
+      await toggleWebhookActiveAction(id, !wh.isActive);
+    });
   }
 
   function connectLinkedin() {
-    if (linkedinMode === "extension") {
-      if (liAtCookie.trim().length > 20) {
-        setLinkedinConnected(true);
-        setShowCookieInput(false);
-      }
+    if (linkedinMode === "extension" && liAtCookie.trim().length > 20) {
+      setLinkedinConnected(true);
+      setShowCookieInput(false);
     }
   }
 
@@ -252,15 +302,23 @@ export function ConfiguracionView() {
           <p className="text-xs text-zinc-400">Límites anti-ban, conexiones, tokens y webhooks del workspace</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Toast */}
+          {toast && (
+            <span className={[
+              "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
+              toast.type === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
+            ].join(" ")}>
+              {toast.type === "success" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+              {toast.msg}
+            </span>
+          )}
           <button
             onClick={handleSave}
-            className={[
-              "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all",
-              saved ? "bg-green-500 text-white" : "bg-zinc-900 text-white hover:bg-zinc-700",
-            ].join(" ")}
+            disabled={isPending}
+            className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-60 transition-all"
           >
-            {saved ? <CheckCircle2 className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-            {saved ? "Guardado" : "Guardar cambios"}
+            {isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {isPending ? "Guardando…" : "Guardar cambios"}
           </button>
         </div>
       </div>

@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
-  AlertOctagon, Clock, Link2, Mail, Pause, Play, Plus, Sparkles,
+  AlertOctagon, Archive, Check, Clock, Link2, Loader2, Mail, MoreVertical,
+  Pause, Play, Plus, Sparkles, Trash2, X,
 } from "lucide-react";
-import type { Campaign, CampaignType, CampaignStatus } from "./types";
+import type { Campaign, CampaignStatus, CampaignType } from "./types";
+import {
+  deleteCampaign, archiveCampaign, updateCampaignStatus,
+} from "@/app/dashboard/campanas/actions";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -14,30 +19,88 @@ const TYPE_META: Record<CampaignType, { icon: React.ElementType; color: string; 
   email:           { icon: Mail,     color: "text-sky-700",    bg: "bg-sky-50",    label: "Email"           },
 };
 
-const STATUS_META: Record<CampaignStatus, { label: string; dot: string; text: string }> = {
-  active:    { label: "Activa",     dot: "bg-green-400", text: "text-green-700"  },
-  draft:     { label: "Borrador",   dot: "bg-zinc-400",  text: "text-zinc-600"   },
-  paused:    { label: "Pausada",    dot: "bg-amber-400", text: "text-amber-700"  },
-  completed: { label: "Completada", dot: "bg-blue-400",  text: "text-blue-700"   },
+const STATUS_META: Record<string, { label: string; dot: string; text: string }> = {
+  active:    { label: "Activa",     dot: "bg-green-400",  text: "text-green-700"  },
+  draft:     { label: "Borrador",   dot: "bg-zinc-400",   text: "text-zinc-600"   },
+  paused:    { label: "Pausada",    dot: "bg-amber-400",  text: "text-amber-700"  },
+  completed: { label: "Completada", dot: "bg-blue-400",   text: "text-blue-700"   },
+  archived:  { label: "Archivada",  dot: "bg-zinc-300",   text: "text-zinc-400"   },
 };
 
 function fmtDate(d: string): string {
   return new Date(d).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// ── ConfirmModal ──────────────────────────────────────────────────────────────
+
+interface ConfirmModalProps {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  confirmCls: string;
+  loading: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmModal({ title, body, confirmLabel, confirmCls, loading, onConfirm, onCancel }: ConfirmModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
+          <h3 className="text-sm font-bold text-zinc-900">{title}</h3>
+          <button onClick={onCancel} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-sm text-zinc-600">{body}</p>
+        </div>
+        <div className="flex gap-3 border-t border-zinc-100 bg-zinc-50/60 px-5 py-4">
+          <button onClick={onCancel} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50">
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold text-white disabled:opacity-60 ${confirmCls}`}
+          >
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Campaign Card ─────────────────────────────────────────────────────────────
 
-function CampaignCard({
-  campaign, onOpen, onToggleStatus,
-}: {
+interface CampaignCardProps {
   campaign: Campaign;
   onOpen: (c: Campaign) => void;
+  onDelete: (id: string, name: string) => void;
+  onArchive: (id: string, name: string) => void;
   onToggleStatus: (id: string, current: CampaignStatus) => void;
-}) {
-  const type   = TYPE_META[campaign.type];
-  const status = STATUS_META[campaign.status];
-  const Icon   = type.icon;
+}
+
+function CampaignCard({ campaign, onOpen, onDelete, onArchive, onToggleStatus }: CampaignCardProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const type     = TYPE_META[campaign.type] ?? TYPE_META["linkedin"];
+  const status   = STATUS_META[campaign.status] ?? STATUS_META["draft"];
+  const Icon     = type.icon;
   const isActive = campaign.status === "active";
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handler(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   return (
     <div className="group relative rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-all hover:border-zinc-300 hover:shadow-md">
@@ -45,22 +108,18 @@ function CampaignCard({
         <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${type.bg}`}>
           <Icon className={`h-5 w-5 ${type.color}`} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${status.text} bg-zinc-50`}>
             <span className={`h-1.5 w-1.5 rounded-full ${status.dot} ${isActive ? "animate-pulse" : ""}`} />
             {status.label}
           </span>
-          {/* Quick toggle active/paused */}
+
+          {/* Quick toggle */}
           {(campaign.status === "active" || campaign.status === "paused") && (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleStatus(campaign.id, campaign.status); }}
-              className={[
-                "rounded-lg p-1.5 transition-colors",
-                isActive
-                  ? "text-amber-500 hover:bg-amber-50"
-                  : "text-green-600 hover:bg-green-50",
-              ].join(" ")}
-              title={isActive ? "Pausar campaña" : "Activar campaña"}
+              className={["rounded-lg p-1.5 transition-colors", isActive ? "text-amber-500 hover:bg-amber-50" : "text-green-600 hover:bg-green-50"].join(" ")}
+              title={isActive ? "Pausar" : "Activar"}
             >
               {isActive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             </button>
@@ -69,11 +128,55 @@ function CampaignCard({
             <button
               onClick={(e) => { e.stopPropagation(); onToggleStatus(campaign.id, "draft"); }}
               className="rounded-lg bg-green-50 px-2.5 py-1 text-[11px] font-bold text-green-700 hover:bg-green-100 transition-colors"
-              title="Activar campaña"
             >
               Activar
             </button>
           )}
+
+          {/* ⋮ Menu */}
+          <div ref={menuRef} className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+            >
+              <MoreVertical className="h-3.5 w-3.5" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onOpen(campaign); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                >
+                  <Play className="h-3.5 w-3.5 text-zinc-400" />
+                  Editar flujo
+                </button>
+                {(campaign.status === "active" || campaign.status === "paused") && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onToggleStatus(campaign.id, campaign.status); }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                  >
+                    {isActive ? <Pause className="h-3.5 w-3.5 text-zinc-400" /> : <Play className="h-3.5 w-3.5 text-zinc-400" />}
+                    {isActive ? "Pausar" : "Activar"}
+                  </button>
+                )}
+                <div className="my-1 h-px bg-zinc-100" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onArchive(campaign.id, campaign.name); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-amber-50"
+                >
+                  <Archive className="h-3.5 w-3.5 text-zinc-400" />
+                  Archivar
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(campaign.id, campaign.name); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Eliminar
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -105,6 +208,24 @@ function CampaignCard({
   );
 }
 
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+type ToastState = { type: "success" | "error"; msg: string } | null;
+
+function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void }) {
+  if (!toast) return null;
+  return (
+    <div className={[
+      "fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-xl border",
+      toast.type === "success" ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-800",
+    ].join(" ")}>
+      {toast.type === "success" ? <Check className="h-4 w-4 text-green-500" /> : <X className="h-4 w-4 text-red-500" />}
+      {toast.msg}
+      <button onClick={onDismiss} className="ml-2 opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
+    </div>
+  );
+}
+
 // ── MAIN LIST VIEW ────────────────────────────────────────────────────────────
 
 interface CampaignListViewProps {
@@ -114,32 +235,75 @@ interface CampaignListViewProps {
   onCampaignsChange: (campaigns: Campaign[]) => void;
 }
 
-const STATUS_ORDER: CampaignStatus[] = ["active", "paused", "draft", "completed"];
+type ConfirmState = { open: boolean; action: "delete" | "archive"; id: string; name: string };
 
-export function CampaignListView({
-  campaigns, onOpen, onNew, onCampaignsChange,
-}: CampaignListViewProps) {
+const EMPTY_CONFIRM: ConfirmState = { open: false, action: "delete", id: "", name: "" };
+
+const STATUS_ORDER = ["active", "paused", "draft", "completed", "archived"];
+
+export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }: CampaignListViewProps) {
+  const router = useRouter();
+  const [isPending, startTransition]  = useTransition();
   const [emergencyBrakeUsed, setEmergencyBrakeUsed] = useState(false);
   const [showBrakeConfirm, setShowBrakeConfirm]     = useState(false);
+  const [confirm, setConfirm]         = useState<ConfirmState>(EMPTY_CONFIRM);
+  const [toast, setToast]             = useState<ToastState>(null);
 
   const sorted      = [...campaigns].sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
   const activeCount = campaigns.filter((c) => c.status === "active").length;
   const totalLeads  = campaigns.reduce((s, c) => s + c.totalLeads, 0);
 
+  function showToast(type: "success" | "error", msg: string) {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3500);
+  }
+
   function toggleCampaignStatus(id: string, current: CampaignStatus) {
-    onCampaignsChange(
-      campaigns.map((c) =>
-        c.id === id
-          ? { ...c, status: current === "active" ? "paused" : "active" }
-          : c
-      )
-    );
+    const next: CampaignStatus = current === "active" ? "paused" : "active";
+    onCampaignsChange(campaigns.map((c) => c.id === id ? { ...c, status: next } : c));
+    startTransition(async () => {
+      const res = await updateCampaignStatus(id, next);
+      if (!res.success) {
+        onCampaignsChange(campaigns.map((c) => c.id === id ? { ...c, status: current } : c));
+        showToast("error", res.error ?? "Error al cambiar estado");
+      } else {
+        showToast("success", next === "active" ? "Campaña activada" : "Campaña pausada");
+        router.refresh();
+      }
+    });
   }
 
   function activateEmergencyBrake() {
     onCampaignsChange(campaigns.map((c) => c.status === "active" ? { ...c, status: "paused" } : c));
     setEmergencyBrakeUsed(true);
     setShowBrakeConfirm(false);
+  }
+
+  function handleConfirmAction() {
+    const { action, id, name } = confirm;
+    setConfirm(EMPTY_CONFIRM);
+
+    startTransition(async () => {
+      if (action === "delete") {
+        const res = await deleteCampaign(id);
+        if (res.success) {
+          onCampaignsChange(campaigns.filter((c) => c.id !== id));
+          showToast("success", `Campaña "${name}" eliminada`);
+          router.refresh();
+        } else {
+          showToast("error", res.error ?? "Error al eliminar");
+        }
+      } else {
+        const res = await archiveCampaign(id);
+        if (res.success) {
+          onCampaignsChange(campaigns.filter((c) => c.id !== id));
+          showToast("success", `Campaña "${name}" archivada`);
+          router.refresh();
+        } else {
+          showToast("error", res.error ?? "Error al archivar");
+        }
+      }
+    });
   }
 
   return (
@@ -156,7 +320,6 @@ export function CampaignListView({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* FRENO DE EMERGENCIA */}
           {activeCount > 0 && !emergencyBrakeUsed && (
             <div className="relative">
               {showBrakeConfirm ? (
@@ -164,18 +327,8 @@ export function CampaignListView({
                   <p className="text-xs font-medium text-red-700">
                     ¿Pausar <strong>{activeCount}</strong> campaña{activeCount !== 1 ? "s" : ""} activa{activeCount !== 1 ? "s" : ""}?
                   </p>
-                  <button
-                    onClick={activateEmergencyBrake}
-                    className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-red-700"
-                  >
-                    Confirmar
-                  </button>
-                  <button
-                    onClick={() => setShowBrakeConfirm(false)}
-                    className="text-[11px] font-medium text-red-500 hover:text-red-700"
-                  >
-                    Cancelar
-                  </button>
+                  <button onClick={activateEmergencyBrake} className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-red-700">Confirmar</button>
+                  <button onClick={() => setShowBrakeConfirm(false)} className="text-[11px] font-medium text-red-500 hover:text-red-700">Cancelar</button>
                 </div>
               ) : (
                 <button
@@ -215,12 +368,8 @@ export function CampaignListView({
             </div>
             <p className="text-sm font-semibold text-zinc-700">Sin campañas todavía</p>
             <p className="mt-1 text-xs text-zinc-400">Crea tu primera campaña para empezar a prospectar.</p>
-            <button
-              onClick={onNew}
-              className="mt-4 flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700"
-            >
-              <Plus className="h-4 w-4" />
-              Crear campaña
+            <button onClick={onNew} className="mt-4 flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700">
+              <Plus className="h-4 w-4" /> Crear campaña
             </button>
           </div>
         ) : (
@@ -231,6 +380,8 @@ export function CampaignListView({
                 campaign={c}
                 onOpen={onOpen}
                 onToggleStatus={toggleCampaignStatus}
+                onDelete={(id, name) => setConfirm({ open: true, action: "delete", id, name })}
+                onArchive={(id, name) => setConfirm({ open: true, action: "archive", id, name })}
               />
             ))}
             <button
@@ -245,6 +396,22 @@ export function CampaignListView({
           </div>
         )}
       </div>
+
+      {confirm.open && (
+        <ConfirmModal
+          title={confirm.action === "delete" ? "Eliminar campaña" : "Archivar campaña"}
+          body={confirm.action === "delete"
+            ? `¿Eliminar campaña "${confirm.name}"? Esta acción no se puede deshacer.`
+            : `¿Archivar campaña "${confirm.name}"? Puedes reactivarla después.`}
+          confirmLabel={confirm.action === "delete" ? "Eliminar" : "Archivar"}
+          confirmCls={confirm.action === "delete" ? "bg-red-600 hover:bg-red-700" : "bg-amber-500 hover:bg-amber-600"}
+          loading={isPending}
+          onConfirm={handleConfirmAction}
+          onCancel={() => setConfirm(EMPTY_CONFIRM)}
+        />
+      )}
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }

@@ -85,6 +85,30 @@ export async function getTeamData(): Promise<Result<{
 export async function inviteMember(data: { email: string; role: string }): Promise<Result> {
   try {
     const { supabase, workspaceId, userId } = await getAuthContext();
+
+    // Check: email already an active member of the workspace
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("email", data.email)
+      .maybeSingle();
+
+    if (existing) return { success: false, error: "Este email ya es miembro del workspace" };
+
+    // Check: pending invitation already exists
+    const { data: existingInv } = await supabase
+      .from("team_invitations")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("email", data.email)
+      .eq("status", "pending")
+      .maybeSingle();
+
+    if (existingInv) return { success: false, error: "Ya existe una invitación pendiente para este email" };
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
     const { error } = await supabase
       .from("team_invitations")
       .insert({
@@ -92,7 +116,10 @@ export async function inviteMember(data: { email: string; role: string }): Promi
         invited_by:   userId,
         email:        data.email,
         role:         data.role,
+        status:       "pending",
+        expires_at:   expiresAt,
       });
+
     if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err) {
@@ -107,6 +134,22 @@ export async function revokeInvitation(id: string): Promise<Result> {
       .from("team_invitations")
       .update({ status: "revoked" })
       .eq("id", id)
+      .eq("workspace_id", workspaceId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+export async function removeMember(memberId: string): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    // Remove from workspace by clearing workspace_id on their profile
+    const { error } = await supabase
+      .from("profiles")
+      .update({ workspace_id: null })
+      .eq("id", memberId)
       .eq("workspace_id", workspaceId);
     if (error) return { success: false, error: error.message };
     return { success: true };

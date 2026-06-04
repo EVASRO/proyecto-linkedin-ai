@@ -121,24 +121,46 @@ export async function createCampaign(data: {
 
 export async function updateCampaignWorkflow(
   id: string,
-  workflow_json: Record<string, unknown>
+  workflowData: Record<string, unknown>
 ): Promise<Result> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
 
-    // Derive segment_count and total_leads from embedded segments
-    const segments = Array.isArray(workflow_json.segments)
-      ? (workflow_json.segments as Array<{ metrics?: { totalLeads?: number } }>)
+    // Read current workflow to merge — prevents FlowBuilder from wiping segments
+    const { data: current } = await supabase
+      .from("campaigns")
+      .select("workflow_json, total_leads")
+      .eq("id", id)
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    const existingWf = (current?.workflow_json ?? {}) as Record<string, unknown>;
+
+    // Merge: spread existing first, then new data on top.
+    // Segments are preserved from whichever source has them.
+    const merged: Record<string, unknown> = {
+      ...existingWf,
+      ...workflowData,
+      segments: workflowData.segments ?? existingWf.segments ?? [],
+    };
+
+    const segments = Array.isArray(merged.segments)
+      ? (merged.segments as Array<{ metrics?: { totalLeads?: number } }>)
       : [];
-    const segment_count = segments.length;
-    const total_leads   = segments.reduce(
-      (sum, s) => sum + (s.metrics?.totalLeads ?? 0),
-      0
-    );
+
+    const segment_count = segments.length > 0
+      ? segments.length
+      : (typeof merged.segment_count === "number" ? merged.segment_count : 0);
+
+    const total_leads = segments.length > 0
+      ? segments.reduce((sum, s) => sum + (s.metrics?.totalLeads ?? 0), 0)
+      : (typeof merged.total_leads === "number"
+          ? merged.total_leads
+          : (current?.total_leads ?? 0));
 
     const { error } = await supabase
       .from("campaigns")
-      .update({ workflow_json, segment_count, total_leads })
+      .update({ workflow_json: merged, segment_count, total_leads })
       .eq("id", id)
       .eq("workspace_id", workspaceId);
 
@@ -170,7 +192,24 @@ export async function updateCampaignStatus(
   }
 }
 
-// ── 5. deleteCampaign ─────────────────────────────────────────────────────────
+// ── 5. archiveCampaign ───────────────────────────────────────────────────────
+
+export async function archiveCampaign(id: string): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { error } = await supabase
+      .from("campaigns")
+      .update({ status: "archived" })
+      .eq("id", id)
+      .eq("workspace_id", workspaceId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── 6. deleteCampaign ─────────────────────────────────────────────────────────
 
 export async function deleteCampaign(id: string): Promise<Result> {
   try {

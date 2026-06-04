@@ -230,6 +230,42 @@
     .btn-save-settings:hover { background: rgba(99, 102, 241, 0.25); }
     .saved-badge { font-size: 10px; color: #22c55e; text-align: center; margin-top: 6px; display: none; }
 
+    /* ── Login panel ── */
+    .login-panel {
+      padding: 20px 16px;
+    }
+    .login-panel h3 { font-size: 13px; font-weight: 700; color: #a5b4fc; margin-bottom: 14px; }
+    .login-panel input {
+      width: 100%; padding: 10px 12px; margin-bottom: 10px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 9px; color: #f1f5f9; font-size: 13px;
+      outline: none;
+    }
+    .login-panel input:focus { border-color: rgba(99,102,241,0.6); }
+    .login-panel input::placeholder { color: #475569; }
+    .btn-login {
+      width: 100%; padding: 10px;
+      background: linear-gradient(135deg, #6366f1, #7c3aed);
+      border: none; border-radius: 10px;
+      color: white; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .btn-login:hover { opacity: 0.9; }
+    .btn-login:disabled { opacity: 0.4; cursor: not-allowed; }
+    .login-error { font-size: 11px; color: #f87171; margin-top: 8px; text-align: center; display: none; }
+
+    /* ── Logout row ── */
+    .logout-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 16px 4px;
+      font-size: 10px; color: #475569;
+    }
+    .btn-logout {
+      background: none; border: none; color: #475569; font-size: 10px;
+      cursor: pointer; text-decoration: underline;
+    }
+    .btn-logout:hover { color: #94a3b8; }
+
     /* ── Spinner ── */
     .spinner {
       width: 14px; height: 14px;
@@ -245,7 +281,25 @@
   <div class="header">
     <div class="logo">N</div>
     <span class="brand">NexusAI</span>
-    <span class="version">v2.0 Ghost Engine</span>
+    <span class="version">v3.0 Ghost Engine</span>
+  </div>
+
+  <!-- Login panel (shown when not authenticated) -->
+  <div id="login-panel" class="login-panel" style="display:none;">
+    <h3>Iniciar sesión en NexusAI</h3>
+    <input type="email"    id="login-email"    placeholder="Email" autocomplete="email" />
+    <input type="password" id="login-password" placeholder="Contraseña" autocomplete="current-password" />
+    <button class="btn-login" id="btn-login">Entrar</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+
+  <!-- Main UI (shown when authenticated) -->
+  <div id="main-ui" style="display:none;">
+
+  <!-- Logout row -->
+  <div class="logout-row">
+    <span id="user-email-label"></span>
+    <button class="btn-logout" id="btn-logout">Cerrar sesión</button>
   </div>
 
   <!-- Engine status bar -->
@@ -339,32 +393,21 @@
 
   <!-- TAB: LinkedIn -->
   <div class="tab-content" id="tab-linkedin">
-    <div class="li-status disconnected" id="li-status-box">
-      <div class="li-avatar" id="li-avatar">?</div>
-      <div class="li-info">
-        <div class="name" id="li-name">Sin conectar</div>
-        <div class="sub" id="li-sub">Conecta tu cuenta LinkedIn</div>
-      </div>
-      <div class="li-badge off" id="li-badge">OFF</div>
-    </div>
-
-    <button class="btn btn-start" id="btn-connect-li" style="margin-bottom:8px;">
-      🔗 Conectar LinkedIn (cookie automática)
-    </button>
-    <button class="btn btn-stop" id="btn-disconnect-li" style="display:none; margin-bottom:8px;">
-      Desconectar cuenta
-    </button>
-
-    <div style="background:rgba(255,255,255,0.03); border-radius:10px; padding:12px; border:1px solid rgba(255,255,255,0.07);">
-      <p style="font-size:11px; color:#64748b; line-height:1.5;">
-        <strong style="color:#94a3b8;">¿Cómo funciona?</strong><br>
-        1. Abre LinkedIn en otra pestaña y asegúrate de estar logueado.<br>
-        2. Haz clic en "Conectar" — NexusAI lee la cookie <code style="color:#a5b4fc;">li_at</code> automáticamente.<br>
-        3. ¡Listo! Inicia el Ghost Engine para comenzar.
+    <div style="background:rgba(255,255,255,0.03); border-radius:10px; padding:14px; border:1px solid rgba(255,255,255,0.07); margin-bottom:12px;">
+      <p style="font-size:12px; color:#94a3b8; font-weight:700; margin-bottom:8px;">Requisitos para el Ghost Engine</p>
+      <p style="font-size:11px; color:#64748b; line-height:1.6;">
+        1. Inicia sesión en NexusAI (ya hecho si ves este panel).<br>
+        2. Abre <strong style="color:#a5b4fc;">LinkedIn</strong> en otra pestaña y asegúrate de estar logueado.<br>
+        3. Inicia el motor desde la pestaña <strong style="color:#a5b4fc;">Estado</strong>.
       </p>
     </div>
 
-    <div id="li-error" style="margin-top:10px; font-size:11px; color:#f87171; display:none;"></div>
+    <div style="background:rgba(99,102,241,0.06); border-radius:10px; padding:12px; border:1px solid rgba(99,102,241,0.15);">
+      <p style="font-size:11px; color:#64748b; line-height:1.5;">
+        El Ghost Engine navega LinkedIn de forma autónoma en una pestaña en segundo plano.
+        Todos los datos se sincronizan directamente con Supabase — sin servidor intermedio.
+      </p>
+    </div>
   </div>
 
   <!-- TAB: Ajustes -->
@@ -424,6 +467,8 @@
     <button class="btn-save-settings" id="btn-save-settings">Guardar ajustes</button>
     <div class="saved-badge" id="saved-badge">✓ Ajustes guardados</div>
   </div>
+
+  </div><!-- /#main-ui -->
 
   <script src="popup.js"></script>
 </body>

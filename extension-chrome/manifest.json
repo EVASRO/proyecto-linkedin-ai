@@ -1,28 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "NexusAI — LinkedIn Automation",
-  "version": "2.0.0",
-  "description": "Ghost Engine: automatiza LinkedIn con IA, retrasos humanos y guardrails anti-ban.",
+  "name": "NexusAI — Ghost Engine",
+  "version": "3.0.0",
+  "description": "Automatiza LinkedIn con IA. Conectado a NexusAI via Supabase.",
 
   "permissions": [
-    "activeTab",
-    "scripting",
-    "storage",
-    "alarms",
-    "tabs",
-    "cookies",
-    "notifications"
+    "activeTab", "scripting", "storage", "alarms", "tabs",
+    "cookies", "notifications", "identity"
   ],
 
   "host_permissions": [
     "*://*.linkedin.com/*",
-    "http://127.0.0.1:8000/*",
-    "http://localhost:8000/*"
+    "*://*.supabase.co/*"
   ],
 
-  "background": {
-    "service_worker": "background.js"
-  },
+  "background": { "service_worker": "background.js" },
 
   "action": {
     "default_popup": "popup.html",
@@ -40,13 +32,16 @@
     "128": "icons/icon128.png"
   },
 
-  "content_scripts": [
-    {
-      "matches": ["*://*.linkedin.com/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "content_scripts": [{
+    "matches": ["*://*.linkedin.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
+
+  "web_accessible_resources": [{
+    "resources": ["config.js"],
+    "matches":   ["*://*.linkedin.com/*"]
+  }],
 
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"

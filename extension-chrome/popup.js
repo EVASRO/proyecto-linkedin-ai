@@ -1,10 +1,19 @@
 // ============================================================
-// NEXUSAI — POPUP CONTROLLER
+// NEXUSAI — POPUP CONTROLLER v3.0 (Supabase direct)
 // ============================================================
 
-// ── Elementos del DOM ─────────────────────────────────────────────────────────
-
 const $ = (id) => document.getElementById(id);
+
+// ── Elementos ─────────────────────────────────────────────────────────────────
+
+const loginPanel     = $('login-panel');
+const mainUI         = $('main-ui');
+const loginEmail     = $('login-email');
+const loginPassword  = $('login-password');
+const btnLogin       = $('btn-login');
+const loginError     = $('login-error');
+const btnLogout      = $('btn-logout');
+const userEmailLabel = $('user-email-label');
 
 const engineDot    = $('engine-dot');
 const engineLabel  = $('engine-label');
@@ -32,15 +41,6 @@ const statLikes       = $('stat-likes');
 const queueList     = $('queue-list');
 const btnClearQueue = $('btn-clear-queue');
 
-const liStatusBox    = $('li-status-box');
-const liAvatar       = $('li-avatar');
-const liName         = $('li-name');
-const liSub          = $('li-sub');
-const liBadge        = $('li-badge');
-const btnConnectLi   = $('btn-connect-li');
-const btnDisconnectLi= $('btn-disconnect-li');
-const liError        = $('li-error');
-
 const slConn   = $('sl-conn');
 const slMsg    = $('sl-msg');
 const slInmail = $('sl-inmail');
@@ -51,17 +51,6 @@ const togUltra   = $('tog-ultra');
 const togWeekend = $('tog-weekend');
 const btnSaveSettings = $('btn-save-settings');
 const savedBadge      = $('saved-badge');
-
-// ── Tab navigation ────────────────────────────────────────────────────────────
-
-document.querySelectorAll('.tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
-    tab.classList.add('active');
-    $(`tab-${tab.dataset.tab}`).classList.add('active');
-  });
-});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -77,33 +66,83 @@ function fmtMs(ms) {
 
 function sendMsg(msg) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(msg, (resp) => {
-      resolve(resp);
-    });
+    chrome.runtime.sendMessage(msg, (resp) => resolve(resp));
   });
 }
 
-const TASK_META = {
-  send_connection: { emoji: '🤝', label: 'Enviar conexión',  bg: '#1e3a5f' },
-  send_message:    { emoji: '💬', label: 'Enviar mensaje',    bg: '#1e1b4b' },
-  like_post:       { emoji: '❤️', label: 'Like post',         bg: '#4a1942' },
-  visit_profile:   { emoji: '👁️', label: 'Visitar perfil',   bg: '#1a2e1a' },
-  extract_profile: { emoji: '⚡', label: 'Extraer perfil',    bg: '#2d1b4a' },
-  send_inmail:     { emoji: '📧', label: 'Enviar InMail',     bg: '#1a2a4a' },
-};
+// ── Tab navigation ────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+    tab.classList.add('active');
+    $(`tab-${tab.dataset.tab}`).classList.add('active');
+  });
+});
+
+// ── Auth: show/hide panels ────────────────────────────────────────────────────
+
+function showLogin() {
+  loginPanel.style.display = 'block';
+  mainUI.style.display     = 'none';
+}
+
+function showMain(email) {
+  loginPanel.style.display = 'none';
+  mainUI.style.display     = 'block';
+  if (email && userEmailLabel) userEmailLabel.textContent = email;
+}
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+
+btnLogin.addEventListener('click', async () => {
+  const email    = loginEmail.value.trim();
+  const password = loginPassword.value;
+  if (!email || !password) return;
+
+  btnLogin.disabled     = true;
+  btnLogin.textContent  = 'Entrando…';
+  loginError.style.display = 'none';
+
+  const r = await sendMsg({ type: 'LOGIN', email, password });
+
+  btnLogin.disabled    = false;
+  btnLogin.textContent = 'Entrar';
+
+  if (r?.ok) {
+    showMain(email);
+    await refreshStatus();
+  } else {
+    loginError.textContent    = r?.error ?? 'Error de autenticación';
+    loginError.style.display  = 'block';
+  }
+});
+
+// Allow Enter key on password field
+loginPassword.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') btnLogin.click();
+});
+
+// ── Logout ────────────────────────────────────────────────────────────────────
+
+btnLogout.addEventListener('click', async () => {
+  await sendMsg({ type: 'LOGOUT' });
+  showLogin();
+});
 
 // ── Render state ──────────────────────────────────────────────────────────────
+// background.js GET_STATUS returns: { connected, running, processing, stats, nextTaskAt, queueCount }
 
 function renderState(state) {
   if (!state) return;
-  const { engine, dailyStats, taskQueue, settings, linkedinAccount } = state;
 
   // Engine status bar
   engineDot.className = 'engine-dot';
-  if (engine.processing) {
+  if (state.processing) {
     engineDot.classList.add('processing');
     engineLabel.innerHTML = 'Motor <span>ejecutando acción…</span>';
-  } else if (engine.running) {
+  } else if (state.running) {
     engineDot.classList.add('running');
     engineLabel.innerHTML = 'Ghost Engine <span>activo</span>';
   } else {
@@ -111,36 +150,35 @@ function renderState(state) {
   }
 
   // Stats
-  statQueue.textContent       = taskQueue?.length ?? 0;
-  statConnections.textContent = dailyStats?.connections ?? 0;
-  statMessages.textContent    = dailyStats?.messages    ?? 0;
-  statLikes.textContent       = dailyStats?.likes       ?? 0;
+  if (statQueue)       statQueue.textContent       = state.queueCount       ?? 0;
+  if (statConnections) statConnections.textContent = state.stats?.connections ?? 0;
+  if (statMessages)    statMessages.textContent    = state.stats?.messages    ?? 0;
+  if (statLikes)       statLikes.textContent       = state.stats?.likes       ?? 0;
 
-  // Next task countdown
-  if (engine.nextTaskAt && engine.running) {
-    const diff = engine.nextTaskAt - Date.now();
+  // Countdown
+  if (state.nextTaskAt && state.running) {
+    const diff = state.nextTaskAt - Date.now();
     if (diff > 0) {
       nextTaskInfo.innerHTML = `Próxima acción en: <span>${fmtMs(diff)}</span>`;
     } else {
       nextTaskInfo.innerHTML = `Próxima acción: <span>procesando…</span>`;
     }
-  } else if (!engine.running) {
+  } else if (!state.running) {
     nextTaskInfo.innerHTML = `Motor pausado`;
   } else {
     nextTaskInfo.innerHTML = `Sin tareas en cola`;
   }
 
-  // Limits progress bars
+  // Limits bars
   const limitsRows = $('limits-rows');
-  if (settings) {
+  if (limitsRows) {
     const items = [
-      { label: 'Conexiones', val: dailyStats?.connections ?? 0, max: settings.maxConnections },
-      { label: 'Mensajes',   val: dailyStats?.messages    ?? 0, max: settings.maxMessages    },
-      { label: 'InMails',    val: dailyStats?.inmails     ?? 0, max: settings.maxInmails     },
-      { label: 'Likes',      val: dailyStats?.likes       ?? 0, max: settings.maxLikes       },
+      { label: 'Conexiones', val: state.stats?.connections ?? 0, max: 20 },
+      { label: 'Mensajes',   val: state.stats?.messages    ?? 0, max: 30 },
+      { label: 'Likes',      val: state.stats?.likes       ?? 0, max: 20 },
     ];
     limitsRows.innerHTML = items.map(({ label, val, max }) => {
-      const pct = Math.min(100, Math.round((val / max) * 100));
+      const pct   = Math.min(100, Math.round((val / max) * 100));
       const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#6366f1';
       return `
         <div class="limits-row">
@@ -154,7 +192,7 @@ function renderState(state) {
   }
 
   // Start/stop buttons
-  if (engine.running) {
+  if (state.running) {
     btnStart.style.display = 'none';
     btnStop.style.display  = 'flex';
   } else {
@@ -162,97 +200,41 @@ function renderState(state) {
     btnStop.style.display  = 'none';
   }
 
-  // Queue tab
-  renderQueue(taskQueue ?? []);
-
-  // LinkedIn tab
-  renderLinkedIn(linkedinAccount);
-
-  // Settings tab
-  if (settings) {
-    slConn.value   = settings.maxConnections ?? 30;
-    slMsg.value    = settings.maxMessages    ?? 50;
-    slInmail.value = settings.maxInmails     ?? 10;
-    slLikes.value  = settings.maxLikes       ?? 30;
-    slDmin.value   = settings.delayMinSec    ?? 180;
-    slDmax.value   = settings.delayMaxSec    ?? 480;
-    togUltra.checked   = settings.ultraSafe    ?? true;
-    togWeekend.checked = settings.pauseWeekends ?? true;
-
-    $('val-conn').textContent   = settings.maxConnections ?? 30;
-    $('val-msg').textContent    = settings.maxMessages    ?? 50;
-    $('val-inmail').textContent = settings.maxInmails     ?? 10;
-    $('val-likes').textContent  = settings.maxLikes       ?? 30;
-    $('val-dmin').textContent   = fmtSeconds(settings.delayMinSec ?? 180);
-    $('val-dmax').textContent   = fmtSeconds(settings.delayMaxSec ?? 480);
+  // Queue tab — show count; actual task list not available from GET_STATUS
+  if (queueList && state.queueCount === 0) {
+    queueList.innerHTML = `<div class="queue-empty">Sin tareas en cola<br><span style="font-size:10px;">Añade leads desde el dashboard NexusAI</span></div>`;
+    btnClearQueue.style.display = 'none';
+  } else if (queueList && state.queueCount > 0) {
+    queueList.innerHTML = `<div class="queue-empty" style="color:#a5b4fc;">${state.queueCount} tarea${state.queueCount > 1 ? 's' : ''} pendiente${state.queueCount > 1 ? 's' : ''}</div>`;
+    btnClearQueue.style.display = 'none';
   }
 }
 
-function renderQueue(queue) {
-  if (!queue || queue.length === 0) {
-    queueList.innerHTML = `<div class="queue-empty">Sin tareas en cola<br><span style="font-size:10px;">Añade leads desde el dashboard NexusAI</span></div>`;
-    btnClearQueue.style.display = 'none';
+// ── Refresh status ────────────────────────────────────────────────────────────
+
+async function refreshStatus() {
+  const r = await sendMsg({ type: 'GET_STATUS' });
+  if (!r) return;
+
+  if (!r.connected) {
+    showLogin();
     return;
   }
 
-  btnClearQueue.style.display = 'block';
-  queueList.innerHTML = queue.slice(0, 15).map((task) => {
-    const meta = TASK_META[task.type] ?? { emoji: '📌', label: task.type, bg: '#1e293b' };
-    const name = task.leadData?.name ?? 'Lead desconocido';
-    const company = task.leadData?.company ? ` · ${task.leadData.company}` : '';
-    return `
-      <div class="task-item">
-        <div class="task-icon" style="background:${meta.bg};">${meta.emoji}</div>
-        <div class="task-meta">
-          <div class="name">${name}${company}</div>
-          <div class="type">${meta.label}${task.attempts > 0 ? ` · intento ${task.attempts + 1}` : ''}</div>
-        </div>
-        <button class="btn-remove" data-id="${task.id}" title="Eliminar tarea">×</button>
-      </div>`;
-  }).join('');
+  // Show stored email if available
+  const { supabase_user_id } = await chrome.storage.local.get('supabase_user_id');
+  showMain('');
 
-  if (queue.length > 15) {
-    queueList.innerHTML += `<div style="text-align:center;font-size:10px;color:#475569;padding:6px;">+${queue.length - 15} tareas más</div>`;
-  }
-
-  // Remove buttons
-  queueList.querySelectorAll('.btn-remove').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      await sendMsg({ type: 'REMOVE_TASK', taskId: btn.dataset.id });
-    });
-  });
+  renderState(r);
+  lastState = r;
 }
 
-function renderLinkedIn(account) {
-  if (account?.connected) {
-    liStatusBox.className = 'li-status connected';
-    const initials = (account.profileName || 'LI').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-    liAvatar.textContent    = initials;
-    liName.textContent      = account.profileName || 'Cuenta LinkedIn';
-    liSub.textContent       = 'Cookie li_at activa · Extensión sincronizada';
-    liBadge.textContent     = 'ON';
-    liBadge.className       = 'li-badge ok';
-    btnConnectLi.style.display    = 'none';
-    btnDisconnectLi.style.display = 'flex';
-    liError.style.display = 'none';
-  } else {
-    liStatusBox.className = 'li-status disconnected';
-    liAvatar.textContent      = '?';
-    liName.textContent        = 'Sin conectar';
-    liSub.textContent         = 'Conecta tu cuenta LinkedIn';
-    liBadge.textContent       = 'OFF';
-    liBadge.className         = 'li-badge off';
-    btnConnectLi.style.display    = 'flex';
-    btnDisconnectLi.style.display = 'none';
-  }
-}
-
-// ── Live countdown actualizado cada segundo ───────────────────────────────────
+// ── Countdown cada segundo ────────────────────────────────────────────────────
 
 let lastState = null;
-setInterval(async () => {
-  if (!lastState?.engine?.running || !lastState?.engine?.nextTaskAt) return;
-  const diff = lastState.engine.nextTaskAt - Date.now();
+setInterval(() => {
+  if (!lastState?.running || !lastState?.nextTaskAt) return;
+  const diff = lastState.nextTaskAt - Date.now();
   if (diff > 0) {
     nextTaskInfo.innerHTML = `Próxima acción en: <span>${fmtMs(diff)}</span>`;
   } else {
@@ -260,31 +242,32 @@ setInterval(async () => {
   }
 }, 1000);
 
-// ── Event listeners ───────────────────────────────────────────────────────────
+// ── Engine controls ───────────────────────────────────────────────────────────
 
-// Start engine
 btnStart.addEventListener('click', async () => {
   btnStart.disabled = true;
   const r = await sendMsg({ type: 'START_ENGINE' });
   btnStart.disabled = false;
-  if (!r?.success) {
+  if (!r?.ok) {
     alert(r?.error ?? 'Error al iniciar el motor');
+  } else {
+    await refreshStatus();
   }
 });
 
-// Stop engine
 btnStop.addEventListener('click', async () => {
   await sendMsg({ type: 'STOP_ENGINE' });
+  await refreshStatus();
 });
 
-// Estado interno del mensaje generado
-let generatedProfile = null;
+// ── Generar mensaje IA ────────────────────────────────────────────────────────
+
 let generatedMessage = '';
 
 function showSendStatus(text, color = '#22c55e') {
-  sendStatus.textContent     = text;
-  sendStatus.style.color     = color;
-  sendStatus.style.display   = 'block';
+  sendStatus.textContent   = text;
+  sendStatus.style.color   = color;
+  sendStatus.style.display = 'block';
   setTimeout(() => { sendStatus.style.display = 'none'; }, 3500);
 }
 
@@ -295,7 +278,6 @@ function resetMsgUI() {
   sendStatus.style.display = 'none';
 }
 
-// Guardar lead y generar mensaje IA
 btnExtract.addEventListener('click', async () => {
   resetMsgUI();
   btnExtract.disabled   = true;
@@ -304,112 +286,73 @@ btnExtract.addEventListener('click', async () => {
   const r = await sendMsg({ type: 'EXTRACT_AND_GENERATE' });
 
   btnExtract.disabled     = false;
-  extractText.textContent = '💾 Guardar lead y generar mensaje IA';
+  extractText.textContent = 'Guardar lead y generar mensaje IA';
 
-  if (r?.success && r.message) {
+  if (r?.ok && r.message) {
     generatedMessage         = r.message;
-    generatedProfile         = r.profile;
     msgResult.className      = 'msg-box';
     msgResult.textContent    = r.message;
     msgResult.style.display  = 'block';
     msgActions.style.display = 'flex';
-
-    // Si guardó el lead en CRM → feedback
-    if (r.profile?.name) {
-      showSendStatus(`✅ Lead "${r.profile.name}" guardado en CRM`, '#22c55e');
-    }
+    if (r.profile?.name) showSendStatus(`Lead "${r.profile.name}" guardado en CRM`, '#22c55e');
   } else {
     msgResult.className      = 'msg-box error';
-    msgResult.textContent    = r?.error ?? 'Error al generar mensaje. ¿Está activo el backend?';
+    msgResult.textContent    = r?.error ?? 'Error al generar mensaje';
     msgResult.style.display  = 'block';
   }
 });
 
-// Aprobar y enviar directamente en LinkedIn
 btnApproveSend.addEventListener('click', async () => {
   if (!generatedMessage) return;
-  btnApproveSend.disabled     = true;
-  btnApproveSend.textContent  = '📤 Enviando…';
+  btnApproveSend.disabled    = true;
+  btnApproveSend.textContent = 'Enviando…';
   const r = await sendMsg({ type: 'SEND_GENERATED_MESSAGE', message: generatedMessage });
-  btnApproveSend.disabled     = false;
-  btnApproveSend.innerHTML    = '✅ Aprobar y enviar';
+  btnApproveSend.disabled    = false;
+  btnApproveSend.textContent = 'Aprobar y enviar';
   if (r?.success) {
-    showSendStatus('✅ Mensaje enviado en LinkedIn', '#22c55e');
+    showSendStatus('Mensaje enviado en LinkedIn', '#22c55e');
     resetMsgUI();
   } else {
-    showSendStatus(r?.error ?? '❌ No se pudo enviar — abre el perfil en LinkedIn primero', '#f87171');
+    showSendStatus(r?.error ?? 'No se pudo enviar — abre el perfil en LinkedIn primero', '#f87171');
   }
 });
 
-// Abrir editor
 btnEditMsg.addEventListener('click', () => {
-  msgEditArea.value        = generatedMessage;
-  msgEditor.style.display  = 'block';
+  msgEditArea.value       = generatedMessage;
+  msgEditor.style.display = 'block';
   msgEditArea.focus();
 });
 
-// Enviar mensaje editado
 btnSendEdited.addEventListener('click', async () => {
   const editedText = msgEditArea.value.trim();
   if (!editedText) return;
-  btnSendEdited.disabled     = true;
-  btnSendEdited.textContent  = 'Enviando…';
+  btnSendEdited.disabled    = true;
+  btnSendEdited.textContent = 'Enviando…';
   const r = await sendMsg({ type: 'SEND_GENERATED_MESSAGE', message: editedText });
-  btnSendEdited.disabled     = false;
-  btnSendEdited.textContent  = '📤 Enviar editado';
+  btnSendEdited.disabled    = false;
+  btnSendEdited.textContent = 'Enviar editado';
   if (r?.success) {
     generatedMessage         = editedText;
     msgResult.textContent    = editedText;
     msgEditor.style.display  = 'none';
-    showSendStatus('✅ Mensaje editado enviado', '#22c55e');
+    showSendStatus('Mensaje editado enviado', '#22c55e');
     resetMsgUI();
   } else {
-    showSendStatus(r?.error ?? '❌ No se pudo enviar', '#f87171');
+    showSendStatus(r?.error ?? 'No se pudo enviar', '#f87171');
   }
 });
 
-// Cancelar edición
-btnCancelEdit.addEventListener('click', () => {
-  msgEditor.style.display = 'none';
-});
+btnCancelEdit.addEventListener('click', () => { msgEditor.style.display = 'none'; });
 
-// Solo copiar
 btnCopyMsg.addEventListener('click', () => {
   navigator.clipboard.writeText(generatedMessage).then(() => {
-    btnCopyMsg.textContent = '✓ ¡Copiado!';
-    setTimeout(() => { btnCopyMsg.textContent = '📋 Solo copiar'; }, 2000);
+    btnCopyMsg.textContent = 'Copiado!';
+    setTimeout(() => { btnCopyMsg.textContent = 'Solo copiar'; }, 2000);
   });
 });
 
-// Connect LinkedIn
-btnConnectLi.addEventListener('click', async () => {
-  btnConnectLi.disabled    = true;
-  btnConnectLi.textContent = 'Conectando…';
-  liError.style.display    = 'none';
+// ── Settings ──────────────────────────────────────────────────────────────────
 
-  const r = await sendMsg({ type: 'CONNECT_LINKEDIN' });
-  btnConnectLi.disabled    = false;
-  btnConnectLi.textContent = '🔗 Conectar LinkedIn (cookie automática)';
-
-  if (!r?.success) {
-    liError.textContent    = r?.error ?? 'No se pudo conectar. Abre LinkedIn primero.';
-    liError.style.display  = 'block';
-  }
-});
-
-// Disconnect
-btnDisconnectLi.addEventListener('click', async () => {
-  if (!confirm('¿Desconectar la cuenta de LinkedIn? El motor se pausará.')) return;
-  await sendMsg({ type: 'DISCONNECT_LINKEDIN' });
-});
-
-// Clear queue
-btnClearQueue.addEventListener('click', async () => {
-  if (!confirm('¿Vaciar toda la cola de tareas?')) return;
-  await sendMsg({ type: 'CLEAR_QUEUE' });
-});
-
-// Sliders — actualizar labels en tiempo real
 [
   [slConn,   'val-conn',   (v) => v],
   [slMsg,    'val-msg',    (v) => v],
@@ -418,22 +361,19 @@ btnClearQueue.addEventListener('click', async () => {
   [slDmin,   'val-dmin',   (v) => fmtSeconds(+v)],
   [slDmax,   'val-dmax',   (v) => fmtSeconds(+v)],
 ].forEach(([el, labelId, fmt]) => {
-  el.addEventListener('input', () => {
-    $(labelId).textContent = fmt(el.value);
-  });
+  if (el) el.addEventListener('input', () => { $(labelId).textContent = fmt(el.value); });
 });
 
-// Save settings
 btnSaveSettings.addEventListener('click', async () => {
   const settings = {
-    maxConnections:   +slConn.value,
-    maxMessages:      +slMsg.value,
-    maxInmails:       +slInmail.value,
-    maxLikes:         +slLikes.value,
-    delayMinSec:      +slDmin.value,
-    delayMaxSec:      +slDmax.value,
-    ultraSafe:        togUltra.checked,
-    pauseWeekends:    togWeekend.checked,
+    maxConnections:   +(slConn?.value   ?? 20),
+    maxMessages:      +(slMsg?.value    ?? 30),
+    maxInmails:       +(slInmail?.value ?? 10),
+    maxLikes:         +(slLikes?.value  ?? 20),
+    delayMinSec:      +(slDmin?.value   ?? 180),
+    delayMaxSec:      +(slDmax?.value   ?? 480),
+    ultraSafe:        togUltra?.checked  ?? true,
+    pauseWeekends:    togWeekend?.checked ?? true,
     activeHoursStart: 8,
     activeHoursEnd:   20,
     timezone:         'America/Lima',
@@ -443,24 +383,19 @@ btnSaveSettings.addEventListener('click', async () => {
   setTimeout(() => { savedBadge.style.display = 'none'; }, 2500);
 });
 
-// ── Escuchar actualizaciones del background ───────────────────────────────────
+// ── Escuchar actualizaciones en tiempo real del background ────────────────────
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'STATUS_UPDATE') {
     lastState = msg.state;
     renderState(msg.state);
   }
-  if (msg.type === 'PROFILE_LOADED') {
-    // Perfil detectado — badge en tab LinkedIn (opcional)
-  }
 });
 
-// ── Cargar estado inicial al abrir el popup ───────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 (async () => {
-  const r = await sendMsg({ type: 'GET_STATUS' });
-  if (r?.state) {
-    lastState = r.state;
-    renderState(r.state);
-  }
+  // Show login immediately while we check
+  showLogin();
+  await refreshStatus();
 })();

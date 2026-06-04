@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Conversation, Message } from "@/components/smart-inbox/types";
+import { processAutopilotConversations } from "@/app/dashboard/agentes-ia/actions";
 
 type Result<T = undefined> = T extends undefined
   ? { success: boolean; error?: string }
@@ -116,9 +117,11 @@ export async function sendInboxMessage(data: {
   lead_id: string;
   text: string;
   linkedin_url: string;
+  sender?: "user" | "prospect" | "ai";
 }): Promise<Result<{ message_id: string }>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
+    const sender = data.sender ?? "user";
 
     const { data: msg, error: msgErr } = await supabase
       .from("messages")
@@ -126,7 +129,7 @@ export async function sendInboxMessage(data: {
         workspace_id:    workspaceId,
         lead_id:         data.lead_id,
         conversation_id: data.conversation_id,
-        sender:          "user",
+        sender,
         message_text:    data.text,
         status:          "sending",
         timestamp:       new Date().toISOString(),
@@ -148,6 +151,19 @@ export async function sendInboxMessage(data: {
         lead_id:      data.lead_id,
       },
     });
+
+    // Si es un mensaje del prospect y la conversación tiene autopilot activo, responder con IA
+    if (sender === "prospect") {
+      const { data: conv } = await supabase
+        .from("conversations")
+        .select("autopilot_active, assigned_agent_id")
+        .eq("id", data.conversation_id)
+        .single();
+
+      if (conv?.autopilot_active && conv?.assigned_agent_id) {
+        processAutopilotConversations().catch(console.error);
+      }
+    }
 
     return { success: true, data: { message_id: String(msg.id) } };
   } catch (err) {
@@ -220,6 +236,23 @@ export async function generateAISuggestion(data: {
 
     const suggestion = (response.content[0] as Anthropic.TextBlock).text.trim();
     return { success: true, data: { suggestion } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── Archivar conversación ─────────────────────────────────────────────────────
+
+export async function archiveConversation(conversationId: string): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { error } = await supabase
+      .from("conversations")
+      .update({ status: "archived" })
+      .eq("id", conversationId)
+      .eq("workspace_id", workspaceId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
   }

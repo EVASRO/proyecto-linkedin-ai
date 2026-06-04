@@ -73,6 +73,9 @@ export type LinkedInAccountRow = {
   id: string;
   workspace_id: string | null;
   name: string | null;
+  profile_url: string | null;
+  headline: string | null;
+  avatar_url: string | null;
   li_at_cookie: string | null;
   connection_mode: string | null;
   status: string | null;
@@ -254,6 +257,35 @@ export async function upsertLinkedInAccount(data: {
 
     if (result.error) return { success: false, error: result.error.message };
     return { success: true, data: result.data as LinkedInAccountRow };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── 4b. updateLinkedInLimits ──────────────────────────────────────────────────
+
+export async function updateLinkedInLimits(data: {
+  id: string;
+  daily_connection_limit: number;
+  daily_message_limit: number;
+}): Promise<Result<LinkedInAccountRow>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { data: updated, error } = await supabase
+      .from("linkedin_accounts")
+      .update({
+        daily_connection_limit: data.daily_connection_limit,
+        daily_message_limit:    data.daily_message_limit,
+      })
+      .eq("id", data.id)
+      .eq("workspace_id", workspaceId)
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: updated as LinkedInAccountRow };
   } catch (err) {
     return { success: false, error: String(err) };
   }

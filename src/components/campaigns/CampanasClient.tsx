@@ -42,9 +42,40 @@ function mapRow(c: CampaignRow): Campaign {
 }
 
 function extractSegments(c: CampaignRow): Segment[] {
-  const segs = c.workflow_json?.segments;
-  if (!Array.isArray(segs)) return [];
-  return segs as Segment[];
+  const wf = c.workflow_json;
+  if (!wf) return [];
+
+  // Formato nuevo: workflow_json.segments = [...]
+  if (Array.isArray(wf.segments) && wf.segments.length > 0) {
+    return wf.segments as Segment[];
+  }
+
+  // Formato legacy: workflow_json = { segment: {...}, automationName: "..." }
+  if (wf.segment && typeof wf.segment === "object") {
+    const seg = wf.segment as Record<string, unknown>;
+    return [{
+      id:             `seg_${c.id}`,
+      campaignId:     c.id,
+      name:           (wf.segmentName as string) ?? "Segmento principal",
+      searchUrl:      (seg.url as string) ?? (wf.segmentationUrl as string) ?? "",
+      source:         "external_link" as const,
+      status:         "active" as const,
+      automationId:   `auto_${c.id}`,
+      automationName: (wf.automationName as string) ?? "Automatización",
+      createdAt:      c.created_at ?? new Date().toISOString(),
+      metrics: {
+        totalLeads:  c.total_leads ?? 0,
+        contacted:   0,
+        connected:   0,
+        replied:     0,
+        meetings:    0,
+        duplicates:  0,
+        bounced:     0,
+      },
+    }];
+  }
+
+  return [];
 }
 
 // ── View state ─────────────────────────────────────────────────────────────────
@@ -60,6 +91,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
 
   const [view,       setView]       = useState<View>("list");
   const [campaigns,  setCampaigns]  = useState<Campaign[]>(() => initialData.campaigns.map(mapRow));
+  const [rawRows,    setRawRows]    = useState<CampaignRow[]>(() => initialData.campaigns);
   const [segments,   setSegments]   = useState<Segment[]>(
     () => initialData.campaigns.flatMap(extractSegments)
   );
@@ -74,33 +106,46 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     return segments.filter((s) => s.campaignId === c.id);
   }
 
-  // ── openDetail: pull fresh segments from in-memory workflow_json ──────────
+  // ── openDetail: fetch fresh data from Supabase before navigating ──────────
 
-  function openDetail(c: Campaign) {
+  async function openDetail(c: Campaign) {
+    // Fetch fresh data first so segments are never stale after a FlowBuilder save
+    const { getCampaignsData } = await import("@/app/dashboard/campanas/actions");
+    const res = await getCampaignsData();
+
+    if (res.success && res.data) {
+      setRawRows(res.data.campaigns);
+      const fresh = res.data.campaigns.find((r) => r.id === c.id);
+      if (fresh) {
+        const freshSegs = extractSegments(fresh);
+        const freshCampaign: Campaign = {
+          ...c,
+          totalLeads:   fresh.total_leads   ?? c.totalLeads,
+          segmentCount: fresh.segment_count ?? c.segmentCount,
+        };
+        setSegments((prev) => [
+          ...prev.filter((s) => s.campaignId !== c.id),
+          ...freshSegs,
+        ]);
+        setSelected(freshCampaign);
+        setView("detail");
+        return;
+      }
+    }
+
+    // Fallback: use in-memory data
+    const raw = rawRows.find((r) => r.id === c.id);
+    const segs = raw ? extractSegments(raw) : [];
+    setSegments((prev) => [...prev.filter((s) => s.campaignId !== c.id), ...segs]);
     setSelected(c);
     setView("detail");
-    // Refresh from Supabase to get latest workflow_json segments
-    startTransition(async () => {
-      const { getCampaignsData } = await import("@/app/dashboard/campanas/actions");
-      const res = await getCampaignsData();
-      if (res.success && res.data) {
-        const rawCampaign = res.data.campaigns.find((r) => r.id === c.id);
-        if (rawCampaign) {
-          const freshSegs = extractSegments(rawCampaign);
-          setSegments((prev) => [
-            ...prev.filter((s) => s.campaignId !== c.id),
-            ...freshSegs,
-          ]);
-        }
-      }
-    });
   }
 
   // ── openFlow ──────────────────────────────────────────────────────────────
 
   function openFlow(campaign: Campaign, segment: Segment) {
-    // Get flow from workflow_json of the campaign we already have
-    const rawCampaign = initialData.campaigns.find((r) => r.id === campaign.id);
+    // Always read from live rawRows (kept in sync with Supabase on every openDetail/save)
+    const rawCampaign = rawRows.find((r) => r.id === campaign.id);
     const wf          = rawCampaign?.workflow_json ?? {};
     const initialFlow: FlowConfig | undefined =
       wf.nodes && wf.edges

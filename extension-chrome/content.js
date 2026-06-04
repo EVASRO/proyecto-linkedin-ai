@@ -318,6 +318,263 @@
     return { success: true, action: 'profile_visited' };
   }
 
+  // ── Escuchar tareas inyectadas por background via postMessage ────────────
+
+  window.addEventListener('message', async (event) => {
+    if (event.source !== window) return;
+    if (!event.data || event.data.type !== 'NEXUSAI_TASK') return;
+
+    const { task, taskId, ...params } = event.data;
+
+    switch (task) {
+      case 'view_profile':   await executeViewProfile(taskId);                              break;
+      case 'connect':        await executeConnect(taskId, params.note, params.leadId, params.campaignId);    break;
+      case 'message':        await executeMessage(taskId, params.text, params.leadId, params.campaignId);    break;
+      case 'count_leads':    await executeCountLeads(taskId, params.campaignId, params.segmentId); break;
+      case 'extract_profile': await executeExtractProfile(taskId, params.leadId);           break;
+    }
+  });
+
+  // ── Acciones del Ghost Engine (ejecutadas vía postMessage) ────────────────
+
+  async function executeViewProfile(taskId) {
+    const totalHeight = document.body.scrollHeight;
+    let pos = 0;
+    while (pos < totalHeight * 0.7) {
+      pos += 150 + Math.random() * 100;
+      window.scrollTo({ top: pos, behavior: 'smooth' });
+      await sleep(300 + Math.random() * 400);
+    }
+    await sleep(3000 + Math.random() * 4000);
+    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'view_profile', success: true } });
+  }
+
+  async function executeConnect(taskId, note, leadId, campaignId) {
+    await sleep(2000 + Math.random() * 2000);
+    window.scrollTo({ top: 300, behavior: 'smooth' });
+    await sleep(1500);
+
+    const connectBtn = Array.from(document.querySelectorAll('button')).find((b) => {
+      const t = b.innerText?.trim().toLowerCase();
+      return t === 'conectar' || t === 'connect';
+    });
+
+    if (!connectBtn) {
+      // Intentar desde menú "Más"
+      const moreBtn = Array.from(document.querySelectorAll('button')).find((b) => {
+        const t = b.innerText?.trim().toLowerCase();
+        return t === 'más' || t === 'more';
+      });
+      if (moreBtn) {
+        simulateClick(moreBtn);
+        await sleep(800);
+        const menuItem = Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) =>
+          el.innerText?.toLowerCase().includes('conectar') || el.innerText?.toLowerCase().includes('connect')
+        );
+        if (!menuItem) {
+          chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
+          return;
+        }
+        simulateClick(menuItem);
+      } else {
+        chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
+        return;
+      }
+    } else {
+      simulateClick(connectBtn);
+    }
+
+    await sleep(1200);
+
+    if (note) {
+      const addNoteBtn = Array.from(document.querySelectorAll('button')).find((b) =>
+        b.innerText?.toLowerCase().includes('nota') || b.innerText?.toLowerCase().includes('note')
+      );
+      if (addNoteBtn) {
+        simulateClick(addNoteBtn);
+        await sleep(600);
+        const noteField = document.querySelector('textarea#custom-message');
+        if (noteField) typeIntoField(noteField, note.slice(0, 300));
+        await sleep(400);
+      }
+    }
+
+    const sendBtn = Array.from(document.querySelectorAll('button')).find((b) => {
+      const t = b.innerText?.toLowerCase();
+      return t === 'enviar' || t === 'send' || t?.includes('invitación') || t?.includes('invitation');
+    });
+    if (sendBtn) simulateClick(sendBtn);
+
+    await sleep(800);
+    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: true, lead_id: leadId, campaign_id: campaignId } });
+  }
+
+  async function executeMessage(taskId, text, leadId, campaignId) {
+    await sleep(2000 + Math.random() * 2000);
+    window.scrollTo({ top: 200, behavior: 'smooth' });
+    await sleep(1000);
+
+    const msgBtn = Array.from(document.querySelectorAll('button')).find((b) => {
+      const t = b.innerText?.trim().toLowerCase();
+      return t === 'mensaje' || t === 'message';
+    });
+
+    if (!msgBtn) {
+      chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
+      return;
+    }
+
+    simulateClick(msgBtn);
+    await sleep(2000);
+
+    const input = document.querySelector('.msg-form__contenteditable[contenteditable="true"], [role="textbox"][data-placeholder]');
+    if (input) {
+      input.focus();
+      input.innerText = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(1000 + Math.random() * 500);
+
+      const sendBtn = document.querySelector('.msg-form__send-button, button[type="submit"][class*="send"]');
+      if (sendBtn && !sendBtn.disabled) {
+        simulateClick(sendBtn);
+      } else {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      }
+    }
+
+    await sleep(800);
+    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: true, lead_id: leadId, campaign_id: campaignId } });
+  }
+
+  async function executeCountLeads(taskId, campaignId, segmentId) {
+    await sleep(3000);
+
+    let count = 0;
+    const selectors = [
+      '.search-results-container .pb2 h2',
+      '.search-results__total',
+      '[data-total-count]',
+      '.artdeco-card h2',
+      '.search-results__total-results',
+      '.list-header-count',
+      '[data-anonymize="result-count"]',
+    ];
+
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        const m = (el.innerText || el.textContent || '').match(/([\d,.]+)/);
+        if (m) { count = parseInt(m[1].replace(/[,.]/g, ''), 10); break; }
+      }
+    }
+
+    if (!count) {
+      const bodyText = document.body.innerText || '';
+      const patterns = [/Aproximadamente\s+([\d,.]+)/i, /About\s+([\d,.]+)/i, /([\d,.]+)\s+resultado/i, /([\d,.]+)\s+result/i];
+      for (const pat of patterns) {
+        const m = bodyText.match(pat);
+        if (m) { count = parseInt(m[1].replace(/[,.]/g, ''), 10); break; }
+      }
+    }
+
+    chrome.runtime.sendMessage({ type: 'COUNT_RESULT', campaignId, segmentId, count });
+    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'count_leads', count, campaign_id: campaignId } });
+  }
+
+  async function executeExtractProfile(taskId, leadId) {
+    await sleep(3000 + Math.random() * 2000);
+    window.scrollTo({ top: 400, behavior: 'smooth' });
+    await sleep(1500);
+
+    const profile = isSalesNavigator() ? extractSalesNavProfile() : extractLinkedInProfile();
+
+    chrome.runtime.sendMessage({ type: 'PROFILE_EXTRACTED', data: { ...profile, lead_id: leadId } });
+    chrome.runtime.sendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'extract_profile', success: true, lead_id: leadId } });
+  }
+
+  // ── Observer de inbox para mensajes recibidos ─────────────────────────────
+
+  if (window.location.pathname.startsWith('/messaging')) {
+    // Helper: extraer datos del contacto activo en la conversación abierta
+    function getActiveConversationContact() {
+      const nameEl = document.querySelector(
+        '.msg-thread__link-to-profile, ' +
+        '.msg-entity-lockup__entity-title, ' +
+        'h2.msg-entity-lockup__entity-title, ' +
+        '[data-control-name="thread_detail_header_name"]'
+      );
+      const name = nameEl?.innerText?.trim() ?? null;
+
+      const profileLinkEl = document.querySelector(
+        '.msg-thread__link-to-profile[href], ' +
+        'a.msg-entity-lockup__entity-title[href]'
+      );
+      const profileUrl = profileLinkEl?.href
+        ? profileLinkEl.href.split('?')[0].replace(/\/$/, '')
+        : null;
+
+      return { name, profileUrl };
+    }
+
+    const observedMessages = new Set(); // evitar duplicados
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType !== 1) continue;
+
+          const msgEl = node.querySelector?.('.msg-s-event-listitem__body') ??
+                        (node.matches?.('.msg-s-event-listitem__body') ? node : null);
+
+          if (msgEl) {
+            const text = msgEl.innerText?.trim();
+            if (!text || text.length < 1) continue;
+
+            // ID único para este mensaje (texto + timestamp truncado al segundo)
+            const msgKey = text.substring(0, 50) + '_' + Date.now().toString().slice(0,-3);
+            if (observedMessages.has(msgKey)) continue;
+
+            // Ignorar mensajes propios (salientes)
+            const listItem = msgEl.closest('.msg-s-event-listitem');
+            const isOutgoing = listItem?.querySelector(
+              '.msg-s-message-group__meta .msg-s-message-group__name'
+            )?.innerText?.includes('Tú') ??
+              listItem?.classList.contains('msg-s-event-listitem--other') === false;
+
+            if (isOutgoing) continue;
+
+            observedMessages.add(msgKey);
+            setTimeout(() => observedMessages.delete(msgKey), 30000);
+
+            const contact = getActiveConversationContact();
+
+            chrome.runtime.sendMessage({
+              type: 'MESSAGE_RECEIVED',
+              data: {
+                text,
+                timestamp:    new Date().toISOString(),
+                contact_name: contact.name,
+                profile_url:  contact.profileUrl,
+                lead_id:      null, // background.js lo resolverá con profile_url
+              },
+            }).catch(() => {});
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Limpiar set de duplicados al cambiar de conversación
+    const convObserver = new MutationObserver(() => {
+      observedMessages.clear();
+    });
+    const threadContainer = document.querySelector('.msg-conversations-container__conversations-list');
+    if (threadContainer) {
+      convObserver.observe(threadContainer, { childList: true, subtree: false });
+    }
+  }
+
   // ── Listener de mensajes desde background.js ──────────────────────────────
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -434,6 +691,48 @@
     }
 
     return null;
+  }
+
+  // ── Detectar perfil propio del usuario logueado en LinkedIn ─────────────
+  function detectOwnProfile() {
+    const nameEl =
+      document.querySelector('.profile-nav-card-mini__title') ||
+      document.querySelector('[data-anonymize="person-name"]') ||
+      document.querySelector('.feed-identity-module__actor-meta .t-bold') ||
+      document.querySelector('.global-nav__me-photo + span') ||
+      document.querySelector('.profile-nav-card-mini__profile-picture ~ div .t-bold');
+
+    const imgEl =
+      document.querySelector('.profile-nav-card-mini__profile-picture img') ||
+      document.querySelector('.feed-identity-module__actor-meta img') ||
+      document.querySelector('.global-nav__me-photo');
+
+    const headlineEl =
+      document.querySelector('.profile-nav-card-mini__headline') ||
+      document.querySelector('.feed-identity-module__actor-meta .t-14');
+
+    const name = nameEl?.textContent?.trim() || nameEl?.innerText?.trim();
+    if (!name) return;
+
+    const profile = {
+      name,
+      profile_url:  'https://www.linkedin.com/in/me/',
+      headline:     headlineEl?.textContent?.trim() ?? '',
+      avatar_url:   imgEl?.src ?? '',
+      detected_at:  new Date().toISOString(),
+    };
+
+    chrome.storage.local.set({ linkedin_profile: profile });
+    chrome.runtime.sendMessage({ type: 'LINKEDIN_PROFILE_DETECTED', profile }).catch(() => {});
+  }
+
+  // Run on feed and /in/me pages, with retries for SPA load
+  if (window.location.hostname === 'www.linkedin.com') {
+    const path = window.location.pathname;
+    if (path === '/feed/' || path === '/feed' || path.startsWith('/in/me') || path === '/') {
+      setTimeout(detectOwnProfile, 2000);
+      setTimeout(detectOwnProfile, 5000);
+    }
   }
 
   // ── Auto-extracción al cargar un perfil ───────────────────────────────────

@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Bot, Globe, Link2, Search } from "lucide-react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Archive, Bot, Check, Globe, Link2, MoreVertical, Search, User } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { Conversation, ConvStatus } from "./types";
+import { archiveConversation, markConversationRead } from "@/app/dashboard/smart-inbox/actions";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,12 +39,97 @@ const STATUS_CONFIG: Record<ConvStatus, { label: string; dot: string }> = {
   archived:    { label: "Archivado",   dot: "bg-zinc-400"   },
 };
 
-const FILTERS: { id: ConvStatus | "all"; label: string }[] = [
-  { id: "all",         label: "Todo"      },
-  { id: "new",         label: "Nuevos"    },
-  { id: "ai_handling", label: "Autopilot" },
-  { id: "human",       label: "Manual"    },
+type FilterId = ConvStatus | "all" | "unread" | "replied" | "pending";
+
+const FILTERS: { id: FilterId; label: string }[] = [
+  { id: "all",         label: "Todos"       },
+  { id: "unread",      label: "No leídos"   },
+  { id: "replied",     label: "Respondieron"},
+  { id: "pending",     label: "Pendientes"  },
 ];
+
+// ── Row menu ──────────────────────────────────────────────────────────────────
+
+interface RowMenuProps {
+  conv: Conversation;
+  onArchived: (id: string) => void;
+}
+
+function RowMenu({ conv, onArchived }: RowMenuProps) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function handleMarkRead() {
+    setOpen(false);
+    startTransition(async () => {
+      await markConversationRead(conv.id);
+      router.refresh();
+    });
+  }
+
+  function handleArchive() {
+    setOpen(false);
+    startTransition(async () => {
+      await archiveConversation(conv.id);
+      onArchived(conv.id);
+      router.refresh();
+    });
+  }
+
+  function handleViewLead() {
+    setOpen(false);
+    router.push(`/dashboard/crm?lead=${conv.lead.id}`);
+  }
+
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        disabled={isPending}
+        className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+      >
+        <MoreVertical className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+          <button
+            onClick={(e) => { e.stopPropagation(); handleMarkRead(); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+          >
+            <Check className="h-3.5 w-3.5 text-zinc-400" />
+            Marcar como leído
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleViewLead(); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+          >
+            <User className="h-3.5 w-3.5 text-zinc-400" />
+            Ver lead en CRM
+          </button>
+          <div className="my-1 h-px bg-zinc-100" />
+          <button
+            onClick={(e) => { e.stopPropagation(); handleArchive(); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-amber-50"
+          >
+            <Archive className="h-3.5 w-3.5 text-zinc-400" />
+            Archivar conversación
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -53,16 +140,23 @@ interface ConversationListProps {
 }
 
 export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<ConvStatus | "all">("all");
+  const [query,  setQuery]  = useState("");
+  const [filter, setFilter] = useState<FilterId>("all");
+  const [localConvs, setLocalConvs] = useState(conversations);
 
-  const visible = conversations.filter((c) => {
-    const matchFilter = filter === "all" || c.status === filter;
-    const matchQuery  = !query || c.lead.name.toLowerCase().includes(query.toLowerCase()) || c.lead.company.toLowerCase().includes(query.toLowerCase());
-    return matchFilter && matchQuery;
+  useEffect(() => { setLocalConvs(conversations); }, [conversations]);
+
+  const visible = localConvs.filter((c) => {
+    const lastMsg = c.messages[c.messages.length - 1];
+    if (filter === "unread"  && c.unreadCount === 0) return false;
+    if (filter === "replied" && lastMsg?.sender !== "lead") return false;
+    if (filter === "pending" && lastMsg?.sender !== "user" && lastMsg?.sender !== "ai") return false;
+    if (filter !== "all" && filter !== "unread" && filter !== "replied" && filter !== "pending" && c.status !== filter) return false;
+    const matchQuery = !query || c.lead.name.toLowerCase().includes(query.toLowerCase()) || c.lead.company.toLowerCase().includes(query.toLowerCase());
+    return matchQuery;
   });
 
-  const totalUnread = conversations.reduce((s, c) => s + c.unreadCount, 0);
+  const totalUnread = localConvs.reduce((s, c) => s + c.unreadCount, 0);
 
   return (
     <div className="flex w-72 flex-shrink-0 flex-col border-r border-border bg-white">
@@ -111,19 +205,19 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
           <p className="px-4 py-8 text-center text-xs text-zinc-400">Sin conversaciones</p>
         )}
         {visible.map((conv) => {
-          const lastMsg  = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
-          const selected = conv.id === selectedId;
-          const status   = STATUS_CONFIG[conv.status] ?? STATUS_CONFIG.active;
+          const lastMsg    = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
+          const selected   = conv.id === selectedId;
+          const status     = STATUS_CONFIG[conv.status] ?? STATUS_CONFIG.active;
           const SourceIcon = conv.lead.source === "linkedin" ? Link2 : Globe;
 
           return (
-            <button
+            <div
               key={conv.id}
-              onClick={() => onSelect(conv.id)}
               className={[
-                "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
+                "group relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer",
                 selected ? "bg-indigo-50 border-l-2 border-indigo-500" : "hover:bg-zinc-50 border-l-2 border-transparent",
               ].join(" ")}
+              onClick={() => onSelect(conv.id)}
             >
               {/* Avatar */}
               <div className="relative flex-shrink-0">
@@ -139,9 +233,15 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
                   <p className={`truncate text-xs ${conv.unreadCount > 0 ? "font-bold text-zinc-900" : "font-medium text-zinc-700"}`}>
                     {conv.lead.name}
                   </p>
-                  <span className="flex-shrink-0 text-[10px] text-zinc-400">
+                  <span className="flex-shrink-0 text-[10px] text-zinc-400 group-hover:hidden">
                     {lastMsg ? fmtTime(lastMsg.timestamp) : conv.lead.createdAt ?? ""}
                   </span>
+                  <div className="hidden group-hover:flex flex-shrink-0">
+                    <RowMenu
+                      conv={conv}
+                      onArchived={(id) => setLocalConvs((prev) => prev.filter((c) => c.id !== id))}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -165,7 +265,7 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
                   </div>
                 </div>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

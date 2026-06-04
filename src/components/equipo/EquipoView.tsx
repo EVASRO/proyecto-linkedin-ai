@@ -9,7 +9,7 @@ import {
   Users, X, Zap,
 } from "lucide-react";
 import {
-  inviteMember, revokeInvitation, updateMemberRole,
+  inviteMember, revokeInvitation, removeMember, updateMemberRole,
 } from "@/app/dashboard/equipo/actions";
 import type { TeamMemberRow, InvitationRow } from "@/app/dashboard/equipo/actions";
 
@@ -358,11 +358,18 @@ export function EquipoView({ initialMembers, initialInvitations }: EquipoViewPro
   }
 
   function handleRemove(id: string) {
+    const member = members.find((m) => m.id === id);
     setMembers((p) => p.filter((m) => m.id !== id));
     startTransition(async () => {
-      const res = await revokeInvitation(id);
-      if (!res.success) setError(res.error ?? "Error al revocar");
-      else router.refresh();
+      const res = member?.status === "invited"
+        ? await revokeInvitation(id)
+        : await removeMember(id);
+      if (!res.success) {
+        setError(res.error ?? "Error al eliminar miembro");
+        setMembers((p) => (member ? [...p, member] : p));
+      } else {
+        router.refresh();
+      }
     });
   }
 

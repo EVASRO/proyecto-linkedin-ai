@@ -10,7 +10,7 @@ import {
 import { Check, MoreHorizontal, Palette, Pencil, Plus, Trash2 } from "lucide-react";
 import type { Column, ColumnColor, CrmLead } from "./types";
 import { LeadCard } from "./LeadCard";
-import { updateLeadStatus } from "@/app/dashboard/crm/actions";
+import { moveLead } from "@/app/dashboard/crm/actions";
 
 // ── Color system ──────────────────────────────────────────────────────────────
 
@@ -39,11 +39,13 @@ interface BoardProps {
   onLeadsChange: (leads: CrmLead[]) => void;
   onColumnsChange: (cols: Column[]) => void;
   onLeadClick?: (lead: CrmLead) => void;
+  onLeadDelete?: (lead: CrmLead) => void;
+  onLeadArchive?: (leadId: string) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadClick }: BoardProps) {
+export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadClick, onLeadDelete, onLeadArchive }: BoardProps) {
   const [openMenu, setOpenMenu] = useState<{ id: string; mode: MenuMode } | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const [addingStage, setAddingStage] = useState(false);
@@ -65,9 +67,9 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
       )
     );
     try {
-      await updateLeadStatus(draggableId, destination.droppableId);
+      await moveLead(draggableId, destination.droppableId);
     } catch (_) {
-      // mock leads won't match Supabase IDs — optimistic update is enough
+      // optimistic update already applied
     }
   }
 
@@ -254,7 +256,13 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
                               if (!dragging.current) onLeadClick?.(lead);
                             }}
                           >
-                            <LeadCard lead={lead} isDragging={snapshot.isDragging} />
+                            <LeadCard
+                              lead={lead}
+                              isDragging={snapshot.isDragging}
+                              onView={onLeadClick}
+                              onDelete={onLeadDelete}
+                              onArchive={onLeadArchive ? (l) => onLeadArchive(l.id) : undefined}
+                            />
                           </div>
                         )}
                       </Draggable>

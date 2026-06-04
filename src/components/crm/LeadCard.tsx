@@ -1,14 +1,15 @@
 "use client";
 
-import { Clock, Globe, Link2, Mail, Phone, Users, Zap } from "lucide-react";
-import type { CrmLead, TagColor } from "./types";
+import { useState } from "react";
+import { Archive, ClipboardCopy, Eye, MessageSquare, Trash2, X, Zap } from "lucide-react";
+import type { CrmLead } from "./types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const AVATAR_PALETTE = [
   "bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500",
-  "bg-pink-500", "bg-indigo-600", "bg-sky-500", "bg-orange-500",
-  "bg-teal-500", "bg-rose-500",   "bg-cyan-600", "bg-fuchsia-500",
+  "bg-pink-500",  "bg-indigo-600", "bg-sky-500",     "bg-orange-500",
+  "bg-teal-500",  "bg-rose-500",   "bg-cyan-600",    "bg-fuchsia-500",
 ];
 
 function avatarColor(name: string): string {
@@ -21,124 +22,211 @@ function initials(name: string): string {
   return name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 }
 
-function fmtDate(d: string): string {
-  return new Date(d).toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
+function relativeDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins  = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days  = Math.floor(diff / 86400000);
+  if (mins  < 1)  return "ahora";
+  if (mins  < 60) return `hace ${mins}m`;
+  if (hours < 24) return `hace ${hours}h`;
+  if (days  < 30) return `hace ${days}d`;
+  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
 }
 
 function fmtValue(v: number): string {
-  return v >= 1000 ? `$${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}K` : `$${v}`;
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000)     return `$${(v / 1_000).toFixed(v % 1000 === 0 ? 0 : 1)}K`;
+  return `$${v}`;
 }
 
-const TAG_CLS: Record<TagColor, string> = {
-  blue:   "bg-blue-50   text-blue-700   ring-blue-200",
-  violet: "bg-violet-50 text-violet-700 ring-violet-200",
-  green:  "bg-green-50  text-green-700  ring-green-200",
-  amber:  "bg-amber-50  text-amber-700  ring-amber-200",
-  red:    "bg-red-50    text-red-700    ring-red-200",
-  pink:   "bg-pink-50   text-pink-700   ring-pink-200",
-  sky:    "bg-sky-50    text-sky-700    ring-sky-200",
-  gray:   "bg-zinc-100  text-zinc-600   ring-zinc-200",
-  indigo: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+// ── Status badge ──────────────────────────────────────────────────────────────
+
+const STATUS: Record<string, { label: string; cls: string }> = {
+  nuevo:      { label: "Nuevo",      cls: "bg-blue-50   text-blue-700   ring-blue-200"   },
+  contactado: { label: "Contactado", cls: "bg-indigo-50 text-indigo-700 ring-indigo-200" },
+  respondio:  { label: "Respondió",  cls: "bg-green-50  text-green-700  ring-green-200"  },
+  "reunión":  { label: "Reunión",    cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
+  cerrado:    { label: "Cerrado",    cls: "bg-zinc-100  text-zinc-600   ring-zinc-200"   },
 };
 
-const SOURCE_ICON: Record<string, React.ElementType> = {
-  LinkedIn: Link2,
-  Web:      Globe,
-  Email:    Mail,
-  Llamada:  Phone,
-  Referido: Users,
-};
+// ── Priority dot ──────────────────────────────────────────────────────────────
+
+type Priority = "alta" | "media" | "baja";
+
+function priorityDot(score?: number): { p: Priority; cls: string } {
+  if (!score || score < 30) return { p: "baja",  cls: "bg-green-400" };
+  if (score < 70)            return { p: "media", cls: "bg-amber-400" };
+  return                            { p: "alta",  cls: "bg-red-400"   };
+}
+
+// ── Delete confirm inline ─────────────────────────────────────────────────────
+
+function DeleteConfirm({ name, onConfirm, onCancel }: {
+  name: string; onConfirm: () => void; onCancel: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-red-300 bg-white/97 px-4 text-center backdrop-blur-sm">
+      <p className="text-xs font-semibold text-zinc-800">¿Eliminar a <strong>{name}</strong>?</p>
+      <p className="text-[10px] text-zinc-400">Esta acción no se puede deshacer.</p>
+      <div className="flex gap-2">
+        <button onClick={(e) => { e.stopPropagation(); onCancel(); }}
+          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-50">
+          Cancelar
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onConfirm(); }}
+          className="rounded-lg bg-red-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-red-700">
+          Eliminar
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface LeadCardProps {
   lead: CrmLead;
   isDragging?: boolean;
+  onView?: (lead: CrmLead) => void;
+  onDelete?: (lead: CrmLead) => void;
+  onArchive?: (lead: CrmLead) => void;
 }
 
-export function LeadCard({ lead, isDragging }: LeadCardProps) {
-  const Icon = SOURCE_ICON[lead.source] ?? Globe;
+export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: LeadCardProps) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const statusInfo = STATUS[lead.status] ?? { label: lead.status, cls: "bg-zinc-100 text-zinc-500 ring-zinc-200" };
+  const { cls: dotCls } = priorityDot(lead.score);
+
+  function copyUrl(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (lead.linkedinUrl) navigator.clipboard.writeText(lead.linkedinUrl);
+  }
 
   return (
     <div
       className={[
-        "w-full rounded-xl border bg-white px-3.5 py-3 transition-all duration-150",
+        "group relative w-full rounded-xl border bg-white px-3.5 py-3 transition-all duration-150",
         "cursor-grab active:cursor-grabbing select-none",
         isDragging
           ? "rotate-1 scale-[1.03] border-indigo-200 shadow-2xl shadow-indigo-200/50 ring-2 ring-indigo-100"
-          : "border-zinc-200 shadow-sm hover:border-zinc-300 hover:shadow-md",
+          : "border-zinc-200 shadow-sm hover:shadow-md hover:border-zinc-300",
       ].join(" ")}
     >
-      {/* Row 1 — Avatar · Name · Date */}
-      <div className="flex items-start gap-2.5">
-        <div
-          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(lead.name)}`}
-        >
+      {showDeleteConfirm && (
+        <DeleteConfirm
+          name={lead.name}
+          onConfirm={() => { setShowDeleteConfirm(false); onDelete?.(lead); }}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+      )}
+
+      {/* Priority dot */}
+      <span
+        className={`absolute right-3 top-3 h-2 w-2 rounded-full ${dotCls}`}
+        title={`Prioridad ${priorityDot(lead.score).p}`}
+      />
+
+      {/* Row 1 — Avatar · Name */}
+      <div className="flex items-start gap-2.5 pr-4">
+        <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(lead.name)}`}>
           {initials(lead.name)}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-1">
-            <p className="truncate text-[13px] font-semibold leading-tight text-zinc-900">
-              {lead.name}
-            </p>
-            <span className="flex-shrink-0 text-[10px] tabular-nums text-zinc-400">
-              {fmtDate(lead.createdAt)}
-            </span>
-          </div>
-          <div className="mt-0.5 flex items-center gap-1">
-            <p className="truncate text-[11px] text-zinc-500">{lead.company}</p>
-            <span className="text-zinc-300">·</span>
-            <p className="flex-shrink-0 text-[10px] text-zinc-400">#{lead.id}</p>
-          </div>
+          <p className="truncate text-[13px] font-semibold leading-tight text-zinc-900">{lead.name}</p>
+          <p className="truncate text-[11px] text-zinc-500">{lead.company}</p>
         </div>
       </div>
 
-      {/* Value */}
-      <div className="mt-2.5 flex items-baseline gap-1.5">
-        <span className="text-[17px] font-bold tabular-nums leading-none text-zinc-900">
-          {fmtValue(lead.value)}
+      {/* Row 2 — Status + value */}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${statusInfo.cls}`}>
+          {statusInfo.label}
         </span>
-        <span className="text-[10px] font-medium text-zinc-400">USD</span>
+        {lead.value > 0 && (
+          <span className="text-[13px] font-bold tabular-nums text-zinc-800">{fmtValue(lead.value)}</span>
+        )}
       </div>
 
-      {/* Tags */}
+      {/* Row 3 — Tags */}
       {lead.tags.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {lead.tags.map((tag) => (
-            <span
-              key={tag.label}
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${TAG_CLS[tag.color] ?? TAG_CLS.gray}`}
-            >
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {lead.tags.slice(0, 2).map((tag) => (
+            <span key={tag.label} className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
               {tag.label}
             </span>
           ))}
+          {lead.tags.length > 2 && (
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-400">+{lead.tags.length - 2}</span>
+          )}
         </div>
       )}
 
-      {/* Extraction pending badge */}
-      {lead.nextTask === "Extracción de perfil pendiente" && (
-        <div className="mt-2">
-          <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-semibold text-amber-700 w-fit">
-            <Clock className="h-2.5 w-2.5" /> Perfil pendiente
+      {/* Row 4 — Date */}
+      <div className="mt-2 flex items-center justify-between">
+        <span className="truncate text-[10px] text-zinc-400">{relativeDate(lead.createdAt)}</span>
+      </div>
+
+      {/* Row 5 — next_task */}
+      {lead.nextTask && (
+        <div className="mt-2 border-t border-zinc-100 pt-2">
+          <span className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 w-fit max-w-full">
+            <Zap className="h-2.5 w-2.5 flex-shrink-0" />
+            <span className="truncate">{lead.nextTask}</span>
           </span>
         </div>
       )}
 
-      {/* Footer */}
-      <div className="mt-2.5 flex items-center justify-between border-t border-zinc-100 pt-2">
-        <div className="flex items-center gap-1 text-zinc-400">
-          <Icon className="h-3 w-3" />
-          <span className="text-[10px]">{lead.source}</span>
-        </div>
-        {lead.nextTask && lead.nextTask !== "Extracción de perfil pendiente" ? (
-          <div className="flex max-w-[130px] items-center gap-1">
-            <Zap className="h-3 w-3 flex-shrink-0 text-amber-400" />
-            <span className="truncate text-[10px] font-medium text-amber-600">
-              {lead.nextTask}
-            </span>
-          </div>
-        ) : (
-          <span className="text-[10px] italic text-zinc-400">Sin tareas</span>
+      {/* Hover action bar */}
+      <div className="absolute inset-x-0 bottom-0 hidden items-center justify-end gap-1 rounded-b-xl border-t border-zinc-100 bg-white/95 px-3 py-1.5 backdrop-blur-sm group-hover:flex">
+        <button
+          onClick={(e) => { e.stopPropagation(); onView?.(lead); }}
+          title="Ver detalle"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
+        >
+          <Eye className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onView?.(lead); }}
+          title="Mensaje IA"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+        </button>
+        {lead.linkedinUrl && (
+          <button
+            onClick={copyUrl}
+            title="Copiar URL de LinkedIn"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
+          >
+            <ClipboardCopy className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onArchive && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive(lead); }}
+            title="Archivar lead"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-amber-50 hover:text-amber-500 transition-colors"
+          >
+            <Archive className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+            title="Eliminar lead"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {showDeleteConfirm && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(false); }}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
     </div>

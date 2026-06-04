@@ -7,8 +7,7 @@ import {
   CheckCircle2, ChevronDown, Columns3, Filter, LayoutList,
   Megaphone, Plus, Settings, TrendingUp, X, Zap,
 } from "lucide-react";
-import type { Column, CrmLead, LeadSource } from "./types";
-import type { ColumnColor } from "./types";
+import type { Column, CrmLead, LeadSource, ColumnColor } from "./types";
 import { Board } from "./Board";
 import { AutomationMatrix } from "./AutomationMatrix";
 import { LeadsListView } from "./LeadsListView";
@@ -17,17 +16,12 @@ import { SettingsModal } from "./SettingsModal";
 import { CreateLeadModal } from "./CreateLeadModal";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
 import type { WizardData, Template } from "@/components/campaigns/types";
-import {
-  updateLeadStatus as dbUpdateLeadStatus,
-  upsertAutomation as dbUpsertAutomation,
-  toggleAutomation as dbToggleAutomation,
-} from "@/app/dashboard/crm/actions";
+import { archiveLead as dbArchiveLead, updateLeadStatus as dbUpdateLeadStatus, deleteLead as dbDeleteLead } from "@/app/dashboard/crm/actions";
 import type {
   CrmLead as DbLead,
   CrmColumn as DbColumn,
-  CrmAutomation,
+  CrmAutomationFull,
 } from "@/app/dashboard/crm/actions";
-import type { AutomationTrigger } from "./types";
 
 // ── Map DB → UI ───────────────────────────────────────────────────────────────
 
@@ -60,15 +54,6 @@ function mapDbColumn(c: DbColumn): Column {
   return { id: c.id, title: c.title, color };
 }
 
-function mapDbAutomation(a: CrmAutomation): AutomationTrigger {
-  return {
-    id:           a.id,
-    columnId:     a.column_id,
-    triggerLabel: a.trigger_label,
-    actionLabel:  a.action_label,
-  };
-}
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type View = "kanban" | "list" | "automations" | "forecast";
@@ -76,7 +61,7 @@ type View = "kanban" | "list" | "automations" | "forecast";
 interface CrmViewProps {
   initialLeads: DbLead[];
   initialColumns: DbColumn[];
-  initialAutomations: CrmAutomation[];
+  initialAutomations: CrmAutomationFull[];
 }
 
 const SOURCES: LeadSource[] = ["LinkedIn", "Web", "Referido", "Email", "Llamada"];
@@ -89,7 +74,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
 
   const [leads,       setLeads]       = useState<CrmLead[]>(() => initialLeads.map(mapDbLead));
   const [columns,     setColumns]     = useState<Column[]>(() => initialColumns.map(mapDbColumn));
-  const [automations, setAutomations] = useState<AutomationTrigger[]>(() => initialAutomations.map(mapDbAutomation));
+  const [automations]                 = useState<CrmAutomationFull[]>(initialAutomations);
   const [crmError,    setCrmError]    = useState("");
 
   useEffect(() => {
@@ -186,6 +171,32 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
     setLeads((prev) => [lead, ...prev]);
   }
 
+  // ── Delete lead ──────────────────────────────────────────────────────────────
+
+  function handleLeadDelete(lead: CrmLead) {
+    setLeads((prev) => prev.filter((l) => l.id !== lead.id));
+    startTransition(async () => {
+      const res = await dbDeleteLead(lead.id);
+      if (!res.success) {
+        setLeads((prev) => [lead, ...prev]); // revert
+        setCrmError(res.error ?? "Error al eliminar lead");
+      }
+    });
+  }
+
+  // ── Archive lead ─────────────────────────────────────────────────────────────
+
+  function handleLeadArchive(leadId: string) {
+    setLeads((prev) => prev.filter((l) => l.id !== leadId));
+    startTransition(async () => {
+      const res = await dbArchiveLead(leadId);
+      if (!res.success) {
+        router.refresh(); // revert via server data
+        setCrmError(res.error ?? "Error al archivar lead");
+      }
+    });
+  }
+
   // ── Lead modal stage change ───────────────────────────────────────────────────
 
   function handleStageChange(leadId: string, newStatus: string) {
@@ -193,37 +204,6 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
     startTransition(async () => {
       const res = await dbUpdateLeadStatus(leadId, newStatus);
       if (!res.success) setCrmError(res.error ?? "Error al actualizar estado");
-    });
-  }
-
-  // ── AutomationMatrix handlers ────────────────────────────────────────────────
-
-  function handleAddAutomation(colId: string, triggerLabel: string, actionLabel: string) {
-    const tempId = `auto_${Date.now()}`;
-    const newAuto: AutomationTrigger = { id: tempId, columnId: colId, triggerLabel, actionLabel };
-    setAutomations((prev) => [...prev, newAuto]);
-    startTransition(async () => {
-      const res = await dbUpsertAutomation({
-        column_id:     colId,
-        trigger_label: triggerLabel,
-        action_label:  actionLabel,
-        action_type:   "webhook",
-        action_config: {},
-        is_active:     true,
-      });
-      if (!res.success) {
-        setCrmError(res.error ?? "Error al guardar automatización");
-        setAutomations((prev) => prev.filter((a) => a.id !== tempId));
-      } else if (res.data) {
-        setAutomations((prev) => prev.map((a) => a.id === tempId ? { ...a, id: res.data!.id } : a));
-      }
-    });
-  }
-
-  function handleRemoveAutomation(id: string) {
-    setAutomations((prev) => prev.filter((a) => a.id !== id));
-    startTransition(async () => {
-      await dbToggleAutomation(id, false);
     });
   }
 
@@ -386,6 +366,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
             onLeadsChange={handleLeadsChange}
             onColumnsChange={setColumns}
             onLeadClick={setSelectedLead}
+            onLeadDelete={handleLeadDelete}
+            onLeadArchive={handleLeadArchive}
           />
         )}
 
@@ -399,8 +381,6 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
           <AutomationMatrix
             columns={columns}
             initialAutomations={automations}
-            onAdd={handleAddAutomation}
-            onRemove={handleRemoveAutomation}
           />
         )}
 
@@ -463,6 +443,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
           lead={selectedLead}
           onClose={() => setSelectedLead(null)}
           onStageChange={handleStageChange}
+          onDeleted={(id) => { setLeads((prev) => prev.filter((l) => l.id !== id)); setSelectedLead(null); }}
+          onArchived={(id) => { handleLeadArchive(id); setSelectedLead(null); }}
         />
       )}
 

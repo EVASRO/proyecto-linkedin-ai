@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Copy, Check, CheckCircle } from "lucide-react";
 import { type Lead } from "@/lib/supabase";
 import { updateLeadStatus } from "./actions";
+import { createClient } from "@/lib/supabase/browser";
 
 const STATUS_STYLES: Record<string, string> = {
   nuevo:       "bg-blue-50   text-blue-700   ring-blue-600/20",
@@ -24,9 +25,37 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
-  const [leads, setLeads]     = useState<Lead[]>(initialLeads);
+  const [leads, setLeads]       = useState<Lead[]>(initialLeads);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("crm-leads")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "leads" },
+        (payload) => {
+          const updated = payload.new as Lead;
+          setLeads((prev) =>
+            prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l))
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "leads" },
+        (payload) => {
+          const newLead = payload.new as Lead;
+          setLeads((prev) =>
+            prev.some((l) => l.id === newLead.id) ? prev : [newLead, ...prev]
+          );
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   async function handleCopy(lead: Lead) {
     const text = lead.ai_summary ?? lead.full_name;

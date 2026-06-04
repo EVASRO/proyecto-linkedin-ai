@@ -131,6 +131,26 @@ export function InboxLayout({ initialConversations }: InboxLayoutProps) {
           );
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversations" },
+        (payload) => {
+          const updated = payload.new as Record<string, unknown>;
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === String(updated.id)
+                ? {
+                    ...c,
+                    unreadCount:
+                      c.id === selectedId
+                        ? 0
+                        : (updated.unread_count as number) ?? c.unreadCount,
+                  }
+                : c
+            )
+          );
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
