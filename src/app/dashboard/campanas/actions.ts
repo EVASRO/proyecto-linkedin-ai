@@ -243,7 +243,29 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
       .single();
 
     if (campErr || !campaign) return { success: false, error: "Campaña no encontrada" };
-    if (campaign.status === "active") return { success: false, error: "La campaña ya está activa" };
+
+    // Activate all segments in workflow_json regardless of current campaign status
+    const wf = (campaign.workflow_json ?? {}) as Record<string, unknown>;
+    const now = new Date().toISOString();
+    const updatedSegments = Array.isArray(wf.segments)
+      ? (wf.segments as Array<Record<string, unknown>>).map((seg) => ({
+          ...seg,
+          status: "active",
+          activated_at: now,
+        }))
+      : wf.segments;
+
+    const updatedWorkflow = { ...wf, segments: updatedSegments };
+
+    // Bug 1: already active → activate segments and return success (not error)
+    if (campaign.status === "active") {
+      await supabase
+        .from("campaigns")
+        .update({ workflow_json: updatedWorkflow })
+        .eq("id", campaignId)
+        .eq("workspace_id", workspaceId);
+      return { success: true, data: { queued: 0 } };
+    }
 
     const { data: leads } = await supabase
       .from("leads")
@@ -256,30 +278,38 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
     if (!leads || leads.length === 0) {
       await supabase
         .from("campaigns")
-        .update({ status: "active" })
+        .update({ status: "active", workflow_json: updatedWorkflow })
         .eq("id", campaignId)
         .eq("workspace_id", workspaceId);
+      await supabase.from("engine_queue").insert({
+        workspace_id: workspaceId,
+        action_type:  "start_campaign_scraping",
+        payload:      { campaign_id: campaignId },
+        status:       "pending",
+        scheduled_at: now,
+      });
       return { success: true, data: { queued: 0 } };
     }
 
+    const connectionMessage = (campaign.workflow_json as Record<string, unknown>)?.connection_message as string ?? "";
+
+    // Bug 3: background.js reads action_type (switch case 'connect'), not task_type
     const tasks = leads.map((lead, i) => ({
       workspace_id: workspaceId,
       campaign_id:  campaignId,
       lead_id:      lead.id,
-      task_type:    "connect",
+      action_type:  "connect",
       payload: {
-        profile_url:       lead.linkedin_url,   // campo que lee executeTask en background.js
-        linkedin_url:      lead.linkedin_url,
-        lead_id:           lead.id,
-        lead_name:         lead.full_name,
-        campaign_name:     campaign.name,
-        campaign_id:       campaignId,
-        note:              (campaign.workflow_json as Record<string, unknown>)?.connection_message as string ?? "",
-        message_text:      (campaign.workflow_json as Record<string, unknown>)?.connection_message as string ?? "",
+        profile_url:   lead.linkedin_url,
+        linkedin_url:  lead.linkedin_url,
+        lead_id:       lead.id,
+        lead_name:     lead.full_name,
+        campaign_name: campaign.name,
+        campaign_id:   campaignId,
+        note:          connectionMessage,
+        message_text:  connectionMessage,
       },
       status:       "pending",
-      priority:     5,
-      // Escalonar 4 min por tarea — anti-ban LinkedIn
       scheduled_at: new Date(Date.now() + i * 4 * 60 * 1000).toISOString(),
     }));
 
@@ -288,7 +318,7 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
 
     await supabase
       .from("campaigns")
-      .update({ status: "active", total_leads: leads.length })
+      .update({ status: "active", total_leads: leads.length, workflow_json: updatedWorkflow })
       .eq("id", campaignId)
       .eq("workspace_id", workspaceId);
 
@@ -298,15 +328,7 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
       action_type:  "start_campaign_scraping",
       payload:      { campaign_id: campaignId },
       status:       "pending",
-      priority:     1, // highest priority so it runs before regular tasks
-      scheduled_at: new Date().toISOString(),
-    });
-
-    await supabase.from("activity_log").insert({
-      workspace_id: workspaceId,
-      action_type:  "campaign_launched",
-      description:  `Campaña "${campaign.name}" lanzada con ${leads.length} leads en cola`,
-      metadata:     { campaign_id: campaignId, queued: leads.length },
+      scheduled_at: now,
     });
 
     return { success: true, data: { queued: leads.length } };

@@ -1,7 +1,7 @@
 // ── Campaign Hierarchy ────────────────────────────────────────────────────────
 
 export type CampaignType   = "linkedin" | "sales_navigator" | "email";
-export type CampaignStatus = "draft" | "active" | "paused" | "completed";
+export type CampaignStatus = "draft" | "active" | "paused" | "completed" | "archived";
 export type SegmentSource  = "crm" | "external_link";
 
 export type Campaign = {

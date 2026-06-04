@@ -357,6 +357,10 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
           setError(res.error ?? "Error al lanzar campaña");
           return;
         }
+        // Optimistic: launchCampaign persisted active segments in DB
+        setSegments((prev) =>
+          prev.map((s) => s.campaignId === activeFlow.id ? { ...s, status: "active" as SegmentStatus } : s)
+        );
       } else {
         await dbUpdateStatus(activeFlow.id, status);
       }
@@ -368,6 +372,8 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
   }
 
   function handleDirectLaunch(campaignId: string) {
+    const alreadyActive = campaigns.find((c) => c.id === campaignId)?.status === "active";
+
     startTransition(async () => {
       const res = await launchCampaign(campaignId);
       if (!res.success) {
@@ -375,26 +381,21 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
         return;
       }
 
-      // Activate all draft segments
-      const campaignSegs = segments.filter((s) => s.campaignId === campaignId);
-      const activatedSegs = campaignSegs.map((s) =>
-        s.status === "draft" ? { ...s, status: "active" as SegmentStatus } : s
-      );
-      await updateCampaignWorkflow(campaignId, { segments: activatedSegs });
-
-      // Optimistic update
+      // Optimistic update — launchCampaign already persisted segments as active in DB
       setCampaigns((prev) =>
         prev.map((c) => c.id === campaignId ? { ...c, status: "active" } : c)
       );
-      setSegments((prev) => [
-        ...prev.filter((s) => s.campaignId !== campaignId),
-        ...activatedSegs,
-      ]);
+      setSegments((prev) =>
+        prev.map((s) => s.campaignId === campaignId ? { ...s, status: "active" as SegmentStatus } : s)
+      );
       if (selected?.id === campaignId) {
         setSelected((prev) => prev ? { ...prev, status: "active" } : prev);
       }
 
-      showToast("Campaña lanzada. Los leads están siendo procesados.");
+      showToast(alreadyActive
+        ? "✓ Esta campaña ya está activa y procesando leads."
+        : "✓ Campaña lanzada. Los leads están siendo procesados."
+      );
       router.refresh();
     });
   }

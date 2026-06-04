@@ -15,7 +15,7 @@ import { nodeTypes } from "./CustomNodes";
 import { PropertyPanel } from "./PropertyPanel";
 import { Sidebar } from "./Sidebar";
 import type { Campaign, FlowConfig, NodeData, Segment, Template } from "./types";
-import { updateCampaignWorkflow, updateCampaignStatus } from "@/app/dashboard/campanas/actions";
+import { updateCampaignWorkflow } from "@/app/dashboard/campanas/actions";
 
 // ── ID generator ──────────────────────────────────────────────────────────────
 let _uid = 1;
@@ -143,7 +143,6 @@ function LaunchModal({ campaign, segments, flowConfig, onClose, onDone }: Launch
     setLoading(true);
     setError("");
     await updateCampaignWorkflow(campaign.id, flowConfig as Record<string, unknown>);
-    await updateCampaignStatus(campaign.id, status);
     setLoading(false);
     onDone(status);
   }

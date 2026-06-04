@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   AlertTriangle, ArrowLeft, Bot, BookOpen, CalendarCheck,
-  CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, Edit2, ExternalLink,
+  CheckCircle2, ChevronDown, ChevronRight, Copy, Edit2, ExternalLink,
   Link2, Mail, MessageSquareText, Pause, Play, Plus, Trash2,
   Sparkles, UserPlus, Users, XCircle, Zap,
 } from "lucide-react";
@@ -81,12 +81,14 @@ function ProgressBar({ value, color = "bg-indigo-500" }: { value: number; color?
 
 function SegmentCard({
   segment,
+  campaignActive,
   onOpenFlow,
   onStatusChange,
   onRename,
   onDelete,
 }: {
   segment: Segment;
+  campaignActive: boolean;
   onOpenFlow: (seg: Segment) => void;
   onStatusChange: (id: string, status: SegmentStatus) => void;
   onRename: (id: string, name: string) => void;
@@ -136,12 +138,16 @@ function SegmentCard({
                 {m.duplicates} dup.
               </span>
             )}
-            {/* Tamaño real o pendiente de extracción */}
+            {/* Tamaño real o estado de extracción */}
             {m.totalLeads > 0 ? (
               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
                 {fmtN(m.totalLeads)} leads
               </span>
-            ) : segment.searchUrl ? (
+            ) : segment.searchUrl && campaignActive && segment.status === "active" ? (
+              <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-600">
+                Extrayendo leads...
+              </span>
+            ) : segment.searchUrl && segment.status === "draft" ? (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
                 Pendiente de extracción
               </span>
@@ -535,9 +541,9 @@ function AutopilotBanner({ segmentCount }: { segmentCount: number }) {
 
 function GhostEngineProgress({ campaignId: _ }: { campaignId: string }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-[11px] text-zinc-400 flex items-center gap-2">
-      <Zap className="h-3.5 w-3.5 flex-shrink-0" />
-      Motor no conectado — inicia el backend FastAPI para ver el progreso en tiempo real.
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-[11px] text-zinc-500 flex items-center gap-2">
+      <Zap className="h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+      Ghost Engine procesa los leads en segundo plano via la extensión de Chrome. El progreso se actualiza cada 30 segundos.
     </div>
   );
 }
@@ -554,7 +560,6 @@ interface CampaignDetailViewProps {
   onSegmentDelete: (segId: string) => void;
   onSegmentAdd: (seg: Segment) => void;
   onLaunch?: (campaignId: string) => void;
-  onSegmentStatusGuard?: () => boolean;
 }
 
 export function CampaignDetailView({
@@ -567,7 +572,6 @@ export function CampaignDetailView({
   onSegmentDelete,
   onSegmentAdd,
   onLaunch,
-  onSegmentStatusGuard,
 }: CampaignDetailViewProps) {
   const TypeIcon = TYPE_ICON[campaign.type];
   const [toast, setToast] = useState<string | null>(null);
@@ -577,15 +581,6 @@ export function CampaignDetailView({
     setTimeout(() => setToast(null), 3500);
   }
 
-  function handleSegmentToggle(segId: string, current: SegmentStatus) {
-    if (campaign.status === "draft") {
-      showToast("Primero lanza la campaña para activar segmentos");
-      return;
-    }
-    if (onSegmentStatusGuard && !onSegmentStatusGuard()) return;
-    const next: SegmentStatus = current === "active" ? "paused" : "active";
-    onSegmentStatusChange(segId, next);
-  }
 
   // Summary totals
   const totals = segments.reduce(
@@ -639,13 +634,17 @@ export function CampaignDetailView({
           <p className="text-sm font-bold text-zinc-900">{campaign.name}</p>
           <p className="text-[10px] text-zinc-400">{TYPE_LABEL[campaign.type]}</p>
         </div>
-        {campaign.status !== "active" && onLaunch && (
+        {onLaunch && campaign.status !== "paused" && campaign.status !== "completed" && (
           <button
             onClick={() => onLaunch(campaign.id)}
-            className="ml-auto flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 transition-colors"
+            className={`ml-auto flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white transition-colors ${
+              campaign.status === "active"
+                ? "bg-green-500 hover:bg-green-600 cursor-default opacity-80"
+                : "bg-green-600 hover:bg-green-700"
+            }`}
           >
             <Play className="h-4 w-4" />
-            Lanzar campaña
+            {campaign.status === "active" ? "Campaña activa" : "Lanzar campaña"}
           </button>
         )}
       </div>
@@ -745,13 +744,14 @@ export function CampaignDetailView({
               <SegmentCard
                 key={seg.id}
                 segment={seg}
+                campaignActive={campaign.status === "active"}
                 onOpenFlow={(s) => onOpenFlow(campaign, s)}
                 onStatusChange={(id, status) => {
-                  if (campaign.status === "draft" && (status === "active" || status === "paused")) {
-                    handleSegmentToggle(id, seg.status);
-                  } else {
-                    onSegmentStatusChange(id, status);
+                  if (campaign.status !== "active") {
+                    showToast("Primero lanza la campaña para modificar segmentos");
+                    return;
                   }
+                  onSegmentStatusChange(id, status);
                 }}
                 onRename={onSegmentRename}
                 onDelete={onSegmentDelete}

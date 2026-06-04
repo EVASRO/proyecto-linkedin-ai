@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { Campaign, CampaignStatus, CampaignType } from "./types";
 import {
-  deleteCampaign, archiveCampaign, updateCampaignStatus,
+  deleteCampaign, archiveCampaign, updateCampaignStatus, launchCampaign,
 } from "@/app/dashboard/campanas/actions";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -259,6 +259,22 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
   }
 
   function toggleCampaignStatus(id: string, current: CampaignStatus) {
+    // Bug 4: draft → active must go through launchCampaign (activates segments + queues tasks)
+    if (current === "draft") {
+      onCampaignsChange(campaigns.map((c) => c.id === id ? { ...c, status: "active" } : c));
+      startTransition(async () => {
+        const res = await launchCampaign(id);
+        if (!res.success) {
+          onCampaignsChange(campaigns.map((c) => c.id === id ? { ...c, status: "draft" } : c));
+          showToast("error", res.error ?? "Error al lanzar campaña");
+        } else {
+          showToast("success", "Campaña lanzada correctamente");
+          router.refresh();
+        }
+      });
+      return;
+    }
+
     const next: CampaignStatus = current === "active" ? "paused" : "active";
     onCampaignsChange(campaigns.map((c) => c.id === id ? { ...c, status: next } : c));
     startTransition(async () => {
