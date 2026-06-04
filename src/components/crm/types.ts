@@ -22,18 +22,20 @@ export type CrmLead = {
   tags: LeadTag[];
   nextTask: string | null;
   status: string;
+  crmColumn: string | null;
   createdAt: string;
   email?: string;
   phone?: string;
   linkedinUrl?: string;
-  assignedTo?: string;   // member id
-  score?: number;        // 0-100 lead score
+  assignedTo?: string;
+  score?: number;
 };
 
 export type Column = {
   id: string;
   title: string;
   color: ColumnColor;
+  key?: string;
 };
 
 export type AutomationTrigger = {

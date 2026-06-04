@@ -21,6 +21,7 @@ import {
 
 interface InboxLayoutProps {
   initialConversations: Conversation[];
+  workspaceId: string;
 }
 
 // ── Agent selector dropdown ───────────────────────────────────────────────────
@@ -61,7 +62,7 @@ function AgentSelector({ agents, onSelect, onClose }: {
   );
 }
 
-export function InboxLayout({ initialConversations }: InboxLayoutProps) {
+export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutProps) {
   const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
   const [selectedId, setSelectedId]       = useState<string | null>(initialConversations[0]?.id ?? null);
   const [detailOpen, setDetailOpen]       = useState(true);
@@ -80,20 +81,26 @@ export function InboxLayout({ initialConversations }: InboxLayoutProps) {
 
   // ── Supabase Realtime ────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!workspaceId) return;
     const supabase = createClient();
 
     const channel = supabase
-      .channel("inbox-messages")
+      .channel("inbox-realtime")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
+        {
+          event:  "INSERT",
+          schema: "public",
+          table:  "messages",
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
         (payload) => {
           const m = payload.new as Record<string, unknown>;
           const incoming: Message = {
             id:        String(m.id),
             text:      String(m.message_text ?? ""),
             sender:    m.sender === "prospect" ? "lead" : (m.sender as Message["sender"]),
-            timestamp: String(m.timestamp ?? m.created_at),
+            timestamp: String(m.timestamp ?? m.inserted_at),
             read:      false,
             status:    "delivered",
           };
@@ -112,7 +119,12 @@ export function InboxLayout({ initialConversations }: InboxLayoutProps) {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages" },
+        {
+          event:  "UPDATE",
+          schema: "public",
+          table:  "messages",
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
         (payload) => {
           const updated = payload.new as Record<string, unknown>;
           setConversations((prev) =>
@@ -133,7 +145,12 @@ export function InboxLayout({ initialConversations }: InboxLayoutProps) {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "conversations" },
+        {
+          event:  "UPDATE",
+          schema: "public",
+          table:  "conversations",
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
         (payload) => {
           const updated = payload.new as Record<string, unknown>;
           setConversations((prev) =>
@@ -151,10 +168,41 @@ export function InboxLayout({ initialConversations }: InboxLayoutProps) {
           );
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event:  "UPDATE",
+          schema: "public",
+          table:  "leads",
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        (payload) => {
+          // Enriquecimiento progresivo de datos del lead en tiempo real
+          const updated = payload.new as Record<string, unknown>;
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.lead.id === String(updated.id)
+                ? {
+                    ...c,
+                    lead: {
+                      ...c.lead,
+                      name:        String(updated.full_name ?? c.lead.name),
+                      company:     String(updated.company   ?? c.lead.company),
+                      title:       String(updated.headline  ?? c.lead.title),
+                      email:       updated.email       ? String(updated.email)        : c.lead.email,
+                      phone:       updated.phone       ? String(updated.phone)        : c.lead.phone,
+                      linkedinUrl: updated.linkedin_url ? String(updated.linkedin_url) : c.lead.linkedinUrl,
+                    },
+                  }
+                : c
+            )
+          );
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [selectedId]);
+  }, [selectedId, workspaceId]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 

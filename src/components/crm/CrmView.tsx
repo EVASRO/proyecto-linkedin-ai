@@ -35,6 +35,7 @@ function mapDbLead(l: DbLead): CrmLead {
     tags:        (l.custom_tags ?? []).map((t) => ({ label: t, color: "blue" as const })),
     nextTask:    l.next_task ?? null,
     status:      l.status,
+    crmColumn:   l.crm_column ?? l.status ?? null,
     createdAt:   l.created_at?.slice(0, 10) ?? "",
     email:       l.email ?? undefined,
     phone:       l.phone ?? undefined,
@@ -51,7 +52,7 @@ function mapDbColumn(c: DbColumn): Column {
   const color: ColumnColor = VALID_COLORS.includes(c.color as ColumnColor)
     ? (c.color as ColumnColor)
     : "blue";
-  return { id: c.id, title: c.title, color };
+  return { id: c.id, title: c.title, color, key: c.key };
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────

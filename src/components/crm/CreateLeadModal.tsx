@@ -119,6 +119,7 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
       tags:        selectedTags,
       nextTask:    linkedinUrl.trim() ? "Extracción de perfil pendiente" : nextTask.trim() || null,
       status:      selectedColumn,
+      crmColumn:   selectedColumn,
       createdAt:   new Date().toISOString().split("T")[0],
       email:       email.trim()       || undefined,
       phone:       phone.trim()       || undefined,

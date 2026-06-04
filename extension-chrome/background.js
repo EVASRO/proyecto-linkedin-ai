@@ -346,17 +346,54 @@ async function executeTask(task) {
         break;
 
       case 'start_campaign_scraping': {
-        // Mark done immediately — scraping runs async in background
+        const campaignId = task.payload?.campaign_id;
+        if (!campaignId) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body:   JSON.stringify({ status: 'failed', last_error: 'Missing campaign_id' }),
+          });
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+
+        // Check engine_running guard
+        const { engine_running: er } = await chrome.storage.local.get('engine_running');
+        if (!er) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body:   JSON.stringify({ status: 'failed', last_error: 'Engine not running' }),
+          });
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+
+        // Mark queue task done — scraping runs async
         await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body:   JSON.stringify({ status: 'done', executed_at: new Date().toISOString() }),
         });
         await chrome.storage.local.set({ processing: false });
+
         const campRows = await supabaseFetch(
-          `campaigns?id=eq.${task.payload?.campaign_id}&select=*`
+          `campaigns?id=eq.${campaignId}&select=id,name,workflow_json,workspace_id`
         );
-        if (campRows?.[0]) {
-          startCampaignScraping(campRows[0]).catch((err) =>
+        const campaign = campRows?.[0];
+        if (!campaign) return;
+
+        const segments = campaign.workflow_json?.segments || [];
+        for (const segment of segments) {
+          if (segment.status !== 'active') continue;
+          const searchUrl = segment.searchUrl || segment.url || segment.salesNavUrl;
+          if (!searchUrl) continue;
+
+          console.log(`[NexusAI Scraper] Iniciando extracción para segmento: ${segment.name}`);
+
+          await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body:   JSON.stringify({ scraping_status: 'running' }),
+          }).catch(() => {});
+
+          scrapeSegmentProfiles(campaign, segment, searchUrl).catch((err) =>
             console.error('[NexusAI Scraper] Fatal error:', err)
           );
         }
@@ -481,22 +518,72 @@ async function handleActionDone(taskId, result) {
   // 3. Actualizar el lead en el CRM según la acción completada
   if (wsId && result.lead_id) {
     try {
-      if (result.action === 'connect') {
+      if (result.action === 'connect' && result.success !== false) {
+        const now = new Date().toISOString();
+
+        // Actualizar lead: conexion_enviada
         await supabaseFetch(`leads?id=eq.${result.lead_id}&workspace_id=eq.${wsId}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body: JSON.stringify({
-            status:    'contactado',
-            next_task: 'Esperar aceptación de conexión',
+            status:               'conexion_enviada',
+            crm_column:           'conexion_enviada',
+            connection_sent_at:   now,
+            next_task:            'Esperar aceptación de conexión',
           }),
         });
+
+        // Crear conversación si no existe
+        const existingConv = await supabaseFetch(
+          `conversations?lead_id=eq.${result.lead_id}&workspace_id=eq.${wsId}&select=id`,
+          { method: 'GET' }
+        );
+        let convId;
+        if (existingConv?.length > 0) {
+          convId = existingConv[0].id;
+        } else {
+          const newConv = await supabaseFetch('conversations', {
+            method: 'POST',
+            body: JSON.stringify({
+              workspace_id:          wsId,
+              lead_id:               result.lead_id,
+              campaign_id:           result.campaign_id ?? null,
+              status:                'active',
+              autopilot_active:      false,
+              unread_count:          0,
+              last_message_at:       now,
+              last_message_preview:  'Solicitud de conexión enviada',
+            }),
+          });
+          convId = newConv?.[0]?.id;
+        }
+
+        if (convId) {
+          const noteText = result.note || 'Solicitud de conexión enviada';
+          await supabaseFetch('messages', {
+            method: 'POST', prefer: 'return=minimal',
+            body: JSON.stringify({
+              conversation_id: convId,
+              lead_id:         result.lead_id,
+              workspace_id:    wsId,
+              sender:          'user',
+              message_text:    noteText,
+              event:           'connection_sent',
+              status:          'sent',
+              is_read:         true,
+              timestamp:       now,
+              inserted_at:     now,
+            }),
+          });
+          await supabaseFetch(`conversations?id=eq.${convId}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              last_message_at:      now,
+              last_message_preview: noteText,
+            }),
+          });
+        }
       } else if (result.action === 'connect_accepted') {
-        await supabaseFetch(`leads?id=eq.${result.lead_id}&workspace_id=eq.${wsId}`, {
-          method: 'PATCH', prefer: 'return=minimal',
-          body: JSON.stringify({
-            status:    'conectado',
-            next_task: 'Enviar mensaje de seguimiento',
-          }),
-        });
+        await handleConnectionAccepted(result.profile_url, wsId);
       } else if (result.action === 'message') {
         await supabaseFetch(`leads?id=eq.${result.lead_id}&workspace_id=eq.${wsId}`, {
           method: 'PATCH', prefer: 'return=minimal',
@@ -680,155 +767,253 @@ async function handleCountResult(campaignId, segmentId, count) {
 
 // ── Scraping de leads ─────────────────────────────────────────────────────────
 
-const SCRAPER_MAX_TOTAL      = 500;
+const SCRAPER_MAX_PAGES      = 10;
 const SCRAPER_PAGE_DELAY_MIN = 8000;
 const SCRAPER_PAGE_DELAY_MAX = 15000;
-const SCRAPER_TASK_STAGGER   = 4 * 60 * 1000; // 4 min entre tareas en cola
+const SCRAPER_TASK_STAGGER   = 4 * 60 * 1000; // 4 min entre conexiones
 
-async function startCampaignScraping(campaign) {
-  const segments    = campaign.workflow_json?.segments ?? [];
-  const workspaceId = campaign.workspace_id;
+async function scrapeSegmentProfiles(campaign, segment, searchUrl) {
+  const wsId       = campaign.workspace_id;
+  const campaignId = campaign.id;
+  const connNote   = campaign.workflow_json?.connection_note || '';
+  const connMsg    = campaign.workflow_json?.connection_message || '';
 
-  for (const segment of segments) {
-    if (segment.status !== 'active') continue;
-    const searchUrl = segment.searchUrl || segment.url || segment.salesNavUrl;
-    if (!searchUrl) continue;
+  let tab            = null;
+  let totalExtracted = 0;
+  let connectQueue   = 0;
+  let tabCreatedByUs = false;
 
-    await supabaseFetch(`campaigns?id=eq.${campaign.id}`, {
+  try {
+    // Reusar tab de LinkedIn existente o abrir uno nuevo
+    const liTabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
+    if (liTabs.length > 0) {
+      tab = liTabs[0];
+      await chrome.tabs.update(tab.id, { url: searchUrl });
+    } else {
+      tab = await chrome.tabs.create({ url: searchUrl, active: false });
+      tabCreatedByUs = true;
+    }
+
+    await sleep(4000 + Math.random() * 2000);
+
+    for (let page = 1; page <= SCRAPER_MAX_PAGES; page++) {
+      // Verificar que el engine sigue corriendo
+      const { engine_running: er } = await chrome.storage.local.get('engine_running');
+      if (!er) {
+        console.log('[NexusAI Scraper] Engine detenido — abortando scraping');
+        break;
+      }
+
+      if (page > 1) {
+        const pageUrl = searchUrl.includes('?')
+          ? `${searchUrl}&page=${page}`
+          : `${searchUrl}?page=${page}`;
+        await chrome.tabs.update(tab.id, { url: pageUrl });
+        await sleep(4000 + Math.random() * 3000);
+      }
+
+      // Extraer perfiles via content script
+      let profiles = [];
+      try {
+        profiles = await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('timeout')), 25000);
+          chrome.tabs.sendMessage(tab.id, { action: 'NEXUSAI_SCRAPE_PROFILES', page }, (resp) => {
+            clearTimeout(timer);
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            resolve(Array.isArray(resp) ? resp : []);
+          });
+        });
+      } catch (e) {
+        const msg = e.message ?? '';
+        console.warn(`[NexusAI Scraper] Página ${page} error:`, msg);
+        if (msg.includes('blocked') || msg.includes('captcha')) {
+          await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body:   JSON.stringify({ scraping_status: 'blocked' }),
+          }).catch(() => {});
+          chrome.notifications.create(`scraper-blocked-${campaignId}`, {
+            type: 'basic', iconUrl: 'icon48.png',
+            title: 'NexusAI — Scraping bloqueado',
+            message: 'LinkedIn detectó actividad inusual. El scraping se pausó.',
+          });
+          return;
+        }
+        break;
+      }
+
+      if (!profiles || profiles.length === 0) {
+        console.log(`[NexusAI Scraper] Página ${page}: sin perfiles, fin del scraping`);
+        break;
+      }
+
+      console.log(`[NexusAI Scraper] Página ${page}: ${profiles.length} perfiles encontrados`);
+
+      for (const profile of profiles) {
+        if (!profile.url) continue;
+
+        // Upsert lead
+        const leadData = {
+          workspace_id: wsId,
+          campaign_id:  campaignId,
+          linkedin_url: profile.url,
+          linkedin_id:  profile.linkedinId || null,
+          full_name:    profile.name || 'Sin nombre',
+          headline:     profile.headline || null,
+          avatar_url:   profile.avatar || null,
+          location:     profile.location || null,
+          company:      profile.company || null,
+          status:       'extraido',
+          crm_column:   'extraido',
+        };
+
+        const existing = await supabaseFetch(
+          `leads?workspace_id=eq.${wsId}&linkedin_url=eq.${encodeURIComponent(profile.url)}&select=id`,
+          { method: 'GET' }
+        ).catch(() => []);
+
+        let leadId;
+        if (existing?.length > 0) {
+          leadId = existing[0].id;
+          await supabaseFetch(`leads?id=eq.${leadId}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              full_name:  leadData.full_name,
+              headline:   leadData.headline,
+              avatar_url: leadData.avatar_url,
+              company:    leadData.company,
+            }),
+          }).catch(() => {});
+        } else {
+          const newLead = await supabaseFetch('leads', {
+            method: 'POST',
+            body:   JSON.stringify(leadData),
+          }).catch(() => null);
+          leadId = newLead?.[0]?.id;
+        }
+
+        if (!leadId) continue;
+        totalExtracted++;
+
+        // Encolar tarea de conexión con stagger
+        const executeAt = new Date(Date.now() + connectQueue * SCRAPER_TASK_STAGGER);
+        await supabaseFetch('engine_queue', {
+          method: 'POST', prefer: 'return=minimal',
+          body: JSON.stringify({
+            workspace_id: wsId,
+            campaign_id:  campaignId,
+            lead_id:      leadId,
+            task_type:    'connect',
+            action_type:  'connect',
+            payload: {
+              profile_url:   profile.url,
+              linkedin_url:  profile.url,
+              lead_id:       leadId,
+              lead_name:     leadData.full_name,
+              campaign_id:   campaignId,
+              campaign_name: campaign.name,
+              note:          connNote,
+              message_text:  connMsg,
+            },
+            status:       'pending',
+            priority:     5,
+            scheduled_at: executeAt.toISOString(),
+          }),
+        }).catch((err) => console.warn('[NexusAI Scraper] Insert queue error:', err.message));
+        connectQueue++;
+
+        await sleep(200 + Math.random() * 300);
+      }
+
+      // Actualizar progreso
+      await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body:   JSON.stringify({ leads_total: totalExtracted }),
+      }).catch(() => {});
+
+      if (profiles.length < 25) break; // última página
+
+      const pageDelay = SCRAPER_PAGE_DELAY_MIN + Math.random() * (SCRAPER_PAGE_DELAY_MAX - SCRAPER_PAGE_DELAY_MIN);
+      console.log(`[NexusAI Scraper] Esperando ${Math.round(pageDelay / 1000)}s…`);
+      await sleep(pageDelay);
+    }
+
+  } finally {
+    if (tab && tabCreatedByUs) {
+      chrome.tabs.remove(tab.id).catch(() => {});
+    }
+
+    await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
       method: 'PATCH', prefer: 'return=minimal',
-      body:   JSON.stringify({
-        scraping_status:     'running',
-        scraping_started_at: new Date().toISOString(),
+      body:   JSON.stringify({ scraping_status: 'completed', leads_total: totalExtracted }),
+    }).catch(() => {});
+
+    console.log(`[NexusAI Scraper] Completado: ${totalExtracted} leads extraídos, ${connectQueue} conexiones encoladas`);
+  }
+}
+
+// ── Conexión aceptada ─────────────────────────────────────────────────────────
+
+async function handleConnectionAccepted(profileUrl, workspaceId) {
+  if (!profileUrl || !workspaceId) return;
+  const cleanUrl = profileUrl.replace(/\/$/, '').split('?')[0];
+
+  const leads = await supabaseFetch(
+    `leads?workspace_id=eq.${workspaceId}&linkedin_url=eq.${encodeURIComponent(cleanUrl)}&select=id`,
+    { method: 'GET' }
+  ).catch(() => []);
+
+  if (!leads?.length) return;
+  const leadId = leads[0].id;
+  const now    = new Date().toISOString();
+
+  await supabaseFetch(`leads?id=eq.${leadId}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: JSON.stringify({
+      status:                  'conexion_aceptada',
+      crm_column:              'conexion_aceptada',
+      connection_accepted_at:  now,
+      next_task:               'Enviar mensaje de seguimiento',
+    }),
+  }).catch(() => {});
+
+  const convs = await supabaseFetch(
+    `conversations?lead_id=eq.${leadId}&workspace_id=eq.${workspaceId}&select=id,unread_count`,
+    { method: 'GET' }
+  ).catch(() => []);
+
+  if (convs?.length > 0) {
+    const convId    = convs[0].id;
+    const unread    = (convs[0].unread_count ?? 0) + 1;
+    const preview   = '✓ Conexión aceptada';
+
+    await supabaseFetch('messages', {
+      method: 'POST', prefer: 'return=minimal',
+      body: JSON.stringify({
+        conversation_id: convId,
+        lead_id:         leadId,
+        workspace_id:    workspaceId,
+        sender:          'lead',
+        message_text:    preview,
+        event:           'connection_accepted',
+        status:          'received',
+        is_read:         false,
+        timestamp:       now,
+        inserted_at:     now,
       }),
     }).catch(() => {});
 
-    await scrapeAndQueueLeads(campaign.id, workspaceId, searchUrl, campaign.workflow_json);
-  }
-}
-
-async function scrapeAndQueueLeads(campaignId, workspaceId, searchUrl, workflowJson) {
-  let page         = 1;
-  let totalQueued  = 0;
-  let keepGoing    = true;
-
-  // Determine first action from workflow nodes
-  const firstNode     = workflowJson?.nodes?.[0]?.data;
-  const actionType    = firstNode?.nodeType === 'connect' ? 'send_connection' : (firstNode?.nodeType ?? 'send_connection');
-  const noteMessage   = firstNode?.messageA ?? firstNode?.note ?? '';
-
-  while (keepGoing && totalQueued < SCRAPER_MAX_TOTAL) {
-    const pageUrl = `${searchUrl}&page=${page}`;
-    console.log(`[NexusAI Scraper] Page ${page}: navigating…`);
-
-    let profiles = [];
-    try {
-      profiles = await sendToLinkedInTab(pageUrl, 'scrape_profiles');
-    } catch (err) {
-      console.warn(`[NexusAI Scraper] Page ${page} error:`, err.message);
-      // Check for captcha / block
-      if (err.message?.includes('blocked') || err.message?.includes('captcha')) {
-        await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
-          method: 'PATCH', prefer: 'return=minimal',
-          body:   JSON.stringify({ scraping_status: 'blocked' }),
-        }).catch(() => {});
-        chrome.notifications.create(`scraper-blocked-${campaignId}`, {
-          type:    'basic',
-          iconUrl: 'icons/icon48.png',
-          title:   'NexusAI — Scraping bloqueado',
-          message: 'LinkedIn detectó actividad inusual. El scraping se pausó.',
-        });
-        return;
-      }
-      break;
-    }
-
-    console.log(`[NexusAI Scraper] Page ${page}: ${profiles.length} profiles found`);
-
-    if (!profiles || profiles.length === 0) break;
-
-    for (const profile of profiles) {
-      if (totalQueued >= SCRAPER_MAX_TOTAL) break;
-      const executeAt = new Date(Date.now() + totalQueued * SCRAPER_TASK_STAGGER);
-
-      await supabaseFetch('engine_queue', {
-        method: 'POST', prefer: 'return=minimal',
-        body:   JSON.stringify({
-          workspace_id: workspaceId,
-          action_type:  actionType,
-          payload: {
-            profile_url:  profile.url,
-            linkedin_url: profile.url,
-            full_name:    profile.name  ?? '',
-            headline:     profile.headline ?? '',
-            campaign_id:  campaignId,
-            note:         noteMessage,
-            message_text: noteMessage,
-          },
-          status:      'pending',
-          priority:    5,
-          execute_at:  executeAt.toISOString(),
-          scheduled_at: executeAt.toISOString(),
-        }),
-      }).catch((err) => console.warn('[NexusAI Scraper] Insert queue error:', err.message));
-
-      totalQueued++;
-    }
-
-    // Update progress in real-time
-    await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+    await supabaseFetch(`conversations?id=eq.${convId}`, {
       method: 'PATCH', prefer: 'return=minimal',
-      body:   JSON.stringify({ leads_total: totalQueued }),
+      body: JSON.stringify({
+        last_message_at:      now,
+        last_message_preview: preview,
+        unread_count:         unread,
+      }),
     }).catch(() => {});
-
-    // Last page if fewer than 25 results
-    if (profiles.length < 25) keepGoing = false;
-
-    // Anti-ban delay between pages
-    const delay = SCRAPER_PAGE_DELAY_MIN + Math.random() * (SCRAPER_PAGE_DELAY_MAX - SCRAPER_PAGE_DELAY_MIN);
-    await sleep(delay);
-    page++;
   }
-
-  await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
-    method: 'PATCH', prefer: 'return=minimal',
-    body:   JSON.stringify({ scraping_status: 'completed', leads_total: totalQueued }),
-  }).catch(() => {});
-
-  console.log(`[NexusAI Scraper] Done. Total queued: ${totalQueued}`);
-}
-
-// Navigate a LinkedIn tab to the given URL and ask the content script to run an action.
-// Reuses an existing LinkedIn tab if available; never opens more than 1 scraping tab.
-async function sendToLinkedInTab(url, action) {
-  let tab = await getLinkedInTab();
-
-  if (tab) {
-    // Only navigate if we're not already on the right URL
-    if (!tab.url?.startsWith(url.split('&page=')[0])) {
-      await chrome.tabs.update(tab.id, { url });
-      await sleep(6000 + Math.random() * 3000); // wait for page load
-    }
-  } else {
-    const newTab = await chrome.tabs.create({ url, active: false });
-    tab = newTab;
-    await sleep(8000 + Math.random() * 4000);
-  }
-
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), 20000);
-    chrome.tabs.sendMessage(tab.id, { action }, (response) => {
-      clearTimeout(timer);
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      if (response?.profiles) {
-        resolve(response.profiles);
-      } else {
-        resolve([]);
-      }
-    });
-  });
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────────

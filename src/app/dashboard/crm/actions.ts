@@ -18,6 +18,7 @@ export type CrmLead = {
   phone: string | null;
   linkedin_url: string | null;
   status: string;
+  crm_column: string | null;
   value: number;
   score: number;
   custom_tags: string[];
@@ -33,6 +34,7 @@ export type CrmColumn = {
   title: string;
   color: string;
   position: number;
+  key?: string;
 };
 
 export type CrmAutomationFull = {
@@ -47,14 +49,15 @@ export type CrmAutomationFull = {
   created_at: string;
 };
 
-// ── Default columns ───────────────────────────────────────────────────────────
+// ── Default columns (campaign flow) ──────────────────────────────────────────
 
 const DEFAULT_COLUMNS = [
-  { title: "Leads Entrantes", color: "blue",   position: 0 },
-  { title: "En Contacto",     color: "indigo", position: 1 },
-  { title: "Demo Agendada",   color: "amber",  position: 2 },
-  { title: "Cerrado",         color: "green",  position: 3 },
-  { title: "Perdido",         color: "red",    position: 4 },
+  { title: "Extraídos",          color: "blue",   position: 0, key: "extraido"           },
+  { title: "Conexión Enviada",   color: "indigo", position: 1, key: "conexion_enviada"   },
+  { title: "Conexión Aceptada",  color: "violet", position: 2, key: "conexion_aceptada"  },
+  { title: "En Conversación",    color: "amber",  position: 3, key: "en_conversacion"    },
+  { title: "Reunión Agendada",   color: "orange", position: 4, key: "reunion_agendada"   },
+  { title: "Cliente",            color: "green",  position: 5, key: "cliente"            },
 ];
 
 // ── Auth context helper ───────────────────────────────────────────────────────
@@ -484,7 +487,7 @@ export async function moveLead(leadId: string, newColumn: string): Promise<Resul
 
     const { error } = await supabase
       .from("leads")
-      .update({ status: newColumn })
+      .update({ crm_column: newColumn })
       .eq("id", leadId)
       .eq("workspace_id", workspaceId);
 

@@ -52,9 +52,10 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
   const [newStageName, setNewStageName] = useState("");
   const dragging = useRef(false); // prevent click firing after drag
 
-  const colLeads = (id: string) => leads.filter((l) => l.status === id);
-  const colValue = (id: string) =>
-    leads.filter((l) => l.status === id).reduce((s, l) => s + l.value, 0);
+  const colKey   = (col: Column) => col.key ?? col.id;
+  const colLeads = (token: string) => leads.filter((l) => (l.crmColumn ?? l.status) === token);
+  const colValue = (token: string) =>
+    leads.filter((l) => (l.crmColumn ?? l.status) === token).reduce((s, l) => s + l.value, 0);
   const fmtVal = (v: number) => (v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v}`);
 
   async function onDragEnd({ source, destination, draggableId }: DropResult) {
@@ -63,7 +64,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
     if (!destination || destination.droppableId === source.droppableId) return;
     onLeadsChange(
       leads.map((l) =>
-        l.id === draggableId ? { ...l, status: destination.droppableId } : l
+        l.id === draggableId ? { ...l, crmColumn: destination.droppableId } : l
       )
     );
     try {
@@ -96,9 +97,14 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
   }
 
   function deleteColumn(id: string) {
-    const fallback = columns.find((c) => c.id !== id)?.id ?? "";
+    const deletedCol  = columns.find((c) => c.id === id);
+    const deletedKey  = deletedCol?.key ?? id;
+    const fallbackCol = columns.find((c) => c.id !== id);
+    const fallbackKey = fallbackCol ? (fallbackCol.key ?? fallbackCol.id) : "";
     onColumnsChange(columns.filter((c) => c.id !== id));
-    onLeadsChange(leads.map((l) => (l.status === id ? { ...l, status: fallback } : l)));
+    onLeadsChange(leads.map((l) =>
+      (l.crmColumn ?? l.status) === deletedKey ? { ...l, crmColumn: fallbackKey } : l
+    ));
     setOpenMenu(null);
   }
 
@@ -129,7 +135,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
                   </span>
                   <div className="flex flex-shrink-0 items-center gap-1.5">
                     <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${c.count}`}>
-                      {colLeads(col.id).length}
+                      {colLeads(colKey(col)).length}
                     </span>
                     <button
                       onClick={() => toggleMenu(col.id)}
@@ -140,7 +146,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
                   </div>
                 </div>
                 <p className="mt-0.5 text-[10px] font-medium tabular-nums text-white/60">
-                  {fmtVal(colValue(col.id))} en pipeline
+                  {fmtVal(colValue(colKey(col)))} en pipeline
                 </p>
 
                 {/* ── Dropdown ── */}
@@ -233,7 +239,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
               </div>
 
               {/* ── Drop zone ── */}
-              <Droppable droppableId={col.id}>
+              <Droppable droppableId={colKey(col)}>
                 {(provided, snapshot) => (
                   <div
                     ref={provided.innerRef}
@@ -245,7 +251,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
                         : "border-zinc-200 bg-zinc-50/70",
                     ].join(" ")}
                   >
-                    {colLeads(col.id).map((lead, idx) => (
+                    {colLeads(colKey(col)).map((lead, idx) => (
                       <Draggable key={lead.id} draggableId={lead.id} index={idx}>
                         {(provided, snapshot) => (
                           <div

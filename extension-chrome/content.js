@@ -698,6 +698,81 @@
             break;
           }
 
+          case 'NEXUSAI_SCRAPE_PROFILES': {
+            // Scraping estructurado para campaña — devuelve array directo (no envuelto)
+            await sleep(800 + Math.random() * 1200);
+
+            const results = [];
+
+            // Sales Navigator: cards de resultado
+            const snCards = document.querySelectorAll(
+              '.artdeco-entity-lockup, [data-view-name="search-result-entity-lockup"], .search-results__result-item'
+            );
+
+            snCards.forEach((card) => {
+              const linkEl = card.querySelector('a[href*="/sales/lead/"], a[href*="/in/"]');
+              if (!linkEl) return;
+              const url = linkEl.href?.split('?')[0];
+              if (!url) return;
+
+              const nameEl = card.querySelector(
+                '.artdeco-entity-lockup__title, .result-lockup__name, [data-anonymize="person-name"]'
+              );
+              const headlineEl = card.querySelector(
+                '.artdeco-entity-lockup__subtitle, .result-lockup__highlight-keyword, [data-anonymize="headline"]'
+              );
+              const avatarEl = card.querySelector('img.presence-entity__image, img.evi-image');
+              const companyEl = card.querySelector(
+                '[data-anonymize="company-name"], .result-lockup__position-company'
+              );
+
+              const idMatch      = url.match(/\/in\/([^/?]+)/);
+              const salesIdMatch = url.match(/\/sales\/lead\/([^,/?]+)/);
+
+              results.push({
+                url,
+                name:       nameEl?.textContent?.trim()    || 'Sin nombre',
+                headline:   headlineEl?.textContent?.trim() || null,
+                avatar:     avatarEl?.src                   || null,
+                company:    companyEl?.textContent?.trim()  || null,
+                location:   null,
+                linkedinId: idMatch?.[1] || salesIdMatch?.[1] || null,
+              });
+            });
+
+            // LinkedIn estándar (fallback si Sales Nav no encontró nada)
+            if (results.length === 0) {
+              document.querySelectorAll('.entity-result__title-text a').forEach((el) => {
+                const url  = el.href?.split('?')[0];
+                const name = el.querySelector('.visually-hidden')?.textContent?.trim()
+                           ?? el.textContent?.trim();
+                if (!url || !url.includes('/in/')) return;
+                const card      = el.closest('.entity-result');
+                const headline  = card?.querySelector('.entity-result__primary-subtitle')?.textContent?.trim() || null;
+                const avatarEl  = card?.querySelector('img.presence-entity__image, img.entity-result__picture');
+                const companyEl = card?.querySelector('.entity-result__secondary-subtitle');
+                const idMatch   = url.match(/\/in\/([^/?]+)/);
+                results.push({
+                  url,
+                  name:       name || 'Sin nombre',
+                  headline,
+                  avatar:     avatarEl?.src || null,
+                  company:    companyEl?.textContent?.trim() || null,
+                  location:   null,
+                  linkedinId: idMatch?.[1] || null,
+                });
+              });
+            }
+
+            // Deduplicar por URL
+            const unique = results.filter((p, i, arr) =>
+              arr.findIndex((x) => x.url === p.url) === i
+            );
+
+            sendResponse(unique);
+            break;
+          }
+
           default:
             sendResponse({ success: false, error: `Acción desconocida: ${msg.action}` });
         }

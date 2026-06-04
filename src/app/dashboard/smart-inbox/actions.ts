@@ -38,7 +38,7 @@ async function getAuthContext() {
 
 // ── Cargar conversaciones con mensajes ────────────────────────────────────────
 
-export async function getConversationsWithMessages(): Promise<Result<{ conversations: Conversation[] }>> {
+export async function getConversationsWithMessages(): Promise<Result<{ conversations: Conversation[]; workspaceId: string }>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
 
@@ -104,7 +104,7 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
       })
     );
 
-    return { success: true, data: { conversations } };
+    return { success: true, data: { conversations, workspaceId } };
   } catch (err) {
     return { success: false, error: String(err) };
   }
