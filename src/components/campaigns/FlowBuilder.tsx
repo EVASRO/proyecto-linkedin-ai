@@ -218,7 +218,7 @@ interface InnerProps {
   segments: Segment[];
   initialFlow?: FlowConfig;
   onBack: () => void;
-  onLaunched: (status: "active" | "draft") => void;
+  onLaunched: (status: "active" | "draft", currentFlow: FlowConfig) => void;
   onSave?: (flowConfig: FlowConfig) => void;
 }
 
@@ -571,7 +571,7 @@ function FlowCanvas({ campaign, segments, initialFlow, onBack, onLaunched, onSav
           onClose={() => setLaunchOpen(false)}
           onDone={(status) => {
             setLaunchOpen(false);
-            onLaunched(status);
+            onLaunched(status, currentFlowConfig());
           }}
         />
       )}
@@ -586,7 +586,7 @@ interface FlowBuilderProps {
   segments: Segment[];
   initialFlow?: FlowConfig;
   onBack: () => void;
-  onLaunched: (status: "active" | "draft") => void;
+  onLaunched: (status: "active" | "draft", currentFlow: FlowConfig) => void;
   onSave?: (flowConfig: FlowConfig) => void;
 }
 

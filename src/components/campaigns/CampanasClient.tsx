@@ -284,23 +284,34 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
       createdAt:      today,
     };
 
-    // Create campaign in Supabase
-    const res = await createCampaign({
-      name:  data.campaignName,
-      type:  data.campaignType ?? "linkedin",
-    });
-
     let campaignId = `c_local_${Date.now()}`;
 
-    if (res.success && res.data) {
-      campaignId      = res.data.id;
-      newSeg.campaignId = campaignId;
+    // Reusar draft huérfano con el mismo nombre en lugar de crear duplicado
+    const { getCampaignsData } = await import("@/app/dashboard/campanas/actions");
+    const existingRes = await getCampaignsData();
+    const duplicate = existingRes.data?.campaigns.find(
+      (c) => c.name === data.campaignName && c.status === "draft"
+    );
 
-      // Save segment into workflow_json immediately
+    if (duplicate) {
+      campaignId        = duplicate.id;
+      newSeg.campaignId = campaignId;
       await updateCampaignWorkflow(campaignId, { segments: [newSeg] });
     } else {
-      setError(res.error ?? "Error al crear campaña");
-      newSeg.campaignId = campaignId;
+      // Create campaign in Supabase
+      const res = await createCampaign({
+        name: data.campaignName,
+        type: data.campaignType ?? "linkedin",
+      });
+
+      if (res.success && res.data) {
+        campaignId        = res.data.id;
+        newSeg.campaignId = campaignId;
+        await updateCampaignWorkflow(campaignId, { segments: [newSeg] });
+      } else {
+        setError(res.error ?? "Error al crear campaña");
+        newSeg.campaignId = campaignId;
+      }
     }
 
     const newCampaign: Campaign = {
@@ -341,28 +352,45 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
 
   // ── FlowBuilder launched callback ─────────────────────────────────────────
 
-  function handleLaunched(status: "active" | "draft") {
+  function handleLaunched(status: "active" | "draft", currentFlow?: FlowConfig) {
     if (!activeFlow) return;
+
+    const campaignId      = activeFlow.id;
+    const segsForCampaign = activeFlow.segments ?? segmentsFor(activeFlow);
+
+    // Optimistic UI update
     setCampaigns((prev) =>
-      prev.map((c) => c.id === activeFlow.id ? { ...c, status } : c)
+      prev.map((c) => c.id === campaignId ? { ...c, status } : c)
     );
-    if (selected?.id === activeFlow.id) {
+    if (selected?.id === campaignId) {
       setSelected((prev) => prev ? { ...prev, status } : prev);
     }
 
     startTransition(async () => {
+      // 1. Guardar el flujo actual (nodes + edges + segments) antes de lanzar
+      //    Así launchCampaign lee un workflow_json completo desde DB
+      const flowToSave = currentFlow ?? activeFlow.initialFlow ?? { nodes: [], edges: [] };
+      await updateCampaignWorkflow(campaignId, {
+        ...flowToSave,
+        segments: segsForCampaign,
+      });
+
       if (status === "active") {
-        const res = await launchCampaign(activeFlow.id);
+        const res = await launchCampaign(campaignId);
         if (!res.success) {
           setError(res.error ?? "Error al lanzar campaña");
+          // Revertir optimistic update
+          setCampaigns((prev) =>
+            prev.map((c) => c.id === campaignId ? { ...c, status: "draft" } : c)
+          );
           return;
         }
-        // Optimistic: launchCampaign persisted active segments in DB
         setSegments((prev) =>
-          prev.map((s) => s.campaignId === activeFlow.id ? { ...s, status: "active" as SegmentStatus } : s)
+          prev.map((s) => s.campaignId === campaignId ? { ...s, status: "active" as SegmentStatus } : s)
         );
+        showToast("✓ Campaña lanzada. Los leads están siendo procesados.");
       } else {
-        await dbUpdateStatus(activeFlow.id, status);
+        await dbUpdateStatus(campaignId, status);
       }
       router.refresh();
     });
@@ -416,7 +444,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
             setView(selected ? "detail" : "list");
             setActiveFlow(null);
           }}
-          onLaunched={handleLaunched}
+          onLaunched={(status, flow) => handleLaunched(status, flow)}
         />
       </div>
     );
