@@ -283,6 +283,7 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
         .eq("workspace_id", workspaceId);
       await supabase.from("engine_queue").insert({
         workspace_id: workspaceId,
+        task_type:    "start_campaign_scraping",
         action_type:  "start_campaign_scraping",
         payload:      { campaign_id: campaignId },
         status:       "pending",
@@ -293,11 +294,11 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
 
     const connectionMessage = (campaign.workflow_json as Record<string, unknown>)?.connection_message as string ?? "";
 
-    // Bug 3: background.js reads action_type (switch case 'connect'), not task_type
     const tasks = leads.map((lead, i) => ({
       workspace_id: workspaceId,
       campaign_id:  campaignId,
       lead_id:      lead.id,
+      task_type:    "connect",
       action_type:  "connect",
       payload: {
         profile_url:   lead.linkedin_url,
