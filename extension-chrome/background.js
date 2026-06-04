@@ -227,8 +227,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function processTick() {
   const { engine_running } = await chrome.storage.local.get('engine_running');
   if (!engine_running) return;
-  if (!await isActiveHour()) return;
-  if (await isWeekendPaused()) return;
+  // TODO: Re-enable for production
+  // if (!await isActiveHour()) return;
+  // TODO: Re-enable for production
+  // if (await isWeekendPaused()) return;
   if (!await checkDailyLimits()) return;
 
   // Validate token before hitting Supabase — avoids "Failed to fetch" on expiry
@@ -1022,18 +1024,11 @@ async function getLinkedInTab() {
   return tabs[0] ?? null;
 }
 
-async function isActiveHour() {
-  const s = await getSettings();
-  const h = new Date().getHours();
-  return h >= s.activeHoursStart && h < s.activeHoursEnd;
-}
+// TODO: Re-enable for production
+async function isActiveHour() { return true; }
 
-async function isWeekendPaused() {
-  const s = await getSettings();
-  if (!s.pauseWeekends) return false;
-  const d = new Date().getDay();
-  return d === 0 || d === 6;
-}
+// TODO: Re-enable for production
+async function isWeekendPaused() { return false; }
 
 async function checkDailyLimits() {
   const { daily_stats } = await chrome.storage.local.get('daily_stats');
