@@ -599,7 +599,7 @@ export async function calculateLeadScore(lead: {
   phone?: string | null;
   connection_accepted_at?: string | null;
   connection_sent_at?: string | null;
-}): number {
+}): Promise<number> {
   let score = 0;
 
   const stageScore: Record<string, number> = {
