@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import {
   addPostToMonitor, generateContent, getInboundData,
-  removePost, togglePostStatus,
+  getInboundDrafts, removePost, saveInboundDraft, togglePostStatus,
   type InboundLead, type InboundPost,
 } from "@/app/dashboard/inbound/actions";
 
@@ -409,7 +409,20 @@ function GeneradorTab() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setDrafts(loadDrafts());
+    // Load from Supabase first, fallback to localStorage
+    getInboundDrafts().then((res) => {
+      if (res.success && res.data && res.data.length > 0) {
+        setDrafts(res.data.map(d => ({
+          id:        d.id,
+          topic:     d.topic ?? '',
+          format:    (d.format as Format) ?? 'post',
+          content:   d.content ?? '',
+          createdAt: d.created_at,
+        })));
+      } else {
+        setDrafts(loadDrafts());
+      }
+    }).catch(() => setDrafts(loadDrafts()));
   }, []);
 
   // Auto-resize textarea
@@ -439,7 +452,7 @@ function GeneradorTab() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleSaveDraft() {
+  async function handleSaveDraft() {
     const draft: DraftItem = {
       id:        `d_${Date.now()}`,
       topic,
@@ -447,8 +460,26 @@ function GeneradorTab() {
       content,
       createdAt: new Date().toISOString(),
     };
-    saveDraft(draft);
-    setDrafts(loadDrafts());
+    // Persist to Supabase and update local state
+    saveDraft(draft); // keep localStorage as fallback
+    const res = await saveInboundDraft({ topic, format, content });
+    if (res.success) {
+      // Reload from Supabase to get server-assigned IDs
+      const fresh = await getInboundDrafts();
+      if (fresh.success && fresh.data) {
+        setDrafts(fresh.data.map(d => ({
+          id:        d.id,
+          topic:     d.topic ?? '',
+          format:    (d.format as Format) ?? 'post',
+          content:   d.content ?? '',
+          createdAt: d.created_at,
+        })));
+      } else {
+        setDrafts(loadDrafts());
+      }
+    } else {
+      setDrafts(loadDrafts());
+    }
     setDraftSaved(true);
     setTimeout(() => setDraftSaved(false), 2000);
   }

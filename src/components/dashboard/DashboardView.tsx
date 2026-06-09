@@ -5,8 +5,8 @@ import Link from "next/link";
 import {
   Activity, ArrowRight, BarChart3, Bot,
   CalendarCheck, ChevronRight,
-  Columns3, Inbox, Megaphone, MessageSquare,
-  TrendingUp, Users, Zap,
+  Columns3, Eye, Heart, Inbox, Link2, Megaphone, MessageSquare,
+  TrendingUp, UserCheck, Users, Zap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { getGhostEngineStatus, type GhostEngineSession, type ActivityRow } from "@/app/dashboard/actions";
@@ -171,15 +171,19 @@ function GhostEnginePanel() {
 
 // ── Activity Feed ─────────────────────────────────────────────────────────────
 
-const ACTION_META: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
-  message_sent:        { icon: MessageSquare, color: "text-indigo-600", bg: "bg-indigo-100" },
-  connection_sent:     { icon: Users,         color: "text-blue-600",   bg: "bg-blue-100"   },
-  connection_accepted: { icon: Users,         color: "text-blue-600",   bg: "bg-blue-100"   },
-  meeting_booked:      { icon: Megaphone,     color: "text-green-600",  bg: "bg-green-100"  },
-  ai_reply:            { icon: Bot,           color: "text-purple-600", bg: "bg-purple-100" },
-  lead_created:        { icon: Users,         color: "text-sky-600",    bg: "bg-sky-100"    },
-  campaign_started:    { icon: Megaphone,     color: "text-amber-600",  bg: "bg-amber-100"  },
-  default:             { icon: Activity,      color: "text-zinc-500",   bg: "bg-zinc-100"   },
+const ACTIVITY_ICONS: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+  connect:             { icon: Link2,        color: "text-indigo-600", bg: "bg-indigo-50"  },
+  message:             { icon: MessageSquare,color: "text-amber-600",  bg: "bg-amber-50"   },
+  check_connection:    { icon: UserCheck,    color: "text-violet-600", bg: "bg-violet-50"  },
+  view_profile:        { icon: Eye,          color: "text-zinc-500",   bg: "bg-zinc-100"   },
+  like:                { icon: Heart,        color: "text-pink-500",   bg: "bg-pink-50"    },
+  message_sent:        { icon: MessageSquare,color: "text-indigo-600", bg: "bg-indigo-50"  },
+  connection_sent:     { icon: Link2,        color: "text-blue-600",   bg: "bg-blue-50"    },
+  connection_accepted: { icon: UserCheck,    color: "text-green-600",  bg: "bg-green-50"   },
+  meeting_booked:      { icon: CalendarCheck,color: "text-green-600",  bg: "bg-green-100"  },
+  ai_reply:            { icon: Bot,          color: "text-purple-600", bg: "bg-purple-50"  },
+  lead_created:        { icon: Users,        color: "text-sky-600",    bg: "bg-sky-50"     },
+  campaign_started:    { icon: Megaphone,    color: "text-amber-600",  bg: "bg-amber-50"   },
 };
 
 function timeAgo(iso: string): string {
@@ -188,6 +192,24 @@ function timeAgo(iso: string): string {
   if (diff < 3600)  return `Hace ${Math.floor(diff / 60)}min`;
   if (diff < 86400) return `Hace ${Math.floor(diff / 3600)}h`;
   return `Hace ${Math.floor(diff / 86400)}d`;
+}
+
+function ActivityItem({ row }: { row: ActivityRow }) {
+  const cfg = ACTIVITY_ICONS[row.action_type] ?? { icon: Zap, color: "text-zinc-400", bg: "bg-zinc-50" };
+  const Icon = cfg.icon;
+  return (
+    <div className="flex items-start gap-3 py-2.5 border-b border-zinc-50 last:border-0 px-5 hover:bg-zinc-50/60 transition-colors">
+      <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${cfg.bg}`}>
+        <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-zinc-700 leading-snug truncate">
+          {row.description ?? row.action_type.replace(/_/g, " ")}
+        </p>
+        <p className="text-[10px] text-zinc-400 mt-0.5">{timeAgo(row.created_at)}</p>
+      </div>
+    </div>
+  );
 }
 
 function ActivityFeed({ items }: { items: ActivityRow[] }) {
@@ -201,28 +223,8 @@ function ActivityFeed({ items }: { items: ActivityRow[] }) {
     );
   }
   return (
-    <div className="divide-y divide-zinc-50">
-      {items.map((item) => {
-        const meta = ACTION_META[item.action_type] ?? ACTION_META.default;
-        const Icon = meta.icon;
-        return (
-          <div key={item.id} className="flex items-start gap-3 px-5 py-3.5 hover:bg-zinc-50/60 transition-colors">
-            <div className={`mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl ${meta.bg}`}>
-              <Icon className={`h-4 w-4 ${meta.color}`} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <p className="truncate text-sm font-semibold text-zinc-900">
-                  {item.metadata?.lead_name ?? item.action_type.replace(/_/g, " ")}
-                </p>
-                <span className="flex-shrink-0 text-[10px] tabular-nums text-zinc-400">{timeAgo(item.created_at)}</span>
-              </div>
-              {item.metadata?.company && <p className="text-[11px] text-zinc-500">{item.metadata.company}</p>}
-              <p className="mt-0.5 text-[12px] text-zinc-600">{item.description ?? item.action_type.replace(/_/g, " ")}</p>
-            </div>
-          </div>
-        );
-      })}
+    <div>
+      {items.map((item) => <ActivityItem key={item.id} row={item} />)}
     </div>
   );
 }
@@ -233,8 +235,12 @@ interface DashboardData {
   leadsCount: number;
   campaignsCount: number;
   activeLeads: number;
+  connEstasSemana: number;
+  tasaAceptacion: number;
+  enConversacion: number;
   recentActivity: ActivityRow[];
   recentCampaigns: { name: string; status: string; total_leads: number; type: string }[];
+  engineSession: Record<string, unknown> | null;
 }
 
 interface DashboardViewProps {
@@ -247,7 +253,8 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   const [data] = useState<DashboardData>(
     initialData ?? {
       leadsCount: 0, campaignsCount: 0, activeLeads: 0,
-      recentActivity: [], recentCampaigns: [],
+      connEstasSemana: 0, tasaAceptacion: 0, enConversacion: 0,
+      recentActivity: [], recentCampaigns: [], engineSession: null,
     }
   );
 
@@ -289,7 +296,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-6 space-y-6">
 
         {/* KPIs */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <KpiCard
             label="Leads en CRM" icon={Users} color="text-blue-600" bg="bg-blue-50"
             value={String(data.leadsCount)} sublabel="En pipeline CRM"
@@ -303,8 +310,16 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             value={String(data.activeLeads)} sublabel="Contactados o respondieron"
           />
           <KpiCard
-            label="Tasa de respuesta" icon={MessageSquare} color="text-purple-600" bg="bg-purple-50"
-            value="—" sublabel="Disponible con más datos"
+            label="Reuniones agendadas" icon={CalendarCheck} color="text-orange-600" bg="bg-orange-50"
+            value="—" sublabel="Ver en analítica"
+          />
+          <KpiCard
+            label="Conexiones esta semana" icon={Link2} color="text-indigo-600" bg="bg-indigo-50"
+            value={String(data.connEstasSemana)} sublabel={`${data.tasaAceptacion}% tasa de aceptación`}
+          />
+          <KpiCard
+            label="En conversación" icon={MessageSquare} color="text-amber-600" bg="bg-amber-50"
+            value={String(data.enConversacion)} sublabel="Esperando respuesta"
           />
         </div>
 

@@ -45,13 +45,17 @@ export async function getDashboardData(): Promise<Result<{
   leadsCount: number;
   campaignsCount: number;
   activeLeads: number;
+  connEstasSemana: number;
+  tasaAceptacion: number;
+  enConversacion: number;
   recentActivity: ActivityRow[];
   recentCampaigns: { name: string; status: string; total_leads: number; type: string }[];
+  engineSession: Record<string, unknown> | null;
 }>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
 
-    const [leadsRes, campaignsRes, activeLeadsRes, activityRes] = await Promise.all([
+    const [leadsRes, campaignsRes, activeLeadsRes, activityRes, engineRes, weeklyRes] = await Promise.all([
       supabase
         .from("leads")
         .select("*", { count: "exact", head: true })
@@ -61,32 +65,80 @@ export async function getDashboardData(): Promise<Result<{
         .select("id, name, status, total_leads, type")
         .eq("workspace_id", workspaceId)
         .order("created_at", { ascending: false })
-        .limit(10),
+        .limit(5),
       supabase
         .from("leads")
-        .select("*", { count: "exact", head: true })
+        .select("id, crm_column")
         .eq("workspace_id", workspaceId)
-        .in("status", ["contactado", "respondio"]),
+        .in("crm_column", ["conexion_enviada", "conexion_aceptada", "en_conversacion"]),
       supabase
         .from("activity_log")
         .select("id, action_type, description, created_at, metadata")
         .eq("workspace_id", workspaceId)
         .order("created_at", { ascending: false })
-        .limit(8),
+        .limit(10),
+      supabase
+        .from("ghost_engine_sessions")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .single(),
+      supabase
+        .from("leads")
+        .select("id, crm_column, connection_sent_at")
+        .eq("workspace_id", workspaceId)
+        .gte("connection_sent_at", new Date(Date.now() - 7 * 86400000).toISOString()),
     ]);
 
-    const campaigns = (campaignsRes.data ?? []) as {
-      name: string; status: string; total_leads: number; type: string;
-    }[];
+    const campaigns   = (campaignsRes.data ?? []) as { name: string; status: string; total_leads: number; type: string }[];
+    const activeLeads = activeLeadsRes.data ?? [];
+    const weeklyLeads = weeklyRes.data ?? [];
+
+    const connEnviadas  = weeklyLeads.filter(l => l.crm_column !== 'extraido').length;
+    const connAceptadas = activeLeads.filter(l =>
+      ['conexion_aceptada', 'en_conversacion', 'reunion_agendada', 'cliente'].includes(l.crm_column)
+    ).length;
+    const tasaAceptacion = connEnviadas > 0 ? Math.round(connAceptadas / connEnviadas * 100) : 0;
+    const enConversacion = activeLeads.filter(l => l.crm_column === 'en_conversacion').length;
+
+    let recentActivity = (activityRes.data ?? []) as ActivityRow[];
+
+    if (recentActivity.length === 0) {
+      const { data: queueDone } = await supabase
+        .from("engine_queue")
+        .select("id, action_type, task_type, executed_at, payload")
+        .eq("workspace_id", workspaceId)
+        .eq("status", "done")
+        .order("executed_at", { ascending: false })
+        .limit(10);
+
+      recentActivity = (queueDone ?? []).map((t) => {
+        const actionType = (t.action_type ?? t.task_type ?? "connect") as string;
+        const description =
+          actionType === "connect" ? "Solicitud de conexión enviada en LinkedIn"
+          : actionType === "message" ? "Mensaje enviado en LinkedIn"
+          : "Acción ejecutada por Ghost Engine";
+        return {
+          id:          String(t.id),
+          action_type: actionType,
+          description,
+          created_at:  (t.executed_at as string | null) ?? new Date().toISOString(),
+          metadata:    { lead_id: ((t.payload as Record<string, unknown>)?.lead_id as string) ?? "" },
+        };
+      });
+    }
 
     return {
       success: true,
       data: {
-        leadsCount:      leadsRes.count      ?? 0,
+        leadsCount:      leadsRes.count ?? 0,
         campaignsCount:  campaigns.length,
-        activeLeads:     activeLeadsRes.count ?? 0,
-        recentActivity:  (activityRes.data ?? []) as ActivityRow[],
+        activeLeads:     activeLeads.length,
+        connEstasSemana: connEnviadas,
+        tasaAceptacion,
+        enConversacion,
+        recentActivity,
         recentCampaigns: campaigns.slice(0, 3),
+        engineSession:   (engineRes.data as Record<string, unknown>) ?? null,
       },
     };
   } catch (err) {

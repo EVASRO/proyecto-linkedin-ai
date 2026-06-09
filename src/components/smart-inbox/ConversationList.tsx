@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Archive, Bot, Check, Globe, Link2, MoreVertical, Search, User } from "lucide-react";
+import { Archive, Bot, Check, Globe, Link2, MoreVertical, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { Conversation, ConvStatus } from "./types";
 import { archiveConversation, markConversationRead } from "@/app/dashboard/smart-inbox/actions";
@@ -38,15 +38,6 @@ const STATUS_CONFIG: Record<ConvStatus, { label: string; dot: string }> = {
   human:       { label: "Manual",      dot: "bg-amber-400"  },
   archived:    { label: "Archivado",   dot: "bg-zinc-400"   },
 };
-
-type FilterId = ConvStatus | "all" | "unread" | "replied" | "pending";
-
-const FILTERS: { id: FilterId; label: string }[] = [
-  { id: "all",         label: "Todos"       },
-  { id: "unread",      label: "No leídos"   },
-  { id: "replied",     label: "Respondieron"},
-  { id: "pending",     label: "Pendientes"  },
-];
 
 // ── Row menu ──────────────────────────────────────────────────────────────────
 
@@ -140,71 +131,18 @@ interface ConversationListProps {
 }
 
 export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
-  const [query,  setQuery]  = useState("");
-  const [filter, setFilter] = useState<FilterId>("all");
   const [localConvs, setLocalConvs] = useState(conversations);
 
   useEffect(() => { setLocalConvs(conversations); }, [conversations]);
 
-  const visible = localConvs.filter((c) => {
-    const lastMsg = c.messages[c.messages.length - 1];
-    if (filter === "unread"  && c.unreadCount === 0) return false;
-    if (filter === "replied" && lastMsg?.sender !== "lead") return false;
-    if (filter === "pending" && lastMsg?.sender !== "user" && lastMsg?.sender !== "ai") return false;
-    if (filter !== "all" && filter !== "unread" && filter !== "replied" && filter !== "pending" && c.status !== filter) return false;
-    const matchQuery = !query || c.lead.name.toLowerCase().includes(query.toLowerCase()) || c.lead.company.toLowerCase().includes(query.toLowerCase());
-    return matchQuery;
-  });
-
-  const totalUnread = localConvs.reduce((s, c) => s + c.unreadCount, 0);
-
   return (
-    <div className="flex w-72 flex-shrink-0 flex-col border-r border-border bg-white">
-      {/* Header */}
-      <div className="border-b border-border px-4 py-3.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-zinc-900">Smart Inbox</h2>
-          {totalUnread > 0 && (
-            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">
-              {totalUnread}
-            </span>
-          )}
-        </div>
-
-        {/* Search */}
-        <div className="relative mt-2.5">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar conversación..."
-            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-3 text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-300 focus:bg-white focus:outline-none"
-          />
-        </div>
-
-        {/* Filters */}
-        <div className="mt-2.5 flex gap-1 overflow-x-auto">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={[
-                "flex-shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors",
-                filter === f.id ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200",
-              ].join(" ")}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
+    <div className="flex flex-1 flex-col overflow-hidden">
       {/* List */}
       <div className="flex-1 overflow-y-auto divide-y divide-zinc-100">
-        {visible.length === 0 && (
+        {localConvs.length === 0 && (
           <p className="px-4 py-8 text-center text-xs text-zinc-400">Sin conversaciones</p>
         )}
-        {visible.map((conv) => {
+        {localConvs.map((conv) => {
           const lastMsg    = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
           const selected   = conv.id === selectedId;
           const status     = STATUS_CONFIG[conv.status] ?? STATUS_CONFIG.active;

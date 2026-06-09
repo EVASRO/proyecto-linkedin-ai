@@ -17,6 +17,10 @@ export type CrmLead = {
   email: string | null;
   phone: string | null;
   linkedin_url: string | null;
+  avatar_url: string | null;
+  headline: string | null;
+  location: string | null;
+  connection_note: string | null;
   status: string;
   crm_column: string | null;
   value: number;
@@ -26,7 +30,15 @@ export type CrmLead = {
   ai_summary: string | null;
   assigned_to: string | null;
   campaign_id: string | null;
+  connection_sent_at: string | null;
+  connection_accepted_at: string | null;
   created_at: string;
+  // computed
+  days_in_stage: number;
+  next_pending_task: string | null;
+  campaign_name: string | null;
+  segment_name: string | null;
+  automation_step: string | null;
 };
 
 export type CrmColumn = {
@@ -95,25 +107,32 @@ export async function getCrmData(): Promise<Result<{
   leads: CrmLead[];
   columns: CrmColumn[];
   automations: CrmAutomationFull[];
+  workspaceId: string;
 }>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
 
-    const [leadsRes, columnsRes, automationsRes] = await Promise.all([
+    const [leadsRes, columnsRes, automationsRes, pendingTasksRes] = await Promise.all([
       supabase
         .from("leads")
-        .select("*")
+        .select(`*, campaign:campaigns(id, name, workflow_json)`)
         .eq("workspace_id", workspaceId)
         .order("created_at", { ascending: false }),
       supabase
         .from("crm_columns")
-        .select("*")
+        .select("id, title, color, position, key")
         .eq("workspace_id", workspaceId)
         .order("position", { ascending: true }),
       supabase
         .from("crm_automations")
         .select("*")
         .eq("workspace_id", workspaceId),
+      supabase
+        .from("engine_queue")
+        .select("lead_id, task_type, scheduled_at")
+        .eq("workspace_id", workspaceId)
+        .eq("status", "pending")
+        .order("scheduled_at", { ascending: true }),
     ]);
 
     if (leadsRes.error) return { success: false, error: leadsRes.error.message };
@@ -121,8 +140,9 @@ export async function getCrmData(): Promise<Result<{
 
     let columns = (columnsRes.data ?? []) as CrmColumn[];
 
-    // Seed default columns if none exist
-    if (columns.length === 0) {
+    // Seed default columns only if none have a key set
+    const hasKeys = columns.some((c) => c.key);
+    if (!hasKeys) {
       const toInsert = DEFAULT_COLUMNS.map((c) => ({ ...c, workspace_id: workspaceId }));
       const { data: inserted, error: insertErr } = await supabase
         .from("crm_columns")
@@ -132,12 +152,67 @@ export async function getCrmData(): Promise<Result<{
       columns = (inserted ?? []) as CrmColumn[];
     }
 
+    // Índice de primera tarea pendiente por lead_id
+    const now = Date.now();
+    const taskByLead = new Map<string, { task_type: string; scheduled_at: string }>();
+    for (const t of pendingTasksRes.data ?? []) {
+      if (t.lead_id && !taskByLead.has(t.lead_id)) {
+        taskByLead.set(t.lead_id, { task_type: t.task_type, scheduled_at: t.scheduled_at });
+      }
+    }
+
+    const TASK_LABELS: Record<string, string> = {
+      connect:          "Enviar conexión",
+      check_connection: "Verificar conexión",
+      message:          "Enviar mensaje",
+      view_profile:     "Visitar perfil",
+    };
+
+    const AUTO_STEP: Record<string, string> = {
+      extraido:          "Paso 1: Extracción",
+      conexion_enviada:  "Paso 2: Conexión enviada",
+      conexion_aceptada: "Paso 3: Esperando follow-up",
+      en_conversacion:   "Paso 4: En conversación",
+      reunion_agendada:  "Paso 5: Reunión agendada",
+      cliente:           "Paso 6: Convertido ✓",
+    };
+
+    const enrichedLeads: CrmLead[] = (leadsRes.data ?? []).map((l) => {
+      // Calcular días en etapa actual
+      const stageDate = l.connection_accepted_at ?? l.connection_sent_at ?? l.created_at;
+      const daysInStage = stageDate
+        ? Math.floor((now - new Date(stageDate).getTime()) / 86_400_000)
+        : 0;
+
+      const pending = taskByLead.get(l.id);
+      const nextPendingTask = pending
+        ? (TASK_LABELS[pending.task_type] ?? pending.task_type)
+        : null;
+
+      // Enriquecer con datos de campaña (join)
+      const campData = (l as Record<string, unknown>).campaign as {
+        id: string; name: string; workflow_json: Record<string, unknown>
+      } | null;
+      const wfSegments = (campData?.workflow_json?.segments as Array<{ name?: string }>) ?? [];
+      const segName = wfSegments[0]?.name ?? null;
+
+      return {
+        ...(l as Record<string, unknown>),
+        days_in_stage:     daysInStage,
+        next_pending_task: nextPendingTask,
+        campaign_name:     campData?.name ?? null,
+        segment_name:      segName,
+        automation_step:   AUTO_STEP[l.crm_column ?? ""] ?? null,
+      } as CrmLead;
+    });
+
     return {
       success: true,
       data: {
-        leads:       (leadsRes.data ?? []) as CrmLead[],
+        leads:       enrichedLeads,
         columns,
         automations: (automationsRes.data ?? []) as unknown as CrmAutomationFull[],
+        workspaceId,
       },
     };
   } catch (err) {
@@ -493,6 +568,18 @@ export async function moveLead(leadId: string, newColumn: string): Promise<Resul
 
     if (error) return { success: false, error: error.message };
 
+    // Compute and persist lead score based on new stage
+    const { data: leadData } = await supabase
+      .from("leads")
+      .select("headline, email, phone, connection_accepted_at, connection_sent_at")
+      .eq("id", leadId)
+      .single();
+
+    if (leadData) {
+      const newScore = calculateLeadScore({ crm_column: newColumn, ...leadData });
+      await supabase.from("leads").update({ score: newScore }).eq("id", leadId);
+    }
+
     // Fire automations for this column move (non-blocking)
     triggerCrmAutomation(leadId, "moved_to_column", { column: newColumn }).catch(() => null);
 
@@ -500,6 +587,49 @@ export async function moveLead(leadId: string, newColumn: string): Promise<Resul
   } catch (err) {
     return { success: false, error: String(err) };
   }
+}
+
+// ── 16. calculateLeadScore ────────────────────────────────────────────────────
+
+export async function calculateLeadScore(lead: {
+  crm_column?: string | null;
+  headline?: string | null;
+  company?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  connection_accepted_at?: string | null;
+  connection_sent_at?: string | null;
+}): number {
+  let score = 0;
+
+  const stageScore: Record<string, number> = {
+    extraido:          5,
+    conexion_enviada:  15,
+    conexion_aceptada: 25,
+    en_conversacion:   35,
+    reunion_agendada:  45,
+    cliente:           50,
+  };
+  score += stageScore[lead.crm_column ?? ''] ?? 0;
+
+  const headline = (lead.headline ?? '').toLowerCase();
+  if (/\b(ceo|cto|coo|cfo|founder|cofunder|owner|president)\b/.test(headline)) score += 30;
+  else if (/\b(director|vp|vice president|head of|gerente general)\b/.test(headline)) score += 20;
+  else if (/\b(manager|jefe|lead|principal|senior)\b/.test(headline)) score += 10;
+
+  if (lead.email) score += 8;
+  if (lead.phone) score += 7;
+
+  if (lead.connection_accepted_at && lead.connection_sent_at) {
+    const hoursToAccept =
+      (new Date(lead.connection_accepted_at).getTime() -
+       new Date(lead.connection_sent_at).getTime()) / 3_600_000;
+    if (hoursToAccept < 2)  score += 15;
+    else if (hoursToAccept < 24) score += 10;
+    else if (hoursToAccept < 72) score += 5;
+  }
+
+  return Math.min(score, 100);
 }
 
 // ── 13. upsertCrmAutomation (new schema) ──────────────────────────────────────
@@ -564,6 +694,108 @@ export async function getCrmAutomations(): Promise<Result<CrmAutomationFull[]>> 
     return { success: true, data: (data ?? []) as CrmAutomationFull[] };
   } catch (err) {
     return { success: false, error: String(err) };
+  }
+}
+
+// ── getLeadDetail ─────────────────────────────────────────────────────────────
+
+export async function getLeadDetail(leadId: string): Promise<{
+  success: boolean;
+  data?: {
+    lead: Record<string, unknown>;
+    activity: Array<{
+      id: string; action_type: string; description: string;
+      created_at: string; metadata: Record<string, unknown> | null;
+    }>;
+    messages: Array<{
+      id: string; message_text: string; sender: string;
+      timestamp: string; is_read: boolean;
+    }>;
+    tasks: Array<{
+      id: string; task_type: string; status: string;
+      created_at: string; executed_at: string | null;
+      last_error: string | null;
+    }>;
+  };
+  error?: string;
+}> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    const { data: lead, error: leadErr } = await supabase
+      .from("leads")
+      .select("*")
+      .eq("id", leadId)
+      .eq("workspace_id", workspaceId)
+      .single();
+    if (leadErr || !lead) throw new Error("Lead no encontrado");
+
+    const { data: activity } = await supabase
+      .from("activity_log")
+      .select("id, action_type, description, created_at, metadata")
+      .eq("lead_id", leadId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    const { data: convRows } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("lead_id", leadId)
+      .limit(1);
+    const convId = convRows?.[0]?.id;
+
+    let messages: Array<{ id: string; message_text: string; sender: string; timestamp: string; is_read: boolean }> = [];
+    if (convId) {
+      const { data: msgs } = await supabase
+        .from("messages")
+        .select("id, message_text, sender, timestamp, is_read")
+        .eq("conversation_id", convId)
+        .order("timestamp", { ascending: true })
+        .limit(30);
+      messages = (msgs ?? []) as typeof messages;
+    }
+
+    const { data: tasks } = await supabase
+      .from("engine_queue")
+      .select("id, task_type, status, created_at, executed_at, last_error")
+      .eq("lead_id", leadId)
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    return {
+      success: true,
+      data: {
+        lead: lead as Record<string, unknown>,
+        activity: (activity ?? []) as Array<{ id: string; action_type: string; description: string; created_at: string; metadata: Record<string, unknown> | null }>,
+        messages,
+        tasks: (tasks ?? []) as Array<{ id: string; task_type: string; status: string; created_at: string; executed_at: string | null; last_error: string | null }>,
+      },
+    };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
+// ── updateLeadField ───────────────────────────────────────────────────────────
+
+export async function updateLeadField(
+  leadId: string,
+  updates: Partial<{
+    crm_column: string; value: number; email: string;
+    phone: string; notes: string; tags: string[];
+  }>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { error } = await supabase
+      .from("leads")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", leadId)
+      .eq("workspace_id", workspaceId);
+    if (error) throw error;
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
   }
 }
 

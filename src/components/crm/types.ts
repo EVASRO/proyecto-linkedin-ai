@@ -29,6 +29,17 @@ export type CrmLead = {
   linkedinUrl?: string;
   assignedTo?: string;
   score?: number;
+  avatarUrl?: string;
+  headline?: string;
+  daysInStage?: number;
+  nextPendingTask?: string | null;
+  // Enriched fields
+  campaignName?:     string;
+  segmentName?:      string;
+  automationStep?:   string;
+  connectionNote?:   string;
+  location?:         string;
+  connectionStatus?: 'none' | 'pending' | 'connected' | 'in_conversation' | 'meeting';
 };
 
 export type Column = {

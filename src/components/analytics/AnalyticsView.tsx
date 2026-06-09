@@ -12,6 +12,12 @@ import {
 type DateRange = "7d" | "30d" | "3m" | "6m";
 type FilterCampaign = "all" | string;
 
+type HealthWarning = {
+  lead: string;
+  campaigns: string[];
+  severity: 'high' | 'medium';
+};
+
 type AnalyticsData = {
   kpis: {
     totalLeads: number;
@@ -24,6 +30,8 @@ type AnalyticsData = {
   weeklyActivity: { day: string; conns: number; msgs: number; meetings: number }[];
   tasksCompleted: number;
   tasksPending: number;
+  conversionRates?: Record<string, number>;
+  healthWarnings?: HealthWarning[];
 };
 
 const FUNNEL_COLORS = [
@@ -32,11 +40,6 @@ const FUNNEL_COLORS = [
   "from-violet-500 to-purple-400",
   "from-pink-500 to-rose-400",
   "from-green-500 to-emerald-400",
-];
-
-const HEALTH_WARNINGS = [
-  { lead: "juan.perez@empresa.com",  campaigns: ["SDR Fintech LATAM", "SaaS CEO Outreach"], severity: "high"   },
-  { lead: "maria.torres@fintech.pe", campaigns: ["Reclutamiento Tech", "SDR Fintech LATAM"], severity: "medium" },
 ];
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -123,7 +126,8 @@ export function AnalyticsView({ data }: { data?: AnalyticsData }) {
     ? Math.round((data.kpis.meetings) / data.kpis.totalLeads * 100)
     : 0;
 
-  const activeWarnings: typeof HEALTH_WARNINGS = [];
+  const allWarnings: HealthWarning[] = data?.healthWarnings ?? [];
+  const activeWarnings = allWarnings.filter((_, i) => !resolvedWarnings.has(i));
 
   async function resolveConflict(idx: number) {
     setResolving(idx);
@@ -396,7 +400,7 @@ export function AnalyticsView({ data }: { data?: AnalyticsData }) {
                     <p className="text-[12px] text-amber-700">
                       Los siguientes leads están siendo contactados desde múltiples campañas simultáneamente:
                     </p>
-                    {HEALTH_WARNINGS.map((w, i) => {
+                    {allWarnings.map((w, i) => {
                       if (resolvedWarnings.has(i)) return null;
                       return (
                         <div
@@ -434,7 +438,7 @@ export function AnalyticsView({ data }: { data?: AnalyticsData }) {
                       );
                     })}
                     <button
-                      onClick={() => HEALTH_WARNINGS.forEach((_, i) => resolveConflict(i))}
+                      onClick={() => allWarnings.forEach((_, i) => resolveConflict(i))}
                       disabled={resolving !== null}
                       className="mt-1 flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
                     >

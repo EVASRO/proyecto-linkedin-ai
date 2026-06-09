@@ -47,8 +47,8 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
       .select(`
         *,
         leads!inner (
-          id, full_name, company, headline, linkedin_url,
-          email, phone, status, value, ai_summary, created_at
+          id, full_name, company, linkedin_url,
+          email, phone, status, crm_column, value, ai_summary, created_at
         )
       `)
       .eq("workspace_id", workspaceId)
@@ -66,7 +66,7 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
           .from("messages")
           .select("*")
           .eq("lead_id", lead.id)
-          .order("timestamp", { ascending: true })
+          .order("created_at", { ascending: true })
           .limit(50);
 
         const messages: Message[] = (msgRows ?? []).map((m) => ({
@@ -75,13 +75,14 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
           sender:    m.sender === "prospect" ? "lead" : (m.sender as Message["sender"]),
           timestamp: String(m.timestamp ?? m.created_at),
           read:      Boolean(m.is_read),
-          status:    m.status as Message["status"] ?? undefined,
+          status:    (m.status ?? undefined) as Message["status"] | undefined,
         }));
 
         return {
           id:              String(row.id),
           status:          (row.status ?? "active") as Conversation["status"],
           autopilotActive: Boolean(row.autopilot_active),
+          autopilotMode:   ((row.autopilot_mode as string) ?? "review") as "auto" | "review",
           unreadCount:     Number(row.unread_count ?? 0),
           messages,
           aiSuggestions:   [],
@@ -89,7 +90,7 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
             id:          String(lead.id),
             name:        String(lead.full_name ?? "Sin nombre"),
             company:     String(lead.company ?? "—"),
-            title:       String(lead.headline ?? ""),
+            title:       "",
             email:       lead.email       ? String(lead.email)        : undefined,
             phone:       lead.phone       ? String(lead.phone)        : undefined,
             linkedinUrl: lead.linkedin_url ? String(lead.linkedin_url) : undefined,
@@ -256,6 +257,128 @@ export async function archiveConversation(conversationId: string): Promise<Resul
   } catch (err) {
     return { success: false, error: String(err) };
   }
+}
+
+// ── Total de no leídos ────────────────────────────────────────────────────────
+
+export async function getUnreadCount(): Promise<number> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { data } = await supabase
+      .from("conversations")
+      .select("unread_count")
+      .eq("workspace_id", workspaceId)
+      .gt("unread_count", 0);
+    return (data ?? []).reduce((s, r) => s + (r.unread_count ?? 0), 0);
+  } catch { return 0; }
+}
+
+// ── Marcar todas las conversaciones como leídas ───────────────────────────────
+
+export async function markAllRead(): Promise<{ success: boolean }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    await Promise.all([
+      supabase
+        .from("conversations")
+        .update({ unread_count: 0 })
+        .eq("workspace_id", workspaceId)
+        .gt("unread_count", 0),
+      supabase
+        .from("messages")
+        .update({ is_read: true })
+        .eq("workspace_id", workspaceId)
+        .eq("is_read", false),
+    ]);
+    return { success: true };
+  } catch { return { success: false }; }
+}
+
+// ── Autopilot draft: aprobar y encolar envío ──────────────────────────────────
+
+export async function approveDraft(
+  msgId: string,
+  finalText: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    await supabase
+      .from("messages")
+      .update({ status: "approved", message_text: finalText })
+      .eq("id", msgId);
+
+    const { data: msg } = await supabase
+      .from("messages")
+      .select("lead_id, conversation_id")
+      .eq("id", msgId)
+      .single();
+
+    if (!msg) return { success: false, error: "Message not found" };
+
+    const { data: lead } = await supabase
+      .from("leads")
+      .select("linkedin_url, campaign_id")
+      .eq("id", msg.lead_id)
+      .single();
+
+    await supabase.from("engine_queue").insert({
+      workspace_id: workspaceId,
+      campaign_id:  lead?.campaign_id ?? null,
+      lead_id:      msg.lead_id,
+      task_type:    "message",
+      action_type:  "message",
+      priority:     1,
+      scheduled_at: new Date().toISOString(),
+      payload: {
+        profile_url:  lead?.linkedin_url ?? null,
+        message_text: finalText,
+        lead_id:      msg.lead_id,
+        campaign_id:  lead?.campaign_id ?? null,
+        draft_msg_id: msgId,
+      },
+    });
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+export async function rejectDraft(msgId: string): Promise<{ success: boolean }> {
+  try {
+    const { supabase } = await getAuthContext();
+    await supabase.from("messages").update({ status: "rejected" }).eq("id", msgId);
+    return { success: true };
+  } catch { return { success: false }; }
+}
+
+export async function getPendingDrafts(workspaceId: string): Promise<number> {
+  try {
+    const { supabase } = await getAuthContext();
+    const { count } = await supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .eq("sender", "ai")
+      .eq("status", "draft");
+    return count ?? 0;
+  } catch { return 0; }
+}
+
+export async function setAutopilotMode(
+  conversationId: string,
+  mode: "auto" | "review"
+): Promise<{ success: boolean }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    await supabase
+      .from("conversations")
+      .update({ autopilot_mode: mode })
+      .eq("id", conversationId)
+      .eq("workspace_id", workspaceId);
+    return { success: true };
+  } catch { return { success: false }; }
 }
 
 // ── Marcar conversación como leída ────────────────────────────────────────────

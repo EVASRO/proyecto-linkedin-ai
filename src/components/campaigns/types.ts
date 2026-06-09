@@ -14,6 +14,7 @@ export type Campaign = {
   totalLeads: number;
   leadsTotal?: number;
   leadsQueued?: number;
+  workflow_json?: Record<string, unknown>;
 };
 
 export type WizardData = {

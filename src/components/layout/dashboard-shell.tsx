@@ -10,19 +10,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       <DashboardSidebar
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3 lg:hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Mobile header */}
+        <div className="flex flex-shrink-0 items-center gap-3 border-b border-border bg-surface px-4 py-3 lg:hidden">
           <DashboardMobileMenuButton onClick={() => setMobileOpen(true)} />
-          <span className="text-sm font-semibold text-foreground">
-            NexusAI
-          </span>
+          <span className="text-sm font-semibold text-foreground">NexusAI</span>
         </div>
-        {children}
+        {/* Contenido — cada página maneja su propio scroll interno */}
+        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+          {children}
+        </div>
       </div>
     </div>
   );

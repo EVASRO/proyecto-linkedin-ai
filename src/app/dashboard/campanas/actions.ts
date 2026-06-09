@@ -76,10 +76,23 @@ export async function getCampaignsData(): Promise<Result<{
 
     if (campaignsRes.error) return { success: false, error: campaignsRes.error.message };
 
+    const campaigns = campaignsRes.data ?? [];
+
+    // Replace stale campaigns.total_leads with live count from leads table
+    const campaignsWithLiveCount = await Promise.all(
+      campaigns.map(async (campaign) => {
+        const { count: realLeadCount } = await supabase
+          .from("leads")
+          .select("*", { count: "exact", head: true })
+          .eq("campaign_id", campaign.id);
+        return { ...campaign, total_leads: realLeadCount ?? 0 };
+      })
+    );
+
     return {
       success: true,
       data: {
-        campaigns:       (campaignsRes.data ?? []) as CampaignRow[],
+        campaigns:        campaignsWithLiveCount as CampaignRow[],
         linkedinAccounts: (liRes.data ?? []) as { id: string; name: string; status: string }[],
       },
     };
@@ -94,6 +107,9 @@ export async function createCampaign(data: {
   name: string;
   type: string;
   linkedin_account_id?: string;
+  connectionNote?: string;
+  followUpMessage?: string;
+  followUpDelayDays?: number;
 }): Promise<Result<CampaignRow>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
@@ -104,7 +120,11 @@ export async function createCampaign(data: {
         name:                data.name,
         type:                data.type,
         status:              "draft",
-        workflow_json:       {},
+        workflow_json: {
+          connection_note:      data.connectionNote      ?? "",
+          follow_up_message:    data.followUpMessage     ?? "",
+          follow_up_delay_days: data.followUpDelayDays   ?? 1,
+        },
         total_leads:         0,
         segment_count:       0,
         linkedin_account_id: data.linkedin_account_id ?? null,
@@ -244,7 +264,7 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
 
     if (campErr || !campaign) return { success: false, error: "Campaña no encontrada" };
 
-    // Activate all segments in workflow_json regardless of current campaign status
+    // Activar todos los segmentos en workflow_json
     const wf = (campaign.workflow_json ?? {}) as Record<string, unknown>;
     const now = new Date().toISOString();
     const updatedSegments = Array.isArray(wf.segments)
@@ -254,85 +274,44 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
           activated_at: now,
         }))
       : wf.segments;
-
     const updatedWorkflow = { ...wf, segments: updatedSegments };
 
-    // Bug 1: already active → activate segments and return success (not error)
-    if (campaign.status === "active") {
-      await supabase
-        .from("campaigns")
-        .update({ workflow_json: updatedWorkflow })
-        .eq("id", campaignId)
-        .eq("workspace_id", workspaceId);
-      return { success: true, data: { queued: 0 } };
-    }
-
-    const { data: leads } = await supabase
-      .from("leads")
-      .select("id, linkedin_url, full_name")
+    // Verificar si ya hay un task de scraping pendiente para evitar duplicados
+    const { data: existingScrapingTask } = await supabase
+      .from("engine_queue")
+      .select("id")
       .eq("workspace_id", workspaceId)
-      .in("status", ["nuevo", "pendiente"])
-      .not("linkedin_url", "is", null)
-      .limit(100);
+      .eq("task_type", "start_campaign_scraping")
+      .eq("status", "pending")
+      .eq("campaign_id", campaignId)
+      .maybeSingle();
 
-    if (!leads || leads.length === 0) {
-      await supabase
-        .from("campaigns")
-        .update({ status: "active", workflow_json: updatedWorkflow })
-        .eq("id", campaignId)
-        .eq("workspace_id", workspaceId);
-      await supabase.from("engine_queue").insert({
+    // Actualizar campaña a activa con workflow actualizado
+    await supabase
+      .from("campaigns")
+      .update({
+        status:        "active",
+        workflow_json: updatedWorkflow,
+      })
+      .eq("id", campaignId)
+      .eq("workspace_id", workspaceId);
+
+    // Solo crear la tarea de scraping si no hay una pendiente ya
+    if (!existingScrapingTask) {
+      const { error: queueErr } = await supabase.from("engine_queue").insert({
         workspace_id: workspaceId,
+        campaign_id:  campaignId,
         task_type:    "start_campaign_scraping",
         action_type:  "start_campaign_scraping",
         payload:      { campaign_id: campaignId },
         status:       "pending",
+        priority:     10,
         scheduled_at: now,
       });
-      return { success: true, data: { queued: 0 } };
+      if (queueErr) return { success: false, error: queueErr.message };
     }
 
-    const connectionMessage = (campaign.workflow_json as Record<string, unknown>)?.connection_message as string ?? "";
-
-    const tasks = leads.map((lead, i) => ({
-      workspace_id: workspaceId,
-      campaign_id:  campaignId,
-      lead_id:      lead.id,
-      task_type:    "connect",
-      action_type:  "connect",
-      payload: {
-        profile_url:   lead.linkedin_url,
-        linkedin_url:  lead.linkedin_url,
-        lead_id:       lead.id,
-        lead_name:     lead.full_name,
-        campaign_name: campaign.name,
-        campaign_id:   campaignId,
-        note:          connectionMessage,
-        message_text:  connectionMessage,
-      },
-      status:       "pending",
-      scheduled_at: new Date(Date.now() + i * 4 * 60 * 1000).toISOString(),
-    }));
-
-    const { error: queueErr } = await supabase.from("engine_queue").insert(tasks);
-    if (queueErr) return { success: false, error: queueErr.message };
-
-    await supabase
-      .from("campaigns")
-      .update({ status: "active", total_leads: leads.length, workflow_json: updatedWorkflow })
-      .eq("id", campaignId)
-      .eq("workspace_id", workspaceId);
-
-    // Trigger scraping via Ghost Engine
-    await supabase.from("engine_queue").insert({
-      workspace_id: workspaceId,
-      action_type:  "start_campaign_scraping",
-      payload:      { campaign_id: campaignId },
-      status:       "pending",
-      scheduled_at: now,
-    });
-
-    return { success: true, data: { queued: leads.length } };
+    return { success: true, data: { queued: 1 } };
   } catch (err) {
     return { success: false, error: String(err) };
   }
@@ -375,13 +354,62 @@ export async function duplicateCampaign(id: string): Promise<Result<CampaignRow>
   }
 }
 
-// ── 8. getActiveCampaignStats ─────────────────────────────────────────────────
+// ── 8. getLeadCountsByCrmColumn ───────────────────────────────────────────────
+
+export type LeadCountsByCrm = {
+  extraido:           number;
+  conexion_enviada:   number;
+  conexion_aceptada:  number;
+  en_conversacion:    number;
+  reunion_agendada:   number;
+  cliente:            number;
+};
+
+export async function getLeadCountsByCrmColumn(
+  campaignId: string
+): Promise<Result<LeadCountsByCrm>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    const { data, error } = await supabase
+      .from("leads")
+      .select("crm_column")
+      .eq("campaign_id", campaignId)
+      .eq("workspace_id", workspaceId);
+
+    if (error) return { success: false, error: error.message };
+
+    const counts: LeadCountsByCrm = {
+      extraido:           0,
+      conexion_enviada:   0,
+      conexion_aceptada:  0,
+      en_conversacion:    0,
+      reunion_agendada:   0,
+      cliente:            0,
+    };
+    for (const row of data ?? []) {
+      const col = row.crm_column as keyof LeadCountsByCrm;
+      if (col && col in counts) counts[col]++;
+    }
+
+    return { success: true, data: counts };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── 9. getActiveCampaignStats ─────────────────────────────────────────────────
 
 export type CampaignStats = {
   id: string;
   status: string;
   leads_total: number;
   leads_queued: number;
+  leadsTotal: number;
+  connEnviadas: number;
+  leadsQueued: number;
+  extraidos: number;
+  conectados: number;
 };
 
 export async function getActiveCampaignStats(
@@ -389,16 +417,299 @@ export async function getActiveCampaignStats(
 ): Promise<Result<CampaignStats>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
-    const { data, error } = await supabase
-      .from("campaigns")
-      .select("id, status, leads_total, leads_queued")
-      .eq("id", campaignId)
-      .eq("workspace_id", workspaceId)
-      .single();
 
-    if (error) return { success: false, error: error.message };
-    return { success: true, data: data as CampaignStats };
+    const [campaignRes, totalRes, connSentRes, conectadosRes, extraidosRes, queueRes] =
+      await Promise.all([
+        supabase
+          .from("campaigns")
+          .select("id, status, leads_total, leads_queued")
+          .eq("id", campaignId)
+          .eq("workspace_id", workspaceId)
+          .single(),
+        // Total de leads reales en la tabla (fuente de verdad)
+        supabase
+          .from("leads")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("campaign_id", campaignId),
+        // Conexiones enviadas
+        supabase
+          .from("leads")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("campaign_id", campaignId)
+          .eq("crm_column", "conexion_enviada"),
+        // Conectados: aceptaron + siguientes etapas
+        supabase
+          .from("leads")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("campaign_id", campaignId)
+          .in("crm_column", ["conexion_aceptada", "en_conversacion", "reunion_agendada", "cliente"]),
+        // Extraídos (pendientes de acción)
+        supabase
+          .from("leads")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("campaign_id", campaignId)
+          .eq("crm_column", "extraido"),
+        // Tareas pendientes en cola
+        supabase
+          .from("engine_queue")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("campaign_id", campaignId)
+          .eq("status", "pending"),
+      ]);
+
+    if (campaignRes.error) return { success: false, error: campaignRes.error.message };
+
+    const liveTotal = totalRes.count ?? 0;
+
+    // Mantener campaigns.total_leads sincronizado con el count real
+    if (liveTotal !== (campaignRes.data.leads_total ?? 0)) {
+      await supabase
+        .from("campaigns")
+        .update({ total_leads: liveTotal, leads_total: liveTotal })
+        .eq("id", campaignId)
+        .eq("workspace_id", workspaceId);
+    }
+
+    const base = campaignRes.data;
+    return {
+      success: true,
+      data: {
+        id:           base.id,
+        status:       base.status,
+        leads_total:  liveTotal,
+        leads_queued: queueRes.count      ?? 0,
+        leadsTotal:   liveTotal,
+        connEnviadas: connSentRes.count   ?? 0,
+        leadsQueued:  queueRes.count      ?? 0,
+        extraidos:    extraidosRes.count  ?? 0,
+        conectados:   conectadosRes.count ?? 0,
+      } as CampaignStats,
+    };
   } catch (err) {
     return { success: false, error: String(err) };
+  }
+}
+
+export async function getDashboardUrl(): Promise<string> {
+  return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+}
+
+// ── getSequenceAnalytics ──────────────────────────────────────────────────────
+
+const SEQUENCE_STAGES = [
+  { step: 0, key: 'extraido',          label: 'Extraído'          },
+  { step: 1, key: 'conexion_enviada',  label: 'Solicitud enviada' },
+  { step: 2, key: 'conexion_aceptada', label: 'Conexión aceptada' },
+  { step: 3, key: 'en_conversacion',   label: 'En conversación'   },
+  { step: 4, key: 'reunion_agendada',  label: 'Reunión agendada'  },
+  { step: 5, key: 'cliente',           label: 'Cliente'           },
+] as const;
+
+export async function getSequenceAnalytics(campaignId: string): Promise<{
+  success: boolean;
+  data?: {
+    steps: Array<{
+      step: number; label: string;
+      totalLeads: number; passed: number; dropped: number; convRate: number;
+    }>;
+    abTest?: {
+      variantA: { sent: number; accepted: number; rate: number };
+      variantB: { sent: number; accepted: number; rate: number };
+      winner: 'a' | 'b' | null;
+      sampleOk: boolean;
+    };
+  };
+  error?: string;
+}> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    const { data: rows } = await supabase
+      .from('leads')
+      .select('crm_column')
+      .eq('campaign_id', campaignId)
+      .eq('workspace_id', workspaceId);
+
+    const countsByStage: Record<string, number> = {};
+    for (const row of rows ?? []) {
+      const col = row.crm_column ?? 'extraido';
+      countsByStage[col] = (countsByStage[col] ?? 0) + 1;
+    }
+
+    const total = (rows ?? []).length;
+
+    // Build cumulative funnel: each step counts leads AT or BEYOND that stage
+    const steps = SEQUENCE_STAGES.map((s, idx) => {
+      const atOrBeyond = SEQUENCE_STAGES.slice(idx).reduce(
+        (sum, stage) => sum + (countsByStage[stage.key] ?? 0), 0
+      );
+      const prevAtOrBeyond = idx === 0
+        ? total
+        : SEQUENCE_STAGES.slice(idx - 1).reduce(
+            (sum, stage) => sum + (countsByStage[stage.key] ?? 0), 0
+          );
+      const convRate = prevAtOrBeyond > 0
+        ? Math.round((atOrBeyond / prevAtOrBeyond) * 100)
+        : 0;
+      return {
+        step:       s.step,
+        label:      s.label,
+        totalLeads: atOrBeyond,
+        passed:     countsByStage[s.key] ?? 0,
+        dropped:    Math.max(0, prevAtOrBeyond - atOrBeyond),
+        convRate:   idx === 0 ? 100 : convRate,
+      };
+    });
+
+    // A/B test data
+    const { data: campaign } = await supabase
+      .from('campaigns')
+      .select('ab_test_enabled, ab_winner, ab_min_sample_size')
+      .eq('id', campaignId)
+      .single();
+
+    let abTest: typeof undefined | {
+      variantA: { sent: number; accepted: number; rate: number };
+      variantB: { sent: number; accepted: number; rate: number };
+      winner: 'a' | 'b' | null;
+      sampleOk: boolean;
+    } = undefined;
+
+    if (campaign?.ab_test_enabled) {
+      const { data: abLeads } = await supabase
+        .from('leads')
+        .select('ab_variant, crm_column')
+        .eq('campaign_id', campaignId)
+        .in('ab_variant', ['a', 'b']);
+
+      const varA = (abLeads ?? []).filter((l) => l.ab_variant === 'a');
+      const varB = (abLeads ?? []).filter((l) => l.ab_variant === 'b');
+      const accepted = (leads: typeof varA) =>
+        leads.filter((l) => l.crm_column !== 'conexion_enviada' && l.crm_column !== 'extraido').length;
+
+      const rateA = varA.length > 0 ? Math.round((accepted(varA) / varA.length) * 100) : 0;
+      const rateB = varB.length > 0 ? Math.round((accepted(varB) / varB.length) * 100) : 0;
+      const minSample = campaign.ab_min_sample_size ?? 30;
+
+      abTest = {
+        variantA: { sent: varA.length, accepted: accepted(varA), rate: rateA },
+        variantB: { sent: varB.length, accepted: accepted(varB), rate: rateB },
+        winner:   (campaign.ab_winner as 'a' | 'b' | null) ?? null,
+        sampleOk: varA.length >= minSample && varB.length >= minSample,
+      };
+    }
+
+    return { success: true, data: { steps, ...(abTest ? { abTest } : {}) } };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
+// ── saveCampaignAbTest ────────────────────────────────────────────────────────
+
+export async function saveCampaignAbTest(
+  campaignId: string,
+  variantA: { connection_note?: string; follow_up_message?: string },
+  variantB: { connection_note?: string; follow_up_message?: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { error } = await supabase
+      .from('campaigns')
+      .update({ ab_test_enabled: true, ab_variant_a: variantA, ab_variant_b: variantB })
+      .eq('id', campaignId)
+      .eq('workspace_id', workspaceId);
+    if (error) throw error;
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
+// ── importLeadsFromCsv ────────────────────────────────────────────────────────
+
+export async function importLeadsFromCsv(
+  rows: Array<Record<string, string>>,
+  segmentId: string,
+  campaignId: string
+): Promise<{ success: boolean; imported: number; duplicates: number; errors: number; error?: string }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    const { data: seg } = await supabase
+      .from("segments")
+      .select("id")
+      .eq("id", segmentId)
+      .eq("workspace_id", workspaceId)
+      .single();
+    if (!seg) throw new Error("Segmento no encontrado");
+
+    let imported   = 0;
+    let duplicates = 0;
+    let errors     = 0;
+
+    const BATCH = 50;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+
+      const leads = batch.map((row) => {
+        const get = (keys: string[]) => {
+          for (const k of keys) {
+            const match = Object.keys(row).find(
+              (col) => col.toLowerCase().trim() === k.toLowerCase()
+            );
+            if (match && row[match]?.trim()) return row[match].trim();
+          }
+          return null;
+        };
+
+        const firstName = get(["first_name", "nombre", "first name", "nombre1"]);
+        const lastName  = get(["last_name", "apellido", "last name", "apellidos"]);
+        const fullName  =
+          get(["full_name", "name", "nombre completo"]) ??
+          ([firstName, lastName].filter(Boolean).join(" ") || "Sin nombre");
+
+        return {
+          workspace_id: workspaceId,
+          segment_id:   segmentId,
+          campaign_id:  campaignId,
+          full_name:    fullName,
+          email:        get(["email", "correo", "e-mail"]),
+          phone:        get(["phone", "telefono", "teléfono", "tel", "mobile"]),
+          company:      get(["company", "empresa", "compañia", "compañía", "organization"]),
+          headline:     get(["title", "cargo", "job_title", "puesto", "headline"]),
+          linkedin_url: get(["linkedin", "linkedin_url", "profile_url", "perfil_linkedin"]),
+          crm_column:   "extraido",
+          status:       "new",
+          score:        5,
+          custom_tags:  [] as string[],
+          created_at:   new Date().toISOString(),
+          updated_at:   new Date().toISOString(),
+        };
+      });
+
+      const validLeads = leads.filter((l) => l.full_name !== "Sin nombre" || l.email);
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from("leads")
+        .upsert(validLeads, { onConflict: "workspace_id,linkedin_url", ignoreDuplicates: true })
+        .select("id");
+
+      if (insertErr) {
+        errors += batch.length;
+      } else {
+        imported   += inserted?.length ?? 0;
+        duplicates += validLeads.length - (inserted?.length ?? 0);
+      }
+    }
+
+    return { success: true, imported, duplicates, errors };
+  } catch (e) {
+    return { success: false, imported: 0, duplicates: 0, errors: 0, error: String(e) };
   }
 }

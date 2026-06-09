@@ -3,11 +3,76 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, Zap } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Logo } from "@/components/ui/logo";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { dashboardNavItems } from "@/lib/dashboard-nav";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/browser";
+
+// ── Inbox nav item with realtime unread badge ─────────────────────────────────
+
+function InboxNavItem({
+  href, label, icon: Icon, isActive, onClick,
+}: {
+  href: string; label: string; icon: React.ElementType;
+  isActive: boolean; onClick?: () => void;
+}) {
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    const supabase = createClient();
+    // Nombre único por instancia para evitar conflicto con StrictMode double-mount
+    const channelName = `inbox-badge-${Math.random().toString(36).slice(2)}`;
+
+    function fetchUnread() {
+      supabase
+        .from("conversations")
+        .select("unread_count")
+        .gt("unread_count", 0)
+        .then(({ data }) => {
+          const total = (data ?? []).reduce((s: number, r: { unread_count: number | null }) => s + (r.unread_count ?? 0), 0);
+          setUnread(total);
+        });
+    }
+
+    fetchUnread();
+
+    const channel = supabase
+      .channel(channelName)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, fetchUnread)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={cn(
+        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+        isActive
+          ? "bg-gradient-to-r from-emerald-600/90 to-green-600/90 text-white shadow-md shadow-emerald-900/30"
+          : "text-sidebar-muted hover:bg-zinc-800/80 hover:text-white"
+      )}
+    >
+      <Icon
+        className={cn(
+          "h-5 w-5 shrink-0",
+          isActive ? "text-white" : "text-zinc-500 group-hover:text-emerald-400"
+        )}
+        strokeWidth={isActive ? 2.25 : 2}
+      />
+      <span className="flex-1 truncate">{label}</span>
+      {unread > 0 && (
+        <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+          {unread > 99 ? "99+" : unread}
+        </span>
+      )}
+    </Link>
+  );
+}
 
 type DashboardSidebarProps = {
   mobileOpen?: boolean;
@@ -54,6 +119,19 @@ export function DashboardSidebar({
             item.href === "/dashboard"
               ? pathname === "/dashboard"
               : pathname.startsWith(item.href);
+
+          if (item.href === "/dashboard/smart-inbox") {
+            return (
+              <InboxNavItem
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={Icon}
+                isActive={isActive}
+                onClick={onMobileClose}
+              />
+            );
+          }
 
           return (
             <Link

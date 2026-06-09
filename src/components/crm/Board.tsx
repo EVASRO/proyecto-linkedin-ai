@@ -120,13 +120,14 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto pb-4 pr-2">
+      <div className="flex h-full gap-3 overflow-x-auto pb-4 pr-2 items-start">
         {columns.map((col) => {
           const c = CC[col.color] ?? CC.blue;
           const isOpen = openMenu?.id === col.id;
 
           return (
-            <div key={col.id} className="flex w-[260px] flex-shrink-0 flex-col">
+            <div key={col.id} className="flex w-[260px] flex-shrink-0 flex-col"
+                 style={{ height: 'calc(100vh - 180px)' }}>
               {/* ── Column header ── */}
               <div className={`relative rounded-t-xl ${c.header} px-3 py-2.5`}>
                 <div className="flex items-center justify-between gap-2">
@@ -245,7 +246,8 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
                     ref={provided.innerRef}
                     {...provided.droppableProps}
                     className={[
-                      "flex-1 rounded-b-xl border-x border-b p-2 space-y-2 transition-all duration-150",
+                      "flex-1 min-h-0 overflow-y-auto rounded-b-xl border-x border-b p-2 space-y-2",
+                      "transition-all duration-150 scrollbar-thin scrollbar-thumb-zinc-200",
                       snapshot.isDraggingOver
                         ? `bg-zinc-100/80 ${c.ring} ring-2 ring-inset border-transparent`
                         : "border-zinc-200 bg-zinc-50/70",

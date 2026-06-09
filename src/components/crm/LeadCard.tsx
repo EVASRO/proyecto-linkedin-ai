@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, ClipboardCopy, Eye, MessageSquare, Trash2, X, Zap } from "lucide-react";
+import { Archive, ClipboardCopy, Clock, Eye, MessageSquare, Trash2, X, Zap } from "lucide-react";
 import type { CrmLead } from "./types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -121,20 +121,48 @@ export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: Lead
         />
       )}
 
-      {/* Priority dot */}
-      <span
-        className={`absolute right-3 top-3 h-2 w-2 rounded-full ${dotCls}`}
-        title={`Prioridad ${priorityDot(lead.score).p}`}
-      />
+      {/* Score badge (replaces priority dot when score > 0) */}
+      {(lead.score ?? 0) > 0 ? (
+        <div className={`absolute right-2 top-2 flex h-5 w-8 items-center justify-center
+                         rounded-full text-[9px] font-bold
+                         ${(lead.score ?? 0) >= 80 ? 'bg-amber-100 text-amber-700' :
+                           (lead.score ?? 0) >= 50 ? 'bg-violet-100 text-violet-700' :
+                                                     'bg-zinc-100 text-zinc-500'}`}
+          title={`Score: ${lead.score}`}
+        >
+          {lead.score}
+        </div>
+      ) : (
+        <span
+          className={`absolute right-3 top-3 h-2 w-2 rounded-full ${dotCls}`}
+          title={`Prioridad ${priorityDot(lead.score).p}`}
+        />
+      )}
 
       {/* Row 1 — Avatar · Name */}
       <div className="flex items-start gap-2.5 pr-4">
-        <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(lead.name)}`}>
-          {initials(lead.name)}
+        <div className="relative flex-shrink-0">
+          {lead.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={lead.avatarUrl}
+              alt={lead.name}
+              className="h-8 w-8 rounded-full object-cover"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(lead.name)}`}>
+              {initials(lead.name)}
+            </div>
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-semibold leading-tight text-zinc-900">{lead.name}</p>
-          <p className="truncate text-[11px] text-zinc-500">{lead.company}</p>
+          {lead.headline ? (
+            <p className="truncate text-[10px] text-zinc-400 italic">{lead.headline}</p>
+          ) : (
+            <p className="truncate text-[11px] text-zinc-500">{lead.company}</p>
+          )}
         </div>
       </div>
 
@@ -162,17 +190,46 @@ export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: Lead
         </div>
       )}
 
-      {/* Row 4 — Date */}
-      <div className="mt-2 flex items-center justify-between">
+      {/* Row 4 — Date · Days in stage */}
+      <div className="mt-2 flex items-center justify-between gap-2">
         <span className="truncate text-[10px] text-zinc-400">{relativeDate(lead.createdAt)}</span>
+        {(lead.daysInStage ?? 0) > 0 && (
+          <span className={[
+            "flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+            (lead.daysInStage ?? 0) >= 7
+              ? "bg-red-50 text-red-600"
+              : (lead.daysInStage ?? 0) >= 3
+                ? "bg-amber-50 text-amber-600"
+                : "bg-zinc-50 text-zinc-400",
+          ].join(" ")}>
+            <Clock className="h-2.5 w-2.5" />
+            {lead.daysInStage}d
+          </span>
+        )}
       </div>
 
-      {/* Row 5 — next_task */}
-      {lead.nextTask && (
+      {/* Row 5 — next pending automation task */}
+      {(lead.nextPendingTask ?? lead.nextTask) && (
         <div className="mt-2 border-t border-zinc-100 pt-2">
           <span className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 w-fit max-w-full">
             <Zap className="h-2.5 w-2.5 flex-shrink-0" />
-            <span className="truncate">{lead.nextTask}</span>
+            <span className="truncate">{lead.nextPendingTask ?? lead.nextTask}</span>
+          </span>
+        </div>
+      )}
+
+      {/* Days-in-stage alert for stale leads */}
+      {(lead.daysInStage ?? 0) > 3 && (
+        <div className={`mt-2 flex items-center gap-1 rounded-lg px-2 py-1
+                         ${(lead.daysInStage ?? 0) > 7
+                           ? 'bg-red-50 border border-red-100'
+                           : 'bg-amber-50 border border-amber-100'}`}>
+          <Clock className={`h-3 w-3 flex-shrink-0
+                              ${(lead.daysInStage ?? 0) > 7 ? 'text-red-500' : 'text-amber-500'}`} />
+          <span className={`text-[9px] font-medium
+                             ${(lead.daysInStage ?? 0) > 7 ? 'text-red-600' : 'text-amber-600'}`}>
+            {(lead.daysInStage ?? 0) > 7 ? '⚠ ' : ''}
+            {lead.daysInStage}d en esta etapa
           </span>
         </div>
       )}

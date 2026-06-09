@@ -5,7 +5,7 @@ export type PipelineStage =
   | "leads_entrantes" | "en_contacto" | "demo_agendada"
   | "propuesta" | "cerrado" | "perdido";
 
-export type MessageStatus = "sending" | "sent" | "delivered" | "read";
+export type MessageStatus = "sending" | "sent" | "delivered" | "read" | "draft" | "approved" | "rejected" | "pending_send";
 
 export type Message = {
   id: string;
@@ -45,11 +45,14 @@ export type InboxLead = {
   createdAt: string;
 };
 
+export type AutopilotMode = "auto" | "review";
+
 export type Conversation = {
   id: string;
   lead: InboxLead;
   status: ConvStatus;
   autopilotActive: boolean;
+  autopilotMode: AutopilotMode;
   unreadCount: number;
   messages: Message[];
   aiSuggestions: AISuggestion[];

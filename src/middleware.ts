@@ -43,6 +43,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.nextUrl.origin));
   }
 
+  // Redirect to onboarding if user hasn't completed it yet.
+  // We read from auth user_metadata to avoid an extra DB query in middleware.
+  if (
+    user &&
+    pathname.startsWith("/dashboard") &&
+    !pathname.startsWith("/dashboard/onboarding")
+  ) {
+    if (user.user_metadata?.onboarding_completed !== true) {
+      return NextResponse.redirect(
+        new URL("/dashboard/onboarding", request.nextUrl.origin)
+      );
+    }
+  }
+
   return supabaseResponse;
 }
 

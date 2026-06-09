@@ -346,11 +346,13 @@
     const { task, taskId, ...params } = event.data;
 
     switch (task) {
-      case 'view_profile':   await executeViewProfile(taskId);                              break;
-      case 'connect':        await executeConnect(taskId, params.note, params.leadId, params.campaignId);    break;
-      case 'message':        await executeMessage(taskId, params.text, params.leadId, params.campaignId);    break;
-      case 'count_leads':    await executeCountLeads(taskId, params.campaignId, params.segmentId); break;
-      case 'extract_profile': await executeExtractProfile(taskId, params.leadId);           break;
+      case 'view_profile':      await executeViewProfile(taskId);                                                       break;
+      case 'connect':           await executeConnect(taskId, params.note, params.leadId, params.campaignId);           break;
+      case 'message':           await executeMessage(taskId, params.text, params.leadId, params.campaignId);           break;
+      case 'count_leads':       await executeCountLeads(taskId, params.campaignId, params.segmentId);                  break;
+      case 'extract_profile':   await executeExtractProfile(taskId, params.leadId);                                    break;
+      case 'check_connection':  await executeCheckConnection(taskId, params.leadId, params.campaignId);                break;
+      case 'check_inbox':       await executeCheckInbox(taskId, params.campaignId);                                    break;
     }
   });
 
@@ -418,14 +420,154 @@
       }
     }
 
-    const sendBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-      const t = b.innerText?.toLowerCase();
-      return t === 'enviar' || t === 'send' || t?.includes('invitación') || t?.includes('invitation');
-    });
-    if (sendBtn) simulateClick(sendBtn);
+    // Buscar botón "Enviar" con reintentos — confirma que el modal está abierto
+    let sendBtn = null;
+    for (let i = 0; i < 3; i++) {
+      sendBtn = Array.from(document.querySelectorAll('button')).find((b) => {
+        const t = b.innerText?.toLowerCase() ?? '';
+        return t === 'enviar' || t === 'send' ||
+               t.includes('invitación') || t.includes('invitation') ||
+               t.includes('send invitation') || t.includes('enviar invitación');
+      });
+      if (sendBtn) break;
+      await sleep(500);
+    }
 
-    await sleep(800);
-    safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: true, lead_id: leadId, campaign_id: campaignId } });
+    if (!sendBtn) {
+      console.warn('[NexusAI Content] Botón "Enviar" no encontrado');
+      safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false,
+        reason: 'send_button_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+      return;
+    }
+
+    simulateClick(sendBtn);
+    await sleep(1500);
+
+    // Verificar envío exitoso: el modal debe haberse cerrado
+    const modalOpen = !!document.querySelector(
+      '.send-invite, .artdeco-modal--layer-default, [data-test-modal]'
+    );
+    const limitReached = modalOpen && (
+      document.body.innerText.toLowerCase().includes('límite') ||
+      document.body.innerText.toLowerCase().includes('limit')
+    );
+
+    if (limitReached) {
+      safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false,
+        reason: 'daily_limit_reached',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+      return;
+    }
+
+    const connectionNote = note || '';
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'connect', success: !modalOpen,
+      lead_id: leadId, campaign_id: campaignId,
+      connection_note: connectionNote,
+    }});
+  }
+
+  async function executeCheckConnection(taskId, leadId, campaignId) {
+    await sleep(2000);
+
+    const allButtons = Array.from(document.querySelectorAll('button, a'));
+
+    const isConnected = allButtons.some(el => {
+      const text  = el.textContent?.trim().toLowerCase() ?? '';
+      const label = el.getAttribute('aria-label')?.toLowerCase() ?? '';
+      return text === 'mensaje' || text === 'message' ||
+             text === 'enviar mensaje' || text === 'send message' ||
+             label.includes('mensaje') || label.includes('message');
+    });
+
+    const isPending = allButtons.some(el => {
+      const text = el.textContent?.trim().toLowerCase() ?? '';
+      return text.includes('pendiente') || text.includes('pending') ||
+             text.includes('retirar')   || text.includes('withdraw');
+    });
+
+    safeSendMessage({
+      type: 'ACTION_DONE',
+      taskId,
+      result: {
+        action:      'check_connection',
+        success:     true,
+        connected:   isConnected,
+        pending:     isPending,
+        lead_id:     leadId,
+        campaign_id: campaignId,
+      },
+    });
+  }
+
+  async function executeCheckInbox(taskId, campaignId) {
+    await sleep(2000);
+
+    const isSalesNav = window.location.href.includes('/sales/');
+
+    const convSelectors = isSalesNav
+      ? '.conversation-list-item, [data-test-list-item]'
+      : '.msg-conversations-container__convo-item, ' +
+        '[data-test-li="msg-conversation-list-item"],' +
+        '.msg-conversation-list__list-item';
+
+    const convItems = Array.from(document.querySelectorAll(convSelectors));
+
+    const unreadConvs = convItems.filter(el => {
+      return el.querySelector(
+        '.notification-badge, .msg-conversation-listitem__unread-count, ' +
+        '[data-test-unread-count], .artdeco-notification-badge'
+      ) !== null ||
+        el.classList.contains('msg-conversation-list__list-item--is-unread') ||
+        el.querySelector('[aria-label*="unread"], [aria-label*="no leído"]') !== null;
+    });
+
+    const results = [];
+
+    for (const conv of unreadConvs.slice(0, 5)) {
+      const nameEl = conv.querySelector(
+        '.msg-conversation-listitem__participant-names, ' +
+        '.artdeco-entity-lockup__title, ' +
+        '.conversation-item__details-title, ' +
+        '[data-test-person-name]'
+      );
+      const name = nameEl?.innerText?.trim() ?? '';
+
+      const previewEl = conv.querySelector(
+        '.msg-conversation-listitem__message-snippet, ' +
+        '.t-12, ' +
+        '[data-test-message-snippet]'
+      );
+      const preview = previewEl?.innerText?.trim() ?? '';
+
+      const timeEl = conv.querySelector('time, .msg-s-message-group__timestamp, ' +
+        '[data-test-message-timestamp]');
+      const timestamp = timeEl?.getAttribute('datetime') ?? new Date().toISOString();
+
+      const profileLink = conv.querySelector('a[href*="/in/"], a[href*="/sales/lead/"]');
+      const profileUrl  = profileLink?.href ?? null;
+
+      if (name) {
+        results.push({ name, preview, profileUrl, timestamp });
+      }
+    }
+
+    safeSendMessage({
+      type: 'ACTION_DONE',
+      taskId,
+      result: {
+        action:        'check_inbox',
+        success:       true,
+        unreadCount:   unreadConvs.length,
+        conversations: results,
+        campaign_id:   campaignId,
+      }
+    });
   }
 
   async function executeMessage(taskId, text, leadId, campaignId) {
@@ -462,7 +604,13 @@
     }
 
     await sleep(800);
-    safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: true, lead_id: leadId, campaign_id: campaignId } });
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action:       'message',
+      success:      true,
+      lead_id:      leadId,
+      campaign_id:  campaignId,
+      message_text: text,
+    }});
   }
 
   async function executeCountLeads(taskId, campaignId, segmentId) {
@@ -699,77 +847,178 @@
           }
 
           case 'NEXUSAI_SCRAPE_PROFILES': {
-            // Scraping estructurado para campaña — devuelve array directo (no envuelto)
-            await sleep(800 + Math.random() * 1200);
+            function extractRealName(container) {
+              const salNavName = container.querySelector(
+                '.artdeco-entity-lockup__title, ' +
+                '[data-anonymize="person-name"], ' +
+                '.result-lockup__name, ' +
+                '.artdeco-entity-lockup__subtitle ~ .artdeco-entity-lockup__title'
+              );
+              if (salNavName) {
+                const t = salNavName.innerText?.trim();
+                if (t && t.split(' ').length <= 6 && !t.includes(' fue ') &&
+                    !t.includes(' está ') && !t.includes(' conexión')) return t;
+              }
+              const linkedinName = container.querySelector(
+                'h1.text-heading-xlarge, ' +
+                '.pv-text-details__left-panel h1, ' +
+                '.entity-result__title-text a span[aria-hidden="true"], ' +
+                '.app-aware-link span[aria-hidden="true"]'
+              );
+              if (linkedinName) {
+                const t = linkedinName.innerText?.trim();
+                if (t && t.split(' ').length <= 6) return t;
+              }
+              const allSpans = Array.from(container.querySelectorAll('span, a'))
+                .map(el => el.innerText?.trim())
+                .filter(t => t && t.length > 2 && t.length < 60 &&
+                             t.split(' ').length <= 5 &&
+                             !t.includes('conexión') && !t.includes('disponible') &&
+                             !t.includes('activo') && !t.includes('hace '));
+              return allSpans[0] ?? 'Sin nombre';
+            }
 
+            function cleanLinkedInName(raw) {
+              if (!raw) return 'Sin nombre';
+              const patterns = [
+                /^la (?:última|ultima) conexión de (.+?) fue .+$/i,
+                /^(.+?) está disponible$/i,
+                /^(.+?) estuvo activo.+$/i,
+                /^(.+?) (?:ha compartido|publicado|comentado).+$/i,
+                /^(.+?) responded.+$/i,
+              ];
+              for (const p of patterns) {
+                const m = raw.match(p);
+                if (m?.[1]) return m[1].trim();
+              }
+              if (raw.split(' ').length > 6) return raw.split(' ').slice(0, 3).join(' ');
+              return raw;
+            }
             const results = [];
 
-            // Sales Navigator: cards de resultado
-            const snCards = document.querySelectorAll(
-              '.artdeco-entity-lockup, [data-view-name="search-result-entity-lockup"], .search-results__result-item'
-            );
+            // ─── PASO 1: Scroll completo para forzar renderizado virtual ───────
+            async function scrollToLoadAll() {
+              const sleepMs = (ms) => new Promise(r => setTimeout(r, ms));
 
-            snCards.forEach((card) => {
-              const linkEl = card.querySelector('a[href*="/sales/lead/"], a[href*="/in/"]');
-              if (!linkEl) return;
+              // Buscar el contenedor scrollable real de Sales Navigator
+              // Es un DIV con overflow-y:auto y scrollHeight mucho mayor que clientHeight
+              const scroller =
+                document.querySelector('div.overflow-x-hidden.overflow-y-auto') ||
+                document.querySelector('[class*="overflow-y-auto"]') ||
+                Array.from(document.querySelectorAll('div, main, section')).find(el => {
+                  const s = getComputedStyle(el);
+                  return ['scroll', 'auto'].includes(s.overflowY) &&
+                         el.scrollHeight > el.clientHeight * 1.5 &&
+                         el.scrollHeight > 500;
+                }) ||
+                document.documentElement;
+
+              console.log('[NexusAI Content] Scroller encontrado:',
+                scroller.tagName, scroller.className?.slice(0, 60),
+                'scrollH:', scroller.scrollHeight, 'clientH:', scroller.clientHeight);
+
+              let lastCount = 0;
+              let stableRounds = 0;
+              const totalHeight = scroller.scrollHeight;
+              const steps = 20; // pasos de scroll
+
+              for (let i = 0; i < 30; i++) {
+                // Scroll incremental hacia abajo en pasos pequeños
+                const targetTop = Math.min(scroller.scrollTop + (totalHeight / steps), scroller.scrollHeight);
+                scroller.scrollTop = targetTop;
+
+                // También intentar window scroll por si acaso
+                window.scrollTo({ top: window.scrollY + 300, behavior: 'auto' });
+
+                await sleepMs(700);
+
+                const currentLinks = document.querySelectorAll('a[href*="/sales/lead/"]').length;
+                console.log('[NexusAI Content] Scroll ronda', i + 1,
+                  '- scrollTop:', Math.round(scroller.scrollTop),
+                  '- links:', currentLinks);
+
+                if (currentLinks === lastCount) {
+                  stableRounds++;
+                  if (stableRounds >= 4) break;
+                } else {
+                  stableRounds = 0;
+                }
+                lastCount = currentLinks;
+
+                // Si llegamos al fondo, volver al inicio y dar una ronda más
+                if (scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 50) {
+                  console.log('[NexusAI Content] Llegamos al fondo del scroller');
+                  break;
+                }
+              }
+
+              // Volver arriba para que la extracción sea consistente
+              scroller.scrollTop = 0;
+              await sleepMs(500);
+            }
+
+            await scrollToLoadAll();
+
+            // ─── PASO 2: Extraer todos los perfiles del DOM ──────────────────
+            const profileLinks = Array.from(document.querySelectorAll(
+              'a[href*="/sales/lead/"], a[href*="/in/"]'
+            )).filter((a) => {
+              const href = a.href || '';
+              return (href.includes('/sales/lead/') || href.includes('/in/')) &&
+                     !href.includes('/feed') &&
+                     !href.includes('/company') &&
+                     !href.includes('/school') &&
+                     !href.includes('/settings') &&
+                     !href.includes('/sales/home') &&
+                     !href.includes('linkedin.com/in/undefined');
+            });
+
+            const seenUrls = new Set();
+            profileLinks.forEach((linkEl) => {
               const url = linkEl.href?.split('?')[0];
-              if (!url) return;
+              if (!url || seenUrls.has(url)) return;
+              seenUrls.add(url);
 
-              const nameEl = card.querySelector(
-                '.artdeco-entity-lockup__title, .result-lockup__name, [data-anonymize="person-name"]'
-              );
+              const card = linkEl.closest(
+                'li.artdeco-list__item, li[class*="result"], article, ' +
+                '[data-view-name="search-result-entity-lockup"], ' +
+                '.artdeco-entity-lockup, [class*="result-item"]'
+              ) || linkEl.parentElement?.parentElement;
+
+              if (!card) return;
+
+              const rawName = extractRealName(card) ||
+                             linkEl.querySelector('span:not(.visually-hidden)')?.textContent?.trim() ||
+                             linkEl.textContent?.trim() || '';
+              const name = cleanLinkedInName(rawName);
+              if (!name || name.length < 2 || name === 'Sin nombre') return;
+
               const headlineEl = card.querySelector(
-                '.artdeco-entity-lockup__subtitle, .result-lockup__highlight-keyword, [data-anonymize="headline"]'
+                '[data-anonymize="headline"], .artdeco-entity-lockup__subtitle, ' +
+                '[class*="headline"], [class*="subtitle"]'
               );
-              const avatarEl = card.querySelector('img.presence-entity__image, img.evi-image');
               const companyEl = card.querySelector(
-                '[data-anonymize="company-name"], .result-lockup__position-company'
+                '[data-anonymize="company-name"], .result-lockup__position-company, ' +
+                '[class*="company"]'
               );
+              const avatarEl = card.querySelector('img[class*="profile"], img[class*="ghost"], img[alt]');
 
               const idMatch      = url.match(/\/in\/([^/?]+)/);
               const salesIdMatch = url.match(/\/sales\/lead\/([^,/?]+)/);
 
               results.push({
                 url,
-                name:       nameEl?.textContent?.trim()    || 'Sin nombre',
+                name,
                 headline:   headlineEl?.textContent?.trim() || null,
-                avatar:     avatarEl?.src                   || null,
-                company:    companyEl?.textContent?.trim()  || null,
+                avatar:     avatarEl?.src || null,
+                company:    companyEl?.textContent?.trim() || null,
                 location:   null,
-                linkedinId: idMatch?.[1] || salesIdMatch?.[1] || null,
+                linkedinId: salesIdMatch?.[1] || idMatch?.[1] || null,
               });
             });
 
-            // LinkedIn estándar (fallback si Sales Nav no encontró nada)
-            if (results.length === 0) {
-              document.querySelectorAll('.entity-result__title-text a').forEach((el) => {
-                const url  = el.href?.split('?')[0];
-                const name = el.querySelector('.visually-hidden')?.textContent?.trim()
-                           ?? el.textContent?.trim();
-                if (!url || !url.includes('/in/')) return;
-                const card      = el.closest('.entity-result');
-                const headline  = card?.querySelector('.entity-result__primary-subtitle')?.textContent?.trim() || null;
-                const avatarEl  = card?.querySelector('img.presence-entity__image, img.entity-result__picture');
-                const companyEl = card?.querySelector('.entity-result__secondary-subtitle');
-                const idMatch   = url.match(/\/in\/([^/?]+)/);
-                results.push({
-                  url,
-                  name:       name || 'Sin nombre',
-                  headline,
-                  avatar:     avatarEl?.src || null,
-                  company:    companyEl?.textContent?.trim() || null,
-                  location:   null,
-                  linkedinId: idMatch?.[1] || null,
-                });
-              });
-            }
-
-            // Deduplicar por URL
-            const unique = results.filter((p, i, arr) =>
-              arr.findIndex((x) => x.url === p.url) === i
-            );
-
-            sendResponse(unique);
+            console.log('[NexusAI Content] Total perfiles extraídos:', results.length);
+            sendResponse({ profiles: results });
             break;
           }
 

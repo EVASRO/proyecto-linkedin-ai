@@ -57,6 +57,10 @@ interface LeadDetailPanelProps {
   lead: InboxLead;
   onClose: () => void;
   onStageChange: (leadId: string, stage: PipelineStage) => void;
+  autopilotActive?: boolean;
+  autopilotMode?: "auto" | "review";
+  onToggleAutopilot?: (active: boolean) => void;
+  onChangeAutopilotMode?: (mode: "auto" | "review") => void;
 }
 
 // Timeline de actividad real construida desde los mensajes de la conversación
@@ -73,7 +77,16 @@ function buildActivityFromMessages(messages: Message[]) {
   }));
 }
 
-export function LeadDetailPanel({ lead, messages, onClose, onStageChange }: LeadDetailPanelProps & { messages?: Message[] }) {
+export function LeadDetailPanel({
+  lead,
+  messages,
+  onClose,
+  onStageChange,
+  autopilotActive = false,
+  autopilotMode   = "review",
+  onToggleAutopilot,
+  onChangeAutopilotMode,
+}: LeadDetailPanelProps & { messages?: Message[] }) {
   const [notes, setNotes] = useState(lead.notes);
   const [stage, setStage] = useState<PipelineStage>(lead.pipeline);
   const [stageOpen, setStageOpen] = useState(false);
@@ -158,6 +171,49 @@ export function LeadDetailPanel({ lead, messages, onClose, onStageChange }: Lead
             )}
           </div>
         </div>
+
+        {/* Autopilot mode toggle */}
+        {onToggleAutopilot && (
+          <div className="border-t border-zinc-100 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-violet-600" />
+                <div>
+                  <p className="text-xs font-semibold text-zinc-800">Autopilot IA</p>
+                  <p className="text-[10px] text-zinc-500">
+                    {autopilotMode === "auto" ? "Envío automático" : "Revisar antes de enviar"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5">
+                <button
+                  onClick={() => onToggleAutopilot(!autopilotActive)}
+                  className={[
+                    "relative h-5 w-9 rounded-full transition-colors",
+                    autopilotActive ? "bg-violet-600" : "bg-zinc-300",
+                  ].join(" ")}
+                >
+                  <div
+                    className={[
+                      "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+                      autopilotActive ? "translate-x-4" : "translate-x-0.5",
+                    ].join(" ")}
+                  />
+                </button>
+                {autopilotActive && onChangeAutopilotMode && (
+                  <select
+                    value={autopilotMode}
+                    onChange={(e) => onChangeAutopilotMode(e.target.value as "auto" | "review")}
+                    className="rounded border border-violet-200 bg-white px-1 py-0.5 text-[10px] text-violet-700 focus:outline-none"
+                  >
+                    <option value="review">Revisar antes</option>
+                    <option value="auto">Auto-enviar</option>
+                  </select>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Contact Info */}
         <Section title="Contacto" icon={User}>

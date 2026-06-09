@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/browser";
 import type {
   Campaign, Segment, WizardData, Template,
   FlowConfig, CampaignType, CampaignStatus, SegmentStatus,
@@ -32,19 +33,21 @@ interface CampanasClientProps {
 
 function mapRow(c: CampaignRow): Campaign {
   return {
-    id:           c.id,
-    name:         c.name,
-    type:         (c.type as CampaignType) ?? "linkedin",
-    status:       (c.status as CampaignStatus) ?? "draft",
-    createdAt:    c.created_at?.slice(0, 10) ?? "",
-    segmentCount: c.segment_count ?? 0,
-    totalLeads:   c.total_leads  ?? 0,
-    leadsTotal:   c.leads_total  ?? 0,
-    leadsQueued:  c.leads_queued ?? 0,
+    id:            c.id,
+    name:          c.name,
+    type:          (c.type as CampaignType) ?? "linkedin",
+    status:        (c.status as CampaignStatus) ?? "draft",
+    createdAt:     c.created_at?.slice(0, 10) ?? "",
+    segmentCount:  c.segment_count ?? 0,
+    totalLeads:    c.total_leads   ?? 0,
+    leadsTotal:    c.leads_total   ?? 0,
+    leadsQueued:   c.leads_queued  ?? 0,
+    workflow_json: (c.workflow_json as Record<string, unknown>) ?? {},
   };
 }
 
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_ACTIVE_MS = 15_000;
+const POLL_INTERVAL_IDLE_MS   = 60_000;
 
 function extractSegments(c: CampaignRow): Segment[] {
   const wf = c.workflow_json;
@@ -52,7 +55,14 @@ function extractSegments(c: CampaignRow): Segment[] {
 
   // Formato nuevo: workflow_json.segments = [...]
   if (Array.isArray(wf.segments) && wf.segments.length > 0) {
-    return wf.segments as Segment[];
+    return (wf.segments as Segment[]).map((s) => ({
+      ...s,
+      campaignId: c.id, // garantizar campaignId para el poll de stats
+      metrics: {
+        ...((s as Segment).metrics ?? {}),
+        totalLeads: c.total_leads || (s as Segment).metrics?.totalLeads || 0,
+      },
+    }));
   }
 
   // Formato legacy: workflow_json = { segment: {...}, automationName: "..." }
@@ -136,18 +146,102 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
             return {
               ...c,
               status:      (s.status as CampaignStatus) ?? c.status,
-              leadsTotal:  s.leads_total  ?? c.leadsTotal,
+              leadsTotal:  s.leadsTotal   ?? c.leadsTotal,
+              totalLeads:  s.leadsTotal   ?? c.totalLeads,
               leadsQueued: s.leads_queued ?? c.leadsQueued,
             };
           }
           return c;
         })
       );
+      // Propagar el count real de leads a metrics.totalLeads de cada segmento
+      setSegments((prev) =>
+        prev.map((seg) => {
+          const idx = activeCampaigns.findIndex((ac) => ac.id === seg.campaignId);
+          if (idx === -1) return seg;
+          const res = results[idx];
+          if (res.status === "fulfilled" && res.value.success && res.value.data) {
+            const s = res.value.data;
+            if (s.leadsTotal > 0 && s.leadsTotal !== seg.metrics.totalLeads) {
+              return {
+                ...seg,
+                metrics: {
+                  ...seg.metrics,
+                  totalLeads: s.leadsTotal,
+                  connected:  s.conectados  ?? seg.metrics.connected,
+                },
+              };
+            }
+          }
+          return seg;
+        })
+      );
+      // Actualizar también la campaña seleccionada si está en el poll
+      setSelected((prev) => {
+        if (!prev) return prev;
+        const idx = activeCampaigns.findIndex((ac) => ac.id === prev.id);
+        if (idx === -1) return prev;
+        const res = results[idx];
+        if (res.status === "fulfilled" && res.value.success && res.value.data) {
+          const s = res.value.data;
+          return {
+            ...prev,
+            leadsTotal:  s.leadsTotal   ?? prev.leadsTotal,
+            totalLeads:  s.leadsTotal   ?? prev.totalLeads,
+            leadsQueued: s.leads_queued ?? prev.leadsQueued,
+          };
+        }
+        return prev;
+      });
     }
 
     poll();
-    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    const pollMs = activeCampaigns.length > 0 ? POLL_INTERVAL_ACTIVE_MS : POLL_INTERVAL_IDLE_MS;
+    pollRef.current = setInterval(poll, pollMs);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns.filter((c) => c.status === "active").map((c) => c.id).join(",")]);
+
+  // ── Realtime — actualización inmediata al cambiar crm_column de un lead ──
+
+  useEffect(() => {
+    const activeCampaignIds = campaigns
+      .filter((c) => c.status === "active")
+      .map((c) => c.id);
+    if (activeCampaignIds.length === 0) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel("nexusai-leads-live")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "leads" },
+        (payload) => {
+          const campaignId = (payload.new as Record<string, unknown>)?.campaign_id as string | undefined;
+          if (!campaignId || !activeCampaignIds.includes(campaignId)) return;
+          getActiveCampaignStats(campaignId)
+            .then((res) => {
+              if (!res.success || !res.data) return;
+              const s = res.data;
+              setCampaigns((prev) =>
+                prev.map((c) =>
+                  c.id === campaignId
+                    ? { ...c, leadsTotal: s.leadsTotal ?? c.leadsTotal, totalLeads: s.leadsTotal ?? c.totalLeads }
+                    : c
+                )
+              );
+              setSelected((prev) =>
+                prev?.id === campaignId
+                  ? { ...prev, leadsTotal: s.leadsTotal ?? prev.leadsTotal, totalLeads: s.leadsTotal ?? prev.totalLeads }
+                  : prev
+              );
+            })
+            .catch(() => {});
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaigns.filter((c) => c.status === "active").map((c) => c.id).join(",")]);
 
@@ -180,6 +274,25 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
         ]);
         setSelected(freshCampaign);
         setView("detail");
+        // Hidratar stats en tiempo real inmediatamente al abrir el detalle
+        getActiveCampaignStats(c.id).then((statsRes) => {
+          if (statsRes.success && statsRes.data) {
+            const s = statsRes.data;
+            setSelected((prev) => prev ? {
+              ...prev,
+              leadsTotal:  s.leadsTotal   ?? prev.leadsTotal,
+              totalLeads:  s.leadsTotal   ?? prev.totalLeads,
+              leadsQueued: s.leads_queued ?? prev.leadsQueued,
+            } : prev);
+            setSegments((prev) =>
+              prev.map((seg) =>
+                seg.campaignId === c.id && s.leadsTotal > 0
+                  ? { ...seg, metrics: { ...seg.metrics, totalLeads: s.leadsTotal, connected: s.conectados ?? seg.metrics.connected } }
+                  : seg
+              )
+            );
+          }
+        }).catch(() => {});
         return;
       }
     }
@@ -190,6 +303,24 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     setSegments((prev) => [...prev.filter((s) => s.campaignId !== c.id), ...segs]);
     setSelected(c);
     setView("detail");
+    getActiveCampaignStats(c.id).then((statsRes) => {
+      if (statsRes.success && statsRes.data) {
+        const s = statsRes.data;
+        setSelected((prev) => prev ? {
+          ...prev,
+          leadsTotal:  s.leadsTotal   ?? prev.leadsTotal,
+          totalLeads:  s.leadsTotal   ?? prev.totalLeads,
+          leadsQueued: s.leads_queued ?? prev.leadsQueued,
+        } : prev);
+        setSegments((prev) =>
+          prev.map((seg) =>
+            seg.campaignId === c.id && s.leadsTotal > 0
+              ? { ...seg, metrics: { ...seg.metrics, totalLeads: s.leadsTotal, connected: s.conectados ?? seg.metrics.connected } }
+              : seg
+          )
+        );
+      }
+    }).catch(() => {});
   }
 
   // ── openFlow ──────────────────────────────────────────────────────────────

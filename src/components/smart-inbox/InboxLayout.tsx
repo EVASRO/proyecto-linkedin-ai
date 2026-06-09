@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useMemo } from "react";
 import type { Conversation, Message, PipelineStage } from "./types";
 import { ConversationList } from "./ConversationList";
 import { ChatView }         from "./ChatView";
 import { LeadDetailPanel }  from "./LeadDetailPanel";
-import { Bot, ChevronDown, MessageSquare, X } from "lucide-react";
+import { Bot, ChevronDown, MessageSquare, Search, X } from "lucide-react";
 import { createClient }     from "@/lib/supabase/browser";
 import {
   sendInboxMessage,
   generateAISuggestion,
   toggleAutopilot as toggleAutopilotAction,
   markConversationRead,
+  setAutopilotMode as setAutopilotModeAction,
 } from "@/app/dashboard/smart-inbox/actions";
 import {
   getAgents,
@@ -62,6 +63,8 @@ function AgentSelector({ agents, onSelect, onClose }: {
   );
 }
 
+type InboxFilter = "all" | "unread" | "autopilot" | "waiting";
+
 export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutProps) {
   const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
   const [selectedId, setSelectedId]       = useState<string | null>(initialConversations[0]?.id ?? null);
@@ -69,6 +72,8 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
   const [isPending, startTransition]      = useTransition();
   const [agents, setAgents]               = useState<AgentRow[]>([]);
   const [agentSelectorId, setAgentSelectorId] = useState<string | null>(null);
+  const [filter, setFilter]               = useState<InboxFilter>("all");
+  const [searchQuery, setSearchQuery]     = useState("");
 
   // Load active agents once
   useEffect(() => {
@@ -78,6 +83,28 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
       }
     });
   }, []);
+
+  // ── Filter + search ─────────────────────────────────────────────────────────
+  const filteredConversations = useMemo(() => {
+    let result = conversations;
+    if (filter === "unread")    result = result.filter((c) => c.unreadCount > 0);
+    if (filter === "autopilot") result = result.filter((c) => c.autopilotActive);
+    if (filter === "waiting") {
+      result = result.filter((c) => {
+        const last = c.messages[c.messages.length - 1];
+        return last?.sender === "user" || last?.sender === "ai";
+      });
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (c) => c.lead.name.toLowerCase().includes(q) || c.lead.company.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [conversations, filter, searchQuery]);
+
+  const unreadTotal = conversations.filter((c) => c.unreadCount > 0).length;
 
   // ── Supabase Realtime ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -328,6 +355,39 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     return result.success ? (result.data?.suggestion ?? "") : "";
   }
 
+  // ── Autopilot mode ───────────────────────────────────────────────────────────
+  function changeAutopilotMode(convId: string, mode: "auto" | "review") {
+    setConversations((prev) =>
+      prev.map((c) => c.id === convId ? { ...c, autopilotMode: mode } : c)
+    );
+    startTransition(async () => {
+      await setAutopilotModeAction(convId, mode);
+    });
+  }
+
+  // ── Draft approval: update message status locally ────────────────────────────
+  function handleDraftStatusChange(
+    convId: string,
+    msgId: string,
+    status: "approved" | "rejected",
+    text?: string
+  ) {
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === msgId
+                  ? { ...m, status, text: text ?? m.text }
+                  : m
+              ),
+            }
+          : c
+      )
+    );
+  }
+
   // ── Other local mutations ────────────────────────────────────────────────────
   function changeLeadStage(leadId: string, stage: PipelineStage) {
     setConversations((prev) =>
@@ -351,13 +411,67 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
       : null;
   }
 
+  const INBOX_FILTERS: { key: InboxFilter; label: string }[] = [
+    { key: "all",       label: "Todos"     },
+    { key: "unread",    label: "No leídos" },
+    { key: "autopilot", label: "🤖 Auto"   },
+    { key: "waiting",   label: "⏳ Espera"  },
+  ];
+
   return (
     <div className="flex flex-1 overflow-hidden min-h-0">
-      <ConversationList
-        conversations={conversations}
-        selectedId={selectedId}
-        onSelect={selectConversation}
-      />
+      {/* Left panel: header + filtered list */}
+      <div className="flex w-72 flex-shrink-0 flex-col border-r border-border bg-white">
+        {/* Header */}
+        <div className="flex-shrink-0 border-b border-zinc-100 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-zinc-900">Smart Inbox</h2>
+            {unreadTotal > 0 && (
+              <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                {unreadTotal} nuevos
+              </span>
+            )}
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Buscar conversación..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-3
+                         text-xs text-zinc-800 placeholder:text-zinc-400
+                         focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-100"
+            />
+          </div>
+
+          {/* Filter tabs */}
+          <div className="flex gap-1 overflow-x-auto">
+            {INBOX_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={[
+                  "flex-shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-medium transition-colors",
+                  filter === f.key
+                    ? "bg-indigo-600 text-white"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200",
+                ].join(" ")}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <ConversationList
+          conversations={filteredConversations}
+          selectedId={selectedId}
+          onSelect={selectConversation}
+        />
+      </div>
 
       {selected ? (
         <div className="flex flex-1 flex-col overflow-hidden min-h-0">
@@ -399,6 +513,9 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
             onArchive={archiveConversation}
             onRequestAISuggestion={() => requestAISuggestion(selected.id)}
             isPending={isPending}
+            onDraftStatusChange={(msgId, status, text) =>
+              handleDraftStatusChange(selected.id, msgId, status, text)
+            }
           />
         </div>
       ) : (
@@ -414,8 +531,13 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
       {selected && detailOpen && (
         <LeadDetailPanel
           lead={selected.lead}
+          messages={selected.messages}
           onClose={() => setDetailOpen(false)}
           onStageChange={changeLeadStage}
+          autopilotActive={selected.autopilotActive}
+          autopilotMode={selected.autopilotMode}
+          onToggleAutopilot={(active) => toggleAutopilot(selected.id, active)}
+          onChangeAutopilotMode={(mode) => changeAutopilotMode(selected.id, mode)}
         />
       )}
     </div>

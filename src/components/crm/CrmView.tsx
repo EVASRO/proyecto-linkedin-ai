@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import {
   CheckCircle2, ChevronDown, Columns3, Filter, LayoutList,
-  Megaphone, Plus, Settings, TrendingUp, X, Zap,
+  Megaphone, Plus, Search, Settings, TrendingUp, X, Zap,
 } from "lucide-react";
 import type { Column, CrmLead, LeadSource, ColumnColor } from "./types";
 import { Board } from "./Board";
 import { AutomationMatrix } from "./AutomationMatrix";
 import { LeadsListView } from "./LeadsListView";
 import { LeadModal } from "./LeadModal";
+import { LeadDetailPanel } from "./LeadDetailPanel";
 import { SettingsModal } from "./SettingsModal";
 import { CreateLeadModal } from "./CreateLeadModal";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
@@ -23,24 +24,65 @@ import type {
   CrmAutomationFull,
 } from "@/app/dashboard/crm/actions";
 
+// ── Limpiar nombres con texto de actividad de LinkedIn ────────────────────────
+
+function cleanLinkedInName(raw: string | null | undefined): string {
+  if (!raw) return "Sin nombre";
+  const patterns = [
+    /^la (?:última|ultima) conexión de (.+?) fue .+$/i,
+    /^(.+?) está disponible$/i,
+    /^(.+?) estuvo activo.+$/i,
+    /^(.+?) responded.+$/i,
+    /^(.+?) recently.+$/i,
+    /^(.+?) ha (?:compartido|publicado|comentado).+$/i,
+  ];
+  for (const p of patterns) {
+    const m = raw.match(p);
+    if (m?.[1]) return m[1].trim();
+  }
+  if (raw.split(" ").length > 5 && (raw.includes(" fue ") || raw.includes(" está "))) {
+    return raw.split(" ").slice(0, 3).join(" ");
+  }
+  return raw;
+}
+
 // ── Map DB → UI ───────────────────────────────────────────────────────────────
 
 function mapDbLead(l: DbLead): CrmLead {
+  const col = l.crm_column;
+  const connectionStatus = ((): CrmLead["connectionStatus"] => {
+    if (col === "cliente" || col === "reunion_agendada") return "meeting";
+    if (col === "en_conversacion")   return "in_conversation";
+    if (col === "conexion_aceptada") return "connected";
+    if (col === "conexion_enviada")  return "pending";
+    return "none";
+  })();
+
   return {
-    id:          l.id,
-    name:        l.full_name,
-    company:     l.company ?? "—",
-    value:       l.value ?? 0,
-    source:      "LinkedIn" as LeadSource,
-    tags:        (l.custom_tags ?? []).map((t) => ({ label: t, color: "blue" as const })),
-    nextTask:    l.next_task ?? null,
-    status:      l.status,
-    crmColumn:   l.crm_column ?? l.status ?? null,
-    createdAt:   l.created_at?.slice(0, 10) ?? "",
-    email:       l.email ?? undefined,
-    phone:       l.phone ?? undefined,
-    linkedinUrl: l.linkedin_url ?? undefined,
-    score:       l.score ?? 0,
+    id:               l.id,
+    name:             cleanLinkedInName(l.full_name),
+    company:          l.company ?? "—",
+    value:            l.value ?? 0,
+    source:           "LinkedIn" as LeadSource,
+    tags:             (l.custom_tags ?? []).map((t) => ({ label: t, color: "blue" as const })),
+    nextTask:         l.next_task ?? null,
+    status:           l.status,
+    crmColumn:        col ?? l.status ?? null,
+    createdAt:        l.created_at?.slice(0, 10) ?? "",
+    email:            l.email ?? undefined,
+    phone:            l.phone ?? undefined,
+    linkedinUrl:      l.linkedin_url ?? undefined,
+    score:            l.score ?? 0,
+    avatarUrl:        l.avatar_url ?? undefined,
+    headline:         l.headline ?? undefined,
+    daysInStage:      l.days_in_stage ?? 0,
+    nextPendingTask:  l.next_pending_task ?? null,
+    campaignName:     l.campaign_name ?? undefined,
+    segmentName:      l.segment_name  ?? undefined,
+    automationStep:   l.automation_step ?? undefined,
+    connectionNote:   l.connection_note ?? undefined,
+    location:         l.location ?? undefined,
+    connectionStatus,
   };
 }
 
@@ -63,13 +105,14 @@ interface CrmViewProps {
   initialLeads: DbLead[];
   initialColumns: DbColumn[];
   initialAutomations: CrmAutomationFull[];
+  workspaceId: string;
 }
 
 const SOURCES: LeadSource[] = ["LinkedIn", "Web", "Referido", "Email", "Llamada"];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function CrmView({ initialLeads, initialColumns, initialAutomations }: CrmViewProps) {
+export function CrmView({ initialLeads, initialColumns, initialAutomations, workspaceId }: CrmViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -81,34 +124,34 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("crm-leads")
+      .channel("crm-leads-realtime")
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "leads" },
+        { event: "*", schema: "public", table: "leads", filter: `workspace_id=eq.${workspaceId}` },
         (payload) => {
-          const updated = payload.new as DbLead;
-          setLeads((prev) =>
-            prev.map((l) =>
-              l.id === updated.id
-                ? {
-                    ...l,
-                    name:        updated.full_name    ?? l.name,
-                    company:     updated.company      ?? l.company,
-                    linkedinUrl: updated.linkedin_url ?? l.linkedinUrl,
-                    nextTask:    updated.next_task    !== undefined ? updated.next_task : l.nextTask,
-                  }
-                : l
-            )
-          );
+          if (payload.eventType === "INSERT") {
+            setLeads((prev) => [mapDbLead(payload.new as DbLead), ...prev]);
+          }
+          if (payload.eventType === "UPDATE") {
+            setLeads((prev) =>
+              prev.map((l) =>
+                l.id === payload.new.id ? mapDbLead(payload.new as DbLead) : l
+              )
+            );
+          }
+          if (payload.eventType === "DELETE") {
+            setLeads((prev) => prev.filter((l) => l.id !== payload.old.id));
+          }
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [workspaceId]);
 
   const [view,              setView]              = useState<View>("kanban");
   const [selectedLead,      setSelectedLead]      = useState<CrmLead | null>(null);
+  const [selectedLeadId,    setSelectedLeadId]    = useState<string | null>(null);
   const [settingsOpen,      setSettingsOpen]      = useState(false);
   const [wizardOpen,        setWizardOpen]        = useState(false);
   const [createLeadOpen,    setCreateLeadOpen]    = useState(false);
@@ -120,17 +163,54 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
   const [filterMinValue,  setFilterMinValue]  = useState<string>("");
   const [filterMaxValue,  setFilterMaxValue]  = useState<string>("");
   const [filterOpen,      setFilterOpen]      = useState(false);
+  // List-view extra filters
+  const [searchQuery,     setSearchQuery]     = useState("");
+  const [filterStage,     setFilterStage]     = useState("all");
+  const [filterCampaign,  setFilterCampaign]  = useState("all");
+  const [sortBy,          setSortBy]          = useState<"created_at" | "value" | "score" | "days_in_stage">("created_at");
+  const [sortDir,         setSortDir]         = useState<"asc" | "desc">("desc");
 
-  const filteredLeads = useMemo(() => leads.filter((l) => {
-    if (filterSource !== "all" && l.source !== filterSource) return false;
-    if (filterTag !== "all" && !l.tags.some((t) => t.label === filterTag)) return false;
-    if (filterMinValue && l.value < parseInt(filterMinValue)) return false;
-    if (filterMaxValue && l.value > parseInt(filterMaxValue)) return false;
-    return true;
-  }), [leads, filterSource, filterTag, filterMinValue, filterMaxValue]);
+  const filteredLeads = useMemo(() => {
+    let result = leads.filter((l) => {
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matches =
+          l.name?.toLowerCase().includes(q) ||
+          l.company?.toLowerCase().includes(q) ||
+          l.email?.toLowerCase().includes(q) ||
+          l.phone?.includes(q) ||
+          l.campaignName?.toLowerCase().includes(q) ||
+          l.segmentName?.toLowerCase().includes(q) ||
+          l.headline?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      if (filterSource !== "all" && l.source !== filterSource) return false;
+      if (filterTag !== "all" && !l.tags.some((t) => t.label === filterTag)) return false;
+      if (filterStage !== "all" && l.crmColumn !== filterStage) return false;
+      if (filterCampaign !== "all" && l.campaignName !== filterCampaign) return false;
+      if (filterMinValue && l.value < parseInt(filterMinValue)) return false;
+      if (filterMaxValue && l.value > parseInt(filterMaxValue)) return false;
+      return true;
+    });
+
+    result = [...result].sort((a, b) => {
+      let va: number | string = 0, vb: number | string = 0;
+      if (sortBy === "value")         { va = a.value;           vb = b.value; }
+      if (sortBy === "score")         { va = a.score ?? 0;      vb = b.score ?? 0; }
+      if (sortBy === "days_in_stage") { va = a.daysInStage ?? 0; vb = b.daysInStage ?? 0; }
+      if (sortBy === "created_at")    { va = a.createdAt;       vb = b.createdAt; }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [leads, searchQuery, filterSource, filterTag, filterStage, filterCampaign,
+      filterMinValue, filterMaxValue, sortBy, sortDir]);
 
   const hasFilters = filterSource !== "all" || filterTag !== "all" || !!filterMinValue || !!filterMaxValue;
-  const allTags    = Array.from(new Set(leads.flatMap((l) => l.tags.map((t) => t.label))));
+  const allTags       = Array.from(new Set(leads.flatMap((l) => l.tags.map((t) => t.label))));
+  const allCampaigns  = Array.from(new Set(leads.map((l) => l.campaignName).filter((c): c is string => !!c)));
   const totalValue = filteredLeads.reduce((s, l) => s + l.value, 0);
   const isAuto     = view === "automations";
 
@@ -356,8 +436,12 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
       </div>
 
       {/* ── Content ──────────────────────────────────────────────────── */}
-      <div className={["flex flex-1 min-h-0 overflow-hidden",
-        view === "list" || view === "forecast" ? "overflow-y-auto px-5 pt-4" : "px-5 pt-4",
+      <div className={[
+        "flex flex-1 min-h-0",
+        view === "kanban"     ? "overflow-hidden px-5 pt-4"          : "",
+        view === "list"       ? "overflow-y-auto overflow-x-hidden px-5 pt-4" : "",
+        view === "forecast"   ? "overflow-y-auto px-5 pt-4"          : "",
+        view === "automations"? "overflow-hidden"                     : "",
       ].join(" ")}>
 
         {view === "kanban" && (
@@ -366,15 +450,96 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
             columns={columns}
             onLeadsChange={handleLeadsChange}
             onColumnsChange={setColumns}
-            onLeadClick={setSelectedLead}
+            onLeadClick={(lead) => setSelectedLeadId(lead.id)}
             onLeadDelete={handleLeadDelete}
             onLeadArchive={handleLeadArchive}
           />
         )}
 
         {view === "list" && (
-          <div className="flex-1">
-            <LeadsListView leads={filteredLeads} columns={columns} onLeadClick={setSelectedLead} />
+          <div className="flex flex-col w-full min-h-0 gap-3 pb-4">
+            {/* Barra de búsqueda + filtros de lista */}
+            <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+              <div className="relative min-w-[220px] flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Buscar contacto, empresa, email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm
+                             text-zinc-800 placeholder:text-zinc-400 focus:border-indigo-400
+                             focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={filterStage}
+                onChange={(e) => setFilterStage(e.target.value)}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700
+                           focus:border-indigo-400 focus:outline-none"
+              >
+                <option value="all">Todas las etapas</option>
+                {columns.map((c) => (
+                  <option key={c.key ?? c.id} value={c.key ?? c.id}>{c.title}</option>
+                ))}
+              </select>
+
+              {allCampaigns.length > 0 && (
+                <select
+                  value={filterCampaign}
+                  onChange={(e) => setFilterCampaign(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700
+                             focus:border-indigo-400 focus:outline-none"
+                >
+                  <option value="all">Todas las campañas</option>
+                  {allCampaigns.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
+
+              <select
+                value={`${sortBy}-${sortDir}`}
+                onChange={(e) => {
+                  const [field, dir] = e.target.value.split("-");
+                  setSortBy(field as typeof sortBy);
+                  setSortDir(dir as "asc" | "desc");
+                }}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700
+                           focus:border-indigo-400 focus:outline-none"
+              >
+                <option value="created_at-desc">Más recientes</option>
+                <option value="created_at-asc">Más antiguos</option>
+                <option value="value-desc">Mayor valor</option>
+                <option value="score-desc">Mayor score</option>
+                <option value="days_in_stage-desc">Más días en etapa</option>
+              </select>
+
+              <span className="ml-auto text-xs text-zinc-400 whitespace-nowrap">
+                {filteredLeads.length} de {leads.length} leads
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <LeadsListView
+                leads={filteredLeads}
+                columns={columns}
+                onLeadClick={(lead) => setSelectedLeadId(lead.id)}
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={(field) => {
+                  if (sortBy === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                  else { setSortBy(field); setSortDir("desc"); }
+                }}
+              />
+            </div>
           </div>
         )}
 
@@ -438,8 +603,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
         )}
       </div>
 
-      {/* ── Lead Modal ───────────────────────────────────────────────── */}
-      {selectedLead && (
+      {/* ── Lead Modal (legacy, kept for fallback) ───────────────────── */}
+      {selectedLead && !selectedLeadId && (
         <LeadModal
           lead={selectedLead}
           onClose={() => setSelectedLead(null)}
@@ -448,6 +613,17 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations }: Cr
           onArchived={(id) => { handleLeadArchive(id); setSelectedLead(null); }}
         />
       )}
+
+      {/* ── Lead Detail Panel ────────────────────────────────────────── */}
+      <LeadDetailPanel
+        leadId={selectedLeadId}
+        onClose={() => setSelectedLeadId(null)}
+        onStageChange={(leadId, newStage) => {
+          setLeads((prev) =>
+            prev.map((l) => l.id === leadId ? { ...l, crmColumn: newStage } : l)
+          );
+        }}
+      />
 
       {/* ── Settings Modal ───────────────────────────────────────────── */}
       {settingsOpen && (

@@ -191,6 +191,62 @@ function renderState(state) {
     }).join('');
   }
 
+  // Tarea actual
+  const currentTaskEl = document.getElementById('current-task');
+  if (currentTaskEl) {
+    if (state.currentTask) {
+      const taskLabels = {
+        connect:                 '🔗 Enviando conexión...',
+        message:                 '💬 Enviando mensaje...',
+        check_connection:        '🔍 Verificando conexión...',
+        view_profile:            '👁 Visitando perfil...',
+        start_campaign_scraping: '⚙️ Extrayendo leads...',
+      };
+      const elapsed = state.currentTask.elapsed ?? 0;
+      currentTaskEl.innerHTML = `
+        <div style="background:#EEF2FF;border-radius:8px;padding:8px 10px;margin-top:8px;">
+          <div style="font-size:11px;font-weight:600;color:#4F46E5;">
+            ${taskLabels[state.currentTask.type] ?? state.currentTask.type}
+          </div>
+          <div style="font-size:10px;color:#6B7280;margin-top:2px;">
+            ${elapsed}s transcurridos
+          </div>
+        </div>
+      `;
+    } else {
+      currentTaskEl.innerHTML = '';
+    }
+  }
+
+  // Última acción
+  const lastActionEl = document.getElementById('last-action');
+  if (lastActionEl && state.lastAction) {
+    const la = state.lastAction;
+    const timeAgo = Math.round((Date.now() - la.timestamp) / 1000);
+    const successIcon = la.success ? '✅' : '❌';
+    const actionLabel = ({
+      connect:          'Conexión',
+      message:          'Mensaje',
+      check_connection: 'Verificación',
+    })[la.action] ?? la.action;
+    lastActionEl.innerHTML = `
+      <div style="font-size:10px;color:#6B7280;margin-top:6px;">
+        ${successIcon} Última: ${actionLabel} • hace ${timeAgo}s
+      </div>
+    `;
+  }
+
+  // Botón reset si motor atascado
+  const btnReset = document.getElementById('btn-reset-engine');
+  if (btnReset) {
+    const isStuck = state.currentTask && state.currentTask.elapsed > 60;
+    btnReset.style.display = isStuck ? 'block' : 'none';
+    btnReset.onclick = () => {
+      chrome.runtime.sendMessage({ type: 'RESET_PROCESSING' });
+      btnReset.style.display = 'none';
+    };
+  }
+
   // Start/stop buttons
   if (state.running) {
     btnStart.style.display = 'none';

@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Archive, Bot, BotOff, Check, CheckCheck, ChevronDown,
-  Clock, Info, LayoutTemplate, Paperclip, Send, Sparkles, User, X,
+  Clock, Info, LayoutTemplate, Loader2, Paperclip, Send, Sparkles, User, X,
 } from "lucide-react";
 import type { AISuggestion, Conversation, Message, QuickReplyTemplate } from "./types";
+import { approveDraft, rejectDraft } from "@/app/dashboard/smart-inbox/actions";
 
 // ── Quick Reply Templates ─────────────────────────────────────────────────────
 
@@ -112,6 +113,107 @@ function Bubble({ msg, leadName }: { msg: Message; leadName: string }) {
   );
 }
 
+// ── Draft Bubble — AI draft pending approval ──────────────────────────────────
+
+function DraftBubble({
+  msg,
+  onApprove,
+  onReject,
+}: {
+  msg: Message;
+  onApprove: (id: string, text: string) => Promise<void>;
+  onReject:  (id: string) => Promise<void>;
+}) {
+  const [text, setText]       = useState(msg.text);
+  const [working, setWorking] = useState(false);
+
+  async function handleApprove() {
+    setWorking(true);
+    await onApprove(msg.id, text);
+    setWorking(false);
+  }
+
+  async function handleReject() {
+    setWorking(true);
+    await onReject(msg.id);
+    setWorking(false);
+  }
+
+  if (msg.status === "rejected") {
+    return (
+      <div className="mx-2 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[10px] text-zinc-400 italic">
+        <X className="h-3 w-3 flex-shrink-0" />
+        Respuesta IA descartada
+      </div>
+    );
+  }
+
+  if (msg.status === "approved" || msg.status === "pending_send") {
+    return (
+      <div className="flex items-end gap-2 flex-row-reverse">
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 text-white">
+          <Bot className="h-3.5 w-3.5" />
+        </div>
+        <div className="max-w-[72%] rounded-2xl rounded-br-sm bg-zinc-900 px-3.5 py-2.5 shadow-sm">
+          <p className="text-[12px] leading-relaxed text-white">{msg.text}</p>
+          <div className="mt-1 flex items-center justify-end gap-1.5">
+            <span className="text-[9px] text-white/60">{fmtTime(msg.timestamp)}</span>
+            <span className="flex items-center gap-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[8px] font-bold text-purple-300">
+              <Sparkles className="h-2 w-2" /> IA · Encolado
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // status === 'draft' — show editable approval card
+  return (
+    <div className="mx-2 rounded-xl border-2 border-violet-300 bg-violet-50 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <Bot className="h-4 w-4 text-violet-600" />
+        <span className="text-[11px] font-bold text-violet-700">Respuesta sugerida por IA</span>
+        <span className="rounded-full bg-violet-200 px-2 py-0.5 text-[9px] font-bold text-violet-700">
+          PENDIENTE APROBACIÓN
+        </span>
+      </div>
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={4}
+        disabled={working}
+        className="w-full resize-none rounded-lg border border-violet-200 bg-white px-3 py-2
+                   text-xs text-zinc-800 focus:border-violet-400 focus:outline-none
+                   disabled:opacity-60"
+      />
+
+      <div className="mt-2 flex gap-2">
+        <button
+          onClick={handleApprove}
+          disabled={working || !text.trim()}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 py-1.5
+                     text-xs font-bold text-white transition-colors hover:bg-violet-700
+                     disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {working ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+          Enviar
+        </button>
+        <button
+          onClick={handleReject}
+          disabled={working}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border
+                     border-zinc-200 py-1.5 text-xs text-zinc-600 transition-colors
+                     hover:bg-zinc-50 disabled:opacity-50"
+        >
+          <X className="h-3 w-3" />
+          Descartar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Quick Replies Panel ───────────────────────────────────────────────────────
 
 function QuickRepliesPanel({ onSelect, onClose }: {
@@ -207,7 +309,8 @@ export function ChatView({
   onArchive,
   onRequestAISuggestion,
   isPending,
-}: ChatViewProps) {
+  onDraftStatusChange,
+}: ChatViewProps & { onDraftStatusChange?: (msgId: string, status: "approved" | "rejected", text?: string) => void }) {
   const [input, setInput]                 = useState("");
   const [showSugg, setShowSugg]           = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -242,6 +345,16 @@ export function ChatView({
     } finally {
       setAiLoading(false);
     }
+  }
+
+  async function handleApproveDraft(msgId: string, text: string) {
+    await approveDraft(msgId, text);
+    onDraftStatusChange?.(msgId, "approved", text);
+  }
+
+  async function handleRejectDraft(msgId: string) {
+    await rejectDraft(msgId);
+    onDraftStatusChange?.(msgId, "rejected");
   }
 
   return (
@@ -308,9 +421,19 @@ export function ChatView({
 
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {conv.messages.map((msg) => (
-          <Bubble key={msg.id} msg={msg} leadName={conv.lead.name} />
-        ))}
+        {conv.messages.map((msg) =>
+          msg.sender === "ai" &&
+          (msg.status === "draft" || msg.status === "rejected" || msg.status === "approved" || msg.status === "pending_send") ? (
+            <DraftBubble
+              key={msg.id}
+              msg={msg}
+              onApprove={handleApproveDraft}
+              onReject={handleRejectDraft}
+            />
+          ) : (
+            <Bubble key={msg.id} msg={msg} leadName={conv.lead.name} />
+          )
+        )}
         <div ref={bottomRef} />
       </div>
 

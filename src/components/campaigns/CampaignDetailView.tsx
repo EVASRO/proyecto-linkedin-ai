@@ -3,12 +3,18 @@
 import { useState, useEffect } from "react";
 import {
   AlertTriangle, ArrowLeft, Bot, BookOpen, CalendarCheck,
-  CheckCircle2, ChevronDown, ChevronRight, Copy, Edit2, ExternalLink,
-  Link2, Mail, MessageSquareText, Pause, Play, Plus, Trash2,
-  Sparkles, UserPlus, Users, XCircle, Zap,
+  CheckCircle2, ChevronDown, ChevronRight, Circle, Clock,
+  Copy, Edit2, ExternalLink,
+  Link2, Mail, MessageSquare, MessageSquareText, Pause, Play, Plus, RefreshCw, Trash2,
+  Sparkles, Upload, UserPlus, Users, XCircle, Zap,
 } from "lucide-react";
+import { getLeadCountsByCrmColumn } from "@/app/dashboard/campanas/actions";
+import type { LeadCountsByCrm } from "@/app/dashboard/campanas/actions";
 import type { Campaign, CampaignType, Segment, SegmentStatus, Template } from "./types";
 import { CampaignStatusBanner } from "./CampaignStatusBanner";
+import { SegmentImport } from "./SegmentImport";
+import { SequenceAnalytics } from "./SequenceAnalytics";
+import { AbTestEditor } from "./AbTestEditor";
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -77,26 +83,220 @@ function ProgressBar({ value, color = "bg-indigo-500" }: { value: number; color?
   );
 }
 
+// ── Pipeline Status ───────────────────────────────────────────────────────────
+
+const PIPELINE_STAGES = [
+  { key: "extraido"          as keyof LeadCountsByCrm, label: "Extraídos",   color: "bg-blue-400"   },
+  { key: "conexion_enviada"  as keyof LeadCountsByCrm, label: "Contactados", color: "bg-indigo-500" },
+  { key: "conexion_aceptada" as keyof LeadCountsByCrm, label: "Aceptados",   color: "bg-violet-500" },
+  { key: "en_conversacion"   as keyof LeadCountsByCrm, label: "Conversando", color: "bg-amber-500"  },
+  { key: "reunion_agendada"  as keyof LeadCountsByCrm, label: "Reunión",     color: "bg-green-500"  },
+];
+
+function PipelineStatus({ campaignId }: { campaignId: string }) {
+  const [counts, setCounts] = useState<LeadCountsByCrm | null>(null);
+
+  useEffect(() => {
+    getLeadCountsByCrmColumn(campaignId).then((res) => {
+      if (res.success && res.data) setCounts(res.data);
+    }).catch(() => {});
+    const interval = setInterval(() => {
+      getLeadCountsByCrmColumn(campaignId).then((res) => {
+        if (res.success && res.data) setCounts(res.data);
+      }).catch(() => {});
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [campaignId]);
+
+  const total = counts
+    ? Object.values(counts).reduce((a, b) => a + b, 0)
+    : 0;
+
+  return (
+    <div className="rounded-2xl border border-zinc-100 bg-zinc-50 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-bold text-zinc-700">Pipeline de automatización</p>
+        <p className="text-[10px] text-zinc-400">{total} leads en total</p>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
+        {PIPELINE_STAGES.map((stage) => {
+          const count = counts?.[stage.key] ?? 0;
+          const pctVal = total > 0 ? Math.round((count / total) * 100) : 0;
+          return (
+            <div key={stage.key} className="flex flex-col items-center gap-1.5">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+                <div
+                  className={`h-full rounded-full transition-all ${count > 0 ? stage.color : "bg-zinc-200"}`}
+                  style={{ width: `${pctVal}%` }}
+                />
+              </div>
+              <span className={`text-sm font-bold tabular-nums ${count > 0 ? "text-zinc-900" : "text-zinc-300"}`}>
+                {count}
+              </span>
+              <span className="text-center text-[10px] text-zinc-400 leading-tight">{stage.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Automation Sequence ───────────────────────────────────────────────────────
+
+type WfJson = Record<string, unknown>;
+
+type StepStatus = "active" | "waiting" | "disabled";
+
+function AutomationSequence({ wf }: { wf: WfJson }) {
+  const connectionNote  = (wf.connection_note       as string)  || "";
+  const followUpMessage = (wf.follow_up_message      as string)  || "";
+  const followUpDays    = (wf.follow_up_delay_days   as number)  ?? 1;
+  const autopilotOn     = !!(wf.autopilot_enabled);
+
+  const steps: {
+    id: number;
+    icon: React.ElementType;
+    color: string;
+    bg: string;
+    border: string;
+    title: string;
+    detail: string;
+    status: StepStatus;
+  }[] = [
+    {
+      id:     1,
+      icon:   UserPlus,
+      color:  "text-blue-600",
+      bg:     "bg-blue-50",
+      border: "border-blue-200",
+      title:  "Enviar solicitud de conexión",
+      detail: connectionNote
+        ? `Con nota: "${connectionNote.slice(0, 60)}${connectionNote.length > 60 ? "…" : ""}"`
+        : "Sin nota personalizada",
+      status: "active",
+    },
+    {
+      id:     2,
+      icon:   Clock,
+      color:  "text-zinc-500",
+      bg:     "bg-zinc-50",
+      border: "border-zinc-200",
+      title:  "Esperar aceptación",
+      detail: "Detección automática cada 2 horas",
+      status: "waiting",
+    },
+    {
+      id:     3,
+      icon:   MessageSquare,
+      color:  followUpMessage ? "text-indigo-600" : "text-zinc-400",
+      bg:     followUpMessage ? "bg-indigo-50"    : "bg-zinc-50",
+      border: followUpMessage ? "border-indigo-200" : "border-zinc-200",
+      title:  "Mensaje de seguimiento",
+      detail: followUpMessage
+        ? `En ${followUpDays} día(s): "${followUpMessage.slice(0, 60)}${followUpMessage.length > 60 ? "…" : ""}"`
+        : "Sin mensaje configurado",
+      status: followUpMessage ? "active" : "disabled",
+    },
+    {
+      id:     4,
+      icon:   RefreshCw,
+      color:  "text-amber-600",
+      bg:     "bg-amber-50",
+      border: "border-amber-200",
+      title:  "Detectar respuesta",
+      detail: "Verificación cada 15 minutos",
+      status: "active",
+    },
+    {
+      id:     5,
+      icon:   Bot,
+      color:  autopilotOn ? "text-violet-600" : "text-zinc-400",
+      bg:     autopilotOn ? "bg-violet-50"    : "bg-zinc-50",
+      border: autopilotOn ? "border-violet-200" : "border-zinc-200",
+      title:  "Autopilot IA",
+      detail: autopilotOn
+        ? "Claude responde automáticamente"
+        : "Desactivado — respuesta manual",
+      status: autopilotOn ? "active" : "disabled",
+    },
+  ];
+
+  const STATUS_STYLES: Record<StepStatus, string> = {
+    active:   "opacity-100",
+    waiting:  "opacity-70",
+    disabled: "opacity-40 grayscale",
+  };
+
+  return (
+    <div className="mt-4">
+      <p className="mb-2 text-[11px] font-bold text-zinc-500 uppercase tracking-wide">Secuencia</p>
+      <div className="space-y-0">
+        {steps.map((step, i) => {
+          const Icon = step.icon;
+          return (
+            <div key={step.id} className="relative">
+              {i < steps.length - 1 && (
+                <div className="absolute left-[17px] top-[44px] h-2 w-px bg-zinc-200 z-0" />
+              )}
+              <div className={`relative z-10 flex items-center gap-2.5 rounded-xl border p-2.5 mb-2
+                               ${step.border} ${STATUS_STYLES[step.status]}
+                               ${step.status !== "disabled" ? "bg-white" : "bg-zinc-50"}`}>
+                <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center
+                                 rounded-full border-2 ${step.border} ${step.bg}`}>
+                  <Icon className={`h-3.5 w-3.5 ${step.color}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[11px] font-semibold text-zinc-800 leading-snug">{step.title}</p>
+                    {step.status === "active" && (
+                      <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700 flex-shrink-0">
+                        ACTIVO
+                      </span>
+                    )}
+                    {step.status === "disabled" && (
+                      <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[9px] font-medium text-zinc-500 flex-shrink-0">
+                        INACTIVO
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-zinc-400 truncate">{step.detail}</p>
+                </div>
+                <span className="flex-shrink-0 text-[10px] font-bold text-zinc-300">#{step.id}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Segment Card ──────────────────────────────────────────────────────────────
 
 function SegmentCard({
   segment,
+  campaignId,
   campaignActive,
+  campaignWf,
   onOpenFlow,
   onStatusChange,
   onRename,
   onDelete,
 }: {
   segment: Segment;
+  campaignId: string;
   campaignActive: boolean;
+  campaignWf: WfJson;
   onOpenFlow: (seg: Segment) => void;
   onStatusChange: (id: string, status: SegmentStatus) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const [expanded, setExpanded]   = useState(true);
-  const [editing, setEditing]     = useState(false);
-  const [editName, setEditName]   = useState(segment.name);
+  const [expanded, setExpanded]       = useState(true);
+  const [editing, setEditing]         = useState(false);
+  const [editName, setEditName]       = useState(segment.name);
+  const [importOpen, setImportOpen]   = useState(false);
   const status    = SEG_STATUS[segment.status];
   const m         = segment.metrics;
   const progressPct = m.totalLeads > 0 ? Math.round((m.contacted / m.totalLeads) * 100) : 0;
@@ -179,6 +379,14 @@ function SegmentCard({
           {!isClosed && (
             <>
               <button
+                onClick={() => setImportOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
+                title="Importar leads desde CSV"
+              >
+                <Upload className="h-3 w-3" />
+                Importar CSV
+              </button>
+              <button
                 onClick={() => onOpenFlow(segment)}
                 className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700 transition-colors"
               >
@@ -221,6 +429,43 @@ function SegmentCard({
         </div>
       </div>
 
+      {/* Import CSV modal */}
+      {importOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+            onClick={() => setImportOpen(false)}
+          />
+          <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-xl -translate-x-1/2 -translate-y-1/2
+                          rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
+              <div>
+                <p className="text-sm font-bold text-zinc-900">Importar leads desde CSV / Excel</p>
+                <p className="mt-0.5 text-xs text-zinc-400">Segmento: {segment.name}</p>
+              </div>
+              <button
+                onClick={() => setImportOpen(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 transition-colors"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5">
+              <SegmentImport
+                segmentId={segment.id}
+                campaignId={campaignId}
+                onClose={() => setImportOpen(false)}
+                onImportComplete={(count) => {
+                  setImportOpen(false);
+                  // Brief toast is shown by the result step before closing
+                  void count;
+                }}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Expanded metrics */}
       {expanded && (
         <div className="border-t border-zinc-100 bg-zinc-50/50 px-4 py-3">
@@ -233,17 +478,19 @@ function SegmentCard({
             <Chip icon={XCircle}            label="Rebotados"   value={m.bounced}     color="text-zinc-500"   sub="no entregados"                    />
           </div>
 
-          {/* Automation badge */}
-          <div className="mt-3 flex items-center gap-2">
-            <Zap className="h-3.5 w-3.5 text-amber-500" />
-            <span className="text-[11px] text-zinc-500">Automatización:</span>
-            <span className="text-[11px] font-semibold text-zinc-700">{segment.automationName}</span>
+          {/* Secuencia de automatización */}
+          <div className="mt-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-[11px] font-semibold text-zinc-700">{segment.automationName}</span>
+            </div>
             {segment.searchUrl && (
-              <a href={segment.searchUrl} target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-1 text-[10px] text-indigo-500 hover:underline">
+              <a href={segment.searchUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-indigo-500 hover:underline">
                 Ver búsqueda <ExternalLink className="h-3 w-3" />
               </a>
             )}
           </div>
+          <AutomationSequence wf={campaignWf} />
         </div>
       )}
     </div>
@@ -582,7 +829,8 @@ export function CampaignDetailView({
   }
 
 
-  // Summary totals
+  // Summary totals — use live campaign count as floor for leads so it's never 0 when DB has data
+  const campaignLeadsTotal = campaign.totalLeads || campaign.leadsTotal || 0;
   const totals = segments.reduce(
     (acc, s) => ({
       leads:    acc.leads    + s.metrics.totalLeads,
@@ -593,6 +841,8 @@ export function CampaignDetailView({
     }),
     { leads: 0, connected: 0, replied: 0, meetings: 0, dupes: 0 }
   );
+  // Si los segmentos aún no tienen el count hidratado, usar el valor de la campaña
+  const displayLeads = totals.leads || campaignLeadsTotal;
 
   const [newSegName, setNewSegName] = useState("");
   const [addingSegment, setAddingSegment] = useState(false);
@@ -663,18 +913,18 @@ export function CampaignDetailView({
         <CampaignStatusBanner
           campaign={campaign}
           leadsQueued={campaign.leadsQueued ?? 0}
-          leadsTotal={campaign.leadsTotal ?? totals.leads}
+          leadsTotal={campaign.leadsTotal ?? campaign.totalLeads ?? displayLeads}
         />
 
         {/* Summary row */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <div className="rounded-xl border border-zinc-100 bg-white p-3.5 shadow-sm">
-            <p className="text-2xl font-bold tabular-nums text-zinc-900">{fmtN(totals.leads)}</p>
+            <p className="text-2xl font-bold tabular-nums text-zinc-900">{fmtN(displayLeads)}</p>
             <p className="mt-0.5 text-[11px] text-zinc-400">Leads totales</p>
           </div>
           <div className="rounded-xl border border-blue-100 bg-blue-50 p-3.5">
             <p className="text-2xl font-bold tabular-nums text-blue-700">{fmtN(totals.connected)}</p>
-            <p className="mt-0.5 text-[11px] text-blue-500">{pct(totals.connected, totals.leads)} conectados</p>
+            <p className="mt-0.5 text-[11px] text-blue-500">{pct(totals.connected, displayLeads)} conectados</p>
           </div>
           <div className="rounded-xl border border-violet-100 bg-violet-50 p-3.5">
             <p className="text-2xl font-bold tabular-nums text-violet-700">{fmtN(totals.replied)}</p>
@@ -690,11 +940,20 @@ export function CampaignDetailView({
           </div>
         </div>
 
+        {/* Pipeline visual */}
+        <PipelineStatus campaignId={campaign.id} />
+
         {/* Ghost Engine progress */}
         <GhostEngineProgress campaignId={campaign.id} />
 
+        {/* Sequence analytics funnel */}
+        <SequenceAnalytics campaignId={campaign.id} />
+
         {/* Autopilot banner */}
         <AutopilotBanner segmentCount={segments.filter((s: Segment) => s.status === "active").length} />
+
+        {/* A/B Test editor */}
+        <AbTestEditor campaignId={campaign.id} />
 
         {/* Segments */}
         <div>
@@ -744,7 +1003,9 @@ export function CampaignDetailView({
               <SegmentCard
                 key={seg.id}
                 segment={seg}
+                campaignId={campaign.id}
                 campaignActive={campaign.status === "active"}
+                campaignWf={(campaign.workflow_json as WfJson) ?? {}}
                 onOpenFlow={(s) => onOpenFlow(campaign, s)}
                 onStatusChange={(id, status) => {
                   if (campaign.status !== "active") {

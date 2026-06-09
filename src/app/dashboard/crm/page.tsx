@@ -7,7 +7,7 @@ export default async function CrmPage() {
   if (!result.success || !result.data) {
     return (
       <div className="flex flex-1 flex-col overflow-hidden">
-        <CrmView initialLeads={[]} initialColumns={[]} initialAutomations={[]} />
+        <CrmView initialLeads={[]} initialColumns={[]} initialAutomations={[]} workspaceId="" />
       </div>
     );
   }
@@ -18,6 +18,7 @@ export default async function CrmPage() {
         initialLeads={result.data.leads}
         initialColumns={result.data.columns}
         initialAutomations={result.data.automations}
+        workspaceId={result.data.workspaceId}
       />
     </div>
   );

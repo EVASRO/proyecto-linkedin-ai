@@ -135,6 +135,53 @@ export async function removePost(
   }
 }
 
+// ── saveInboundDraft ──────────────────────────────────────────────────────────
+
+export async function saveInboundDraft(draft: {
+  topic: string;
+  format: string;
+  content: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { error } = await supabase.from("inbound_posts").insert({
+      workspace_id: workspaceId,
+      content:      draft.content,
+      topic:        draft.topic,
+      format:       draft.format,
+      status:       "draft",
+      created_at:   new Date().toISOString(),
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── getInboundDrafts ──────────────────────────────────────────────────────────
+
+export async function getInboundDrafts(): Promise<{
+  success: boolean;
+  data?: { id: string; content: string; topic: string; format: string; created_at: string }[];
+  error?: string;
+}> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { data, error } = await supabase
+      .from("inbound_posts")
+      .select("id, content, topic, format, created_at")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "draft")
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data ?? [] };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
 // ── generateContent ───────────────────────────────────────────────────────────
 
 export async function generateContent(params: {

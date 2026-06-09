@@ -1,7 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant,
   Controls, MiniMap, addEdge, useNodesState, useEdgesState,
@@ -17,9 +17,8 @@ import { Sidebar } from "./Sidebar";
 import type { Campaign, FlowConfig, NodeData, Segment, Template } from "./types";
 import { updateCampaignWorkflow } from "@/app/dashboard/campanas/actions";
 
-// ── ID generator ──────────────────────────────────────────────────────────────
+// ── ID generator (module-level counter, only for fallback) ───────────────────
 let _uid = 1;
-const uid = () => `n${_uid++}`;
 
 // ── Default flow: START → Enviar conexión → Esperar respuesta → Enviar mensaje ─
 
@@ -56,7 +55,6 @@ function buildDefaultFlow(): { nodes: Node[]; edges: Edge[] } {
     { id: "e2-3", source: "n2",      target: "n3", animated: true, style: edgeStyle },
     { id: "e3-4", source: "n3",      target: "n4", animated: true, style: edgeStyle },
   ];
-  _uid = 5;
   return { nodes, edges };
 }
 
@@ -225,17 +223,22 @@ interface InnerProps {
 function FlowCanvas({ campaign, segments, initialFlow, onBack, onLaunched, onSave }: InnerProps) {
   const { screenToFlowPosition } = useReactFlow();
 
-  const defaultFlow = buildDefaultFlow();
-  const startNodes: Node[] = initialFlow?.nodes ?? defaultFlow.nodes;
-  const startEdges: Edge[] = initialFlow?.edges ?? defaultFlow.edges;
-
-  if (startNodes.length > 0) {
-    const maxN = startNodes
+  // Computed only once on mount — never re-run on re-render
+  const { startNodes, startEdges, uidRef } = useMemo(() => {
+    const defaultFlow = buildDefaultFlow();
+    const sNodes: Node[] = initialFlow?.nodes ?? defaultFlow.nodes;
+    const sEdges: Edge[] = initialFlow?.edges ?? defaultFlow.edges;
+    // Calculate initial counter value from existing node IDs
+    const maxN = sNodes
       .map((n) => parseInt(n.id.replace(/^n/, ""), 10))
       .filter((n) => !isNaN(n))
-      .reduce((a, b) => Math.max(a, b), 0);
-    if (maxN >= _uid) _uid = maxN + 1;
-  }
+      .reduce((a, b) => Math.max(a, b), 4); // min 4 to match default flow
+    return { startNodes: sNodes, startEdges: sEdges, uidRef: { current: maxN + 1 } };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Per-instance UID generator backed by a stable ref
+  const uid = useCallback(() => `n${uidRef.current++}`, [uidRef]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(startNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(startEdges);
@@ -339,10 +342,15 @@ function FlowCanvas({ campaign, segments, initialFlow, onBack, onLaunched, onSav
   }
 
   function loadTemplate(tpl: Template) {
-    setNodes(tpl.flowConfig.nodes as Node[]);
+    const tplNodes = tpl.flowConfig.nodes as Node[];
+    const maxN = tplNodes
+      .map((n) => parseInt(n.id.replace(/^n/, ""), 10))
+      .filter((n) => !isNaN(n))
+      .reduce((a, b) => Math.max(a, b), 0);
+    uidRef.current = maxN + 1;
+    setNodes(tplNodes);
     setEdges(tpl.flowConfig.edges as Edge[]);
     setSelectedId(null);
-    _uid = 1;
   }
 
   function clearCanvas() {

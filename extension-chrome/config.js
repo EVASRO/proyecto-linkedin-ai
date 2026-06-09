@@ -1,27 +1,38 @@
+// ── Dashboard URL (para webhook autopilot) ────────────────────────────────────
+const DASHBOARD_URL = 'https://proyecto-linkedin-ai.vercel.app';
+
 // ── Supabase config — mismas keys que .env.local ─────────────────────────────
 const SUPABASE_URL      = 'https://qamqcygybwrlbsylkxyo.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_b38hB4jcgLsmNmu8oobz_g_MkzyacQb';
 
 // ── Helper: fetch autenticado a Supabase REST API ─────────────────────────────
-async function supabaseFetch(path, options = {}) {
-  const token = await getStoredToken();
-  const prefer = options.prefer ?? 'return=representation';
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      'apikey':        SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
-      'Content-Type':  'application/json',
-      'Prefer':        prefer,
-      ...(options.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Supabase ${res.status}: ${err}`);
+async function supabaseFetch(path, opts = {}) {
+  const token  = await getStoredToken();
+  const method = opts.method ?? 'GET';
+  const prefer = opts.prefer ?? 'return=representation';
+  const url    = `${SUPABASE_URL}/rest/v1/${path}`;
+  const headers = {
+    'apikey':        SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+    'Content-Type':  'application/json',
+    'Prefer':        prefer,
+    ...(opts.headers ?? {}),
+  };
+
+  try {
+    const res = await fetch(url, { method, headers, body: opts.body });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error('[NexusAI] supabaseFetch ERROR', res.status, path.split('?')[0], errText.slice(0, 300));
+      return null;
+    }
+    const ct = res.headers.get('content-type') ?? '';
+    if (res.status === 204 || !ct.includes('json')) return null;
+    return res.json();
+  } catch (err) {
+    console.error('[NexusAI] supabaseFetch NETWORK ERROR', path.split('?')[0], err.message);
+    return null;
   }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
 }
 
 // ── Autenticar con email/password en Supabase Auth ────────────────────────────
