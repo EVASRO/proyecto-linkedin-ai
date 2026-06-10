@@ -113,6 +113,7 @@ btnLogin.addEventListener('click', async () => {
   if (r?.ok) {
     showMain(email);
     await refreshStatus();
+    await loadSettingsUI();
   } else {
     loginError.textContent    = r?.error ?? 'Error de autenticación';
     loginError.style.display  = 'block';
@@ -172,10 +173,11 @@ function renderState(state) {
   // Limits bars
   const limitsRows = $('limits-rows');
   if (limitsRows) {
+    const cfg = state.settings ?? {};
     const items = [
-      { label: 'Conexiones', val: state.stats?.connections ?? 0, max: 20 },
-      { label: 'Mensajes',   val: state.stats?.messages    ?? 0, max: 30 },
-      { label: 'Likes',      val: state.stats?.likes       ?? 0, max: 20 },
+      { label: 'Conexiones', val: state.stats?.connections ?? 0, max: cfg.maxConnections ?? 20 },
+      { label: 'Mensajes',   val: state.stats?.messages    ?? 0, max: cfg.maxMessages    ?? 30 },
+      { label: 'Likes',      val: state.stats?.likes       ?? 0, max: cfg.maxLikes       ?? 20 },
     ];
     limitsRows.innerHTML = items.map(({ label, val, max }) => {
       const pct   = Math.min(100, Math.round((val / max) * 100));
@@ -407,6 +409,51 @@ btnCopyMsg.addEventListener('click', () => {
   });
 });
 
+// ── loadSettingsUI ────────────────────────────────────────────────────────────
+// Reads chrome.storage.local 'settings' and populates all slider/toggle controls.
+// Called on init and after login so the UI always reflects persisted values.
+
+async function loadSettingsUI() {
+  try {
+    const { settings } = await new Promise((resolve) => {
+      chrome.storage.local.get('settings', resolve);
+    });
+
+    if (!settings) return;
+
+    if (slConn   && settings.maxConnections !== undefined) {
+      slConn.value = settings.maxConnections;
+      const el = $('val-conn');   if (el) el.textContent = settings.maxConnections;
+    }
+    if (slMsg    && settings.maxMessages !== undefined) {
+      slMsg.value = settings.maxMessages;
+      const el = $('val-msg');    if (el) el.textContent = settings.maxMessages;
+    }
+    if (slInmail && settings.maxInmails !== undefined) {
+      slInmail.value = settings.maxInmails;
+      const el = $('val-inmail'); if (el) el.textContent = settings.maxInmails;
+    }
+    if (slLikes  && settings.maxLikes !== undefined) {
+      slLikes.value = settings.maxLikes;
+      const el = $('val-likes');  if (el) el.textContent = settings.maxLikes;
+    }
+    if (slDmin   && settings.delayMinSec !== undefined) {
+      slDmin.value = settings.delayMinSec;
+      const el = $('val-dmin');   if (el) el.textContent = fmtSeconds(settings.delayMinSec);
+    }
+    if (slDmax   && settings.delayMaxSec !== undefined) {
+      slDmax.value = settings.delayMaxSec;
+      const el = $('val-dmax');   if (el) el.textContent = fmtSeconds(settings.delayMaxSec);
+    }
+
+    if (togUltra   && settings.ultraSafe    !== undefined) togUltra.checked   = settings.ultraSafe;
+    if (togWeekend && settings.pauseWeekends !== undefined) togWeekend.checked = settings.pauseWeekends;
+
+  } catch (err) {
+    console.warn('[NexusAI Popup] Error loading settings UI:', err);
+  }
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 [
@@ -451,7 +498,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 (async () => {
-  // Show login immediately while we check
   showLogin();
   await refreshStatus();
+  await loadSettingsUI();
 })();

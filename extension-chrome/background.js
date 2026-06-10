@@ -367,6 +367,40 @@ async function detectNewConnections(wsId) {
   }
 }
 
+// ── Helpers de comunicación con content script ────────────────────────────────
+
+async function waitForTabComplete(tabId, timeout = 15000) {
+  return new Promise((resolve) => {
+    function onUpdated(id, info) {
+      if (id === tabId && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    }, timeout);
+  });
+}
+
+async function sendToContentScript(tabId, message) {
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch (e) {
+    // Content script not loaded yet — inject and retry
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      await sleep(1500);
+      await chrome.tabs.sendMessage(tabId, message);
+    } catch (e2) {
+      console.error('[NexusAI] sendToContentScript failed:', e2.message);
+      throw e2;
+    }
+  }
+}
+
 // ── Ejecutar tarea ────────────────────────────────────────────────────────────
 async function executeTask(task) {
   let tab = await getLinkedInTab();
@@ -393,40 +427,87 @@ async function executeTask(task) {
       return;
     }
 
+    // ── Blacklist check ────────────────────────────────────────────────────────
+    if (['connect', 'message', 'view_profile'].includes(task.action_type) && profileUrl) {
+      const wsId = await getWorkspaceId();
+      if (wsId) {
+        const blacklisted = await supabaseFetch(
+          `blacklist?workspace_id=eq.${wsId}&linkedin_url=eq.${encodeURIComponent(profileUrl)}&select=id&limit=1`
+        ).catch(() => []);
+        if (blacklisted?.length) {
+          console.log('[NexusAI] Lead en blacklist, saltando:', profileUrl);
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'done', last_error: 'blacklisted' }),
+          });
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+      }
+    }
+
+    // ── Límites diarios por tipo ───────────────────────────────────────────────
+    if (['connect', 'message', 'view_profile'].includes(task.action_type)) {
+      const wsId = await getWorkspaceId();
+      if (wsId) {
+        const withinLimits = await checkDailyLimitsByType(wsId, task.action_type);
+        if (!withinLimits) {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(9, 0, 0, 0);
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              status:       'pending',
+              scheduled_at: tomorrow.toISOString(),
+              last_error:   'daily_limit_reached - rescheduled',
+            }),
+          });
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+      }
+    }
+
     switch (task.action_type) {
       case 'view_profile':
         await chrome.tabs.update(tab.id, { url: profileUrl });
-        await sleep(3000);
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func:   (taskId) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'view_profile', taskId }, '*'),
-          args:   [task.id],
+        await waitForTabComplete(tab.id);
+        await sleep(2000 + Math.random() * 1000);
+        await sendToContentScript(tab.id, {
+          action: 'execute_task',
+          task:   'view_profile',
+          taskId: task.id,
         });
         break;
 
       case 'connect':
         await chrome.tabs.update(tab.id, { url: profileUrl });
-        await sleep(4000);
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func:   (taskId, note, leadId, campaignId) => window.postMessage(
-            { type: 'NEXUSAI_TASK', task: 'connect', taskId, note, leadId, campaignId }, '*'
-          ),
-          args:   [task.id, task.payload?.note ?? '', task.payload?.lead_id ?? null, task.payload?.campaign_id ?? null],
+        await waitForTabComplete(tab.id);
+        await sleep(3000 + Math.random() * 2000);
+        await sendToContentScript(tab.id, {
+          action:     'execute_task',
+          task:       'connect',
+          taskId:     task.id,
+          note:       task.payload?.note        ?? '',
+          leadId:     task.payload?.lead_id     ?? null,
+          campaignId: task.payload?.campaign_id ?? null,
         });
         break;
 
       case 'message': {
         await chrome.tabs.update(tab.id, { url: profileUrl });
-        await sleep(4000);
+        await waitForTabComplete(tab.id);
+        await sleep(3000 + Math.random() * 2000);
         const rawText   = task.payload?.message_text ?? '';
         const finalText = await interpolateVariables(rawText, task.payload?.lead_id ?? null);
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func:   (taskId, text, leadId, campaignId) => window.postMessage(
-            { type: 'NEXUSAI_TASK', task: 'message', taskId, text, leadId, campaignId }, '*'
-          ),
-          args:   [task.id, finalText, task.payload?.lead_id ?? null, task.payload?.campaign_id ?? null],
+        await sendToContentScript(tab.id, {
+          action:     'execute_task',
+          task:       'message',
+          taskId:     task.id,
+          text:       finalText,
+          leadId:     task.payload?.lead_id     ?? null,
+          campaignId: task.payload?.campaign_id ?? null,
         });
         await chrome.storage.local.set({
           processing_started_at: Date.now(),
@@ -438,46 +519,52 @@ async function executeTask(task) {
 
       case 'count_leads':
         await chrome.tabs.update(tab.id, { url: task.payload?.search_url });
-        await sleep(5000);
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func:   (taskId, cId, sId) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'count_leads', taskId, campaignId: cId, segmentId: sId }, '*'),
-          args:   [task.id, task.payload?.campaign_id, task.payload?.segment_id],
+        await waitForTabComplete(tab.id);
+        await sleep(4000 + Math.random() * 2000);
+        await sendToContentScript(tab.id, {
+          action:     'execute_task',
+          task:       'count_leads',
+          taskId:     task.id,
+          campaignId: task.payload?.campaign_id ?? null,
+          segmentId:  task.payload?.segment_id  ?? null,
         });
         break;
 
       case 'extract_profile':
         await chrome.tabs.update(tab.id, { url: profileUrl });
-        await sleep(4000);
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func:   (taskId, leadId) => window.postMessage({ type: 'NEXUSAI_TASK', task: 'extract_profile', taskId, leadId }, '*'),
-          args:   [task.id, task.payload?.lead_id],
+        await waitForTabComplete(tab.id);
+        await sleep(2000 + Math.random() * 1000);
+        await sendToContentScript(tab.id, {
+          action: 'execute_task',
+          task:   'extract_profile',
+          taskId: task.id,
+          leadId: task.payload?.lead_id ?? null,
         });
         break;
 
       case 'check_connection':
         await chrome.tabs.update(tab.id, { url: profileUrl });
-        await sleep(5000);
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func:   (taskId, leadId, campaignId) => window.postMessage(
-            { type: 'NEXUSAI_TASK', task: 'check_connection', taskId, leadId, campaignId }, '*'
-          ),
-          args:   [task.id, task.payload?.lead_id ?? null, task.payload?.campaign_id ?? null],
+        await waitForTabComplete(tab.id);
+        await sleep(3000 + Math.random() * 1000);
+        await sendToContentScript(tab.id, {
+          action:     'execute_task',
+          task:       'check_connection',
+          taskId:     task.id,
+          leadId:     task.payload?.lead_id     ?? null,
+          campaignId: task.payload?.campaign_id ?? null,
         });
         break;
 
       case 'check_inbox': {
         const inboxUrl = task.payload?.inbox_url ?? 'https://www.linkedin.com/messaging/';
         await chrome.tabs.update(tab.id, { url: inboxUrl });
-        await sleep(5000);
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: (taskId, campaignId) => window.postMessage(
-            { type: 'NEXUSAI_TASK', task: 'check_inbox', taskId, campaignId }, '*'
-          ),
-          args: [task.id, task.payload?.campaign_id ?? null],
+        await waitForTabComplete(tab.id);
+        await sleep(4000 + Math.random() * 1000);
+        await sendToContentScript(tab.id, {
+          action:     'execute_task',
+          task:       'check_inbox',
+          taskId:     task.id,
+          campaignId: task.payload?.campaign_id ?? null,
         });
         await chrome.storage.local.set({
           processing_started_at: Date.now(),
@@ -1658,6 +1745,37 @@ async function checkDailyLimits() {
   return stats.connections < s.maxConnections && stats.messages < s.maxMessages;
 }
 
+// Per-type daily limit check against Supabase engine_queue + workspace limits
+async function checkDailyLimitsByType(wsId, taskType) {
+  try {
+    const ws = await supabaseFetch(
+      `workspaces?id=eq.${wsId}&select=daily_connect_limit,daily_message_limit,daily_view_limit&limit=1`
+    );
+    const limits = ws?.[0] ?? { daily_connect_limit: 20, daily_message_limit: 50, daily_view_limit: 100 };
+
+    const today = new Date().toISOString().split('T')[0];
+    const typeMap = { connect: 'daily_connect_limit', message: 'daily_message_limit', view_profile: 'daily_view_limit' };
+    const limitKey = typeMap[taskType];
+    if (!limitKey) return true;
+
+    const rows = await supabaseFetch(
+      `engine_queue?workspace_id=eq.${wsId}&task_type=eq.${taskType}&status=eq.done` +
+      `&executed_at=gte.${today}T00:00:00Z&select=id`
+    ).catch(() => []);
+
+    const count = rows?.length ?? 0;
+    const limit = limits[limitKey] ?? 999;
+    if (count >= limit) {
+      console.log(`[NexusAI] Límite diario de ${taskType} alcanzado (${count}/${limit})`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[NexusAI] checkDailyLimitsByType error:', err.message);
+    return true; // Fail open to avoid blocking the engine on network errors
+  }
+}
+
 async function getSettings() {
   const { settings } = await chrome.storage.local.get('settings');
   return { ...DEFAULT_SETTINGS, ...(settings ?? {}) };
@@ -1722,6 +1840,7 @@ async function getStatus() {
                : 0,
     } : null,
     lastAction: data.last_action_log ?? null,
+    settings:   await getSettings(),
   };
 }
 
@@ -1771,26 +1890,38 @@ async function interpolateVariables(template, leadId) {
 }
 
 async function scheduleInboxCheck(wsId) {
-  const existing = await supabaseFetch(
-    `engine_queue?workspace_id=eq.${wsId}&task_type=eq.check_inbox` +
-    `&status=eq.pending&select=id&limit=1`,
-    { method: 'GET' }
-  ).catch(() => []);
-  if (existing?.length) return;
+  const snTabs  = await chrome.tabs.query({ url: '*://*.linkedin.com/sales/*' });
+  const hasSNav = snTabs.length > 0;
 
-  await supabaseFetch('engine_queue', {
-    method: 'POST', prefer: 'return=minimal',
-    body: JSON.stringify({
-      workspace_id: wsId,
-      task_type:    'check_inbox',
-      action_type:  'check_inbox',
-      priority:     3,
-      scheduled_at: new Date().toISOString(),
-      payload: {
-        inbox_url: 'https://www.linkedin.com/messaging/',
-      },
-    })
-  }).catch(() => {});
+  const inboxUrls = [
+    'https://www.linkedin.com/messaging/',
+    ...(hasSNav ? ['https://www.linkedin.com/sales/inbox/'] : []),
+  ];
+
+  for (const inboxUrl of inboxUrls) {
+    const platform = inboxUrl.includes('/sales/') ? 'salesnav' : 'linkedin';
+    const existing = await supabaseFetch(
+      `engine_queue?workspace_id=eq.${wsId}&task_type=eq.check_inbox` +
+      `&status=eq.pending&select=id&limit=1`,
+      { method: 'GET' }
+    ).catch(() => []);
+    if (existing?.length) continue;
+
+    await supabaseFetch('engine_queue', {
+      method: 'POST', prefer: 'return=minimal',
+      body: JSON.stringify({
+        workspace_id: wsId,
+        task_type:    'check_inbox',
+        action_type:  'check_inbox',
+        priority:     3,
+        scheduled_at: new Date().toISOString(),
+        payload: {
+          inbox_url: inboxUrl,
+          platform,
+        },
+      }),
+    }).catch(() => {});
+  }
 }
 
 // ── Procesar cola de emails pendientes ───────────────────────────────────────

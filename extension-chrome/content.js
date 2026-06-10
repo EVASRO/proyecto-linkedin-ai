@@ -54,9 +54,27 @@
   function simulateClick(el) {
     if (!el) return false;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width  / 2;
+    const y = rect.top  + rect.height / 2;
+
+    const opts = {
+      bubbles: true, cancelable: true, view: window,
+      clientX: x, clientY: y,
+      screenX: x + window.screenX, screenY: y + window.screenY,
+      pointerId: 1, pointerType: 'mouse', isPrimary: true,
+    };
+
+    el.dispatchEvent(new PointerEvent('pointerover',  opts));
+    el.dispatchEvent(new PointerEvent('pointerenter', opts));
+    el.dispatchEvent(new MouseEvent('mouseover',      { ...opts }));
+    el.dispatchEvent(new MouseEvent('mouseenter',     { ...opts }));
+    el.dispatchEvent(new PointerEvent('pointerdown',  opts));
+    el.dispatchEvent(new MouseEvent('mousedown',      { ...opts }));
+    el.dispatchEvent(new PointerEvent('pointerup',    opts));
+    el.dispatchEvent(new MouseEvent('mouseup',        { ...opts }));
+    el.dispatchEvent(new MouseEvent('click',          { ...opts }));
     el.click();
     return true;
   }
@@ -65,24 +83,127 @@
     if (!el) return false;
     el.focus();
     el.value = '';
-    // Usar execCommand para que React/Angular detecten el cambio
     document.execCommand('insertText', false, text);
     el.dispatchEvent(new Event('input',  { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
   }
 
-  // ── Detectar si es Sales Navigator ───────────────────────────────────────
+  // ── Detección de plataforma ───────────────────────────────────────────────
 
+  function getPlatform() {
+    const url = window.location.href;
+    if (url.includes('linkedin.com/sales/')) return 'salesnav';
+    if (url.includes('linkedin.com/in/'))    return 'linkedin';
+    if (url.includes('linkedin.com/feed'))   return 'linkedin_feed';
+    return 'linkedin';
+  }
+
+  // Mantener alias legacy para compatibilidad interna
   function isSalesNavigator() {
     return window.location.hostname.includes('linkedin.com') &&
            window.location.pathname.startsWith('/sales');
   }
 
+  // ── Detección de grado de conexión por plataforma ────────────────────────
+
+  function isFirstDegreeConnection() {
+    const platform = getPlatform();
+    if (platform === 'salesnav') {
+      const degreeSelectors = [
+        '.profile-topcard-person-entity__degree-distance',
+        '[data-anonymize="person-degree"]',
+        '.dist-value',
+        '.profile-topcard__distance',
+      ];
+      for (const sel of degreeSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const text = el.textContent?.trim() ?? '';
+          const is1st = text.includes('1') && !text.includes('12') && !text.includes('1,');
+          console.log(`[NexusAI] SalesNav degree: "${text}" → is1st=${is1st}`);
+          return is1st;
+        }
+      }
+      return false;
+    } else {
+      const hasMessage = Array.from(document.querySelectorAll('button')).some(b => {
+        const t = (b.innerText || '').trim().toLowerCase();
+        return t === 'mensaje' || t === 'message';
+      });
+      const hasConnect = Array.from(document.querySelectorAll('button')).some(b => {
+        const t = (b.innerText || '').trim().toLowerCase();
+        return t === 'conectar' || t === 'connect';
+      });
+      return hasMessage && !hasConnect;
+    }
+  }
+
+  function isPendingConnection() {
+    return Array.from(document.querySelectorAll('button, span')).some(el => {
+      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+      return t.includes('pendiente') || t.includes('pending') ||
+             t.includes('retirar') || t.includes('withdraw');
+    });
+  }
+
+  // ── Helpers de menú overflow ──────────────────────────────────────────────
+
+  async function clickMoreButton() {
+    const candidates = Array.from(document.querySelectorAll(
+      'button, [role="button"], div[class*="overflow"]'
+    )).filter(el => {
+      if (!el.offsetParent) return false;
+      const label = (el.getAttribute('aria-label') || '').toLowerCase();
+      const text  = (el.innerText || el.textContent || '').trim().toLowerCase();
+      const cls   = (el.className || '').toLowerCase();
+      return label.includes('más acciones') || label.includes('more actions') ||
+             label.includes('opciones adicionales') || label.includes('overflow') ||
+             text === '...' || text === '•••' || text === 'más' || text === 'more' ||
+             cls.includes('overflow') || cls.includes('dropdown__trigger');
+    });
+    if (!candidates.length) {
+      console.warn('[NexusAI] clickMoreButton: ningún botón "..." encontrado');
+      return false;
+    }
+    console.log('[NexusAI] clickMoreButton: encontrado', candidates[0].outerHTML.slice(0, 100));
+    simulateClick(candidates[0]);
+    await sleep(900);
+    return true;
+  }
+
+  function findMenuItemByText(...keywords) {
+    const selectors = [
+      '[role="menuitem"]', '[role="option"]',
+      '.artdeco-dropdown__item', 'li[class*="artdeco-dropdown"]',
+      '[data-control-name]', 'li[class*="dropdown"]',
+      'div[class*="dropdown-option"]',
+    ];
+    for (const sel of selectors) {
+      const items = Array.from(document.querySelectorAll(sel));
+      const found = items.find(el => {
+        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+        return keywords.some(kw => t.includes(kw.toLowerCase()));
+      });
+      if (found) {
+        console.log(`[NexusAI] findMenuItemByText("${keywords[0]}"): found via ${sel}`);
+        return found;
+      }
+    }
+    const allItems = Array.from(document.querySelectorAll(
+      '[role="menuitem"], [role="option"], .artdeco-dropdown__item'
+    )).filter(el => el.offsetParent);
+    if (allItems.length) {
+      console.warn(`[NexusAI] findMenuItemByText("${keywords[0]}"): NOT FOUND. Items disponibles:`,
+        allItems.map(el => (el.innerText || '').trim()).filter(Boolean)
+      );
+    }
+    return null;
+  }
+
   // ── Extraer perfil LinkedIn estándar ─────────────────────────────────────
 
   function extractLinkedInProfile() {
-    // Nombre
     let name = getText([
       'h1.text-heading-xlarge',
       '.pv-text-details__left-panel h1',
@@ -94,7 +215,6 @@
       if (m) name = m[1].trim();
     }
 
-    // Titular
     const headline = getText([
       '.pv-text-details__left-panel .text-body-medium.break-words',
       'div.text-body-medium.break-words',
@@ -102,7 +222,6 @@
       '.text-body-medium',
     ]);
 
-    // Empresa actual
     const company = getText([
       '.pv-text-details__right-panel .inline-show-more-text',
       '.pv-top-card--list li:nth-child(2)',
@@ -110,25 +229,21 @@
       '.pv-text-details__right-panel span',
     ]);
 
-    // Ubicación
     const location = getText([
       '.pv-text-details__left-panel .text-body-small.inline.t-black--light.break-words',
       '.pv-top-card--list-bullet li span',
     ]);
 
-    // Extracto/About
     const about = getText([
       '.pv-shared-text-with-see-more span[aria-hidden="true"]',
       '#about ~ div div div span[aria-hidden="true"]',
     ]);
 
-    // Conexiones
     const connections = getText([
       '.pv-top-card--list-bullet li span.t-bold',
       '[data-field="connections_count"]',
     ]);
 
-    // Experiencia reciente
     const expItems = getAll('#experience ~ div .pvs-list__paged-list-item').slice(0, 3);
     const experience = expItems.map((el) => {
       const title   = (el.querySelector('.t-bold span[aria-hidden="true"]') || el.querySelector('.t-bold'))?.innerText?.trim();
@@ -202,161 +317,228 @@
     }).filter((m) => m.text);
   }
 
-  // ── ACCIÓN: Enviar solicitud de conexión ──────────────────────────────────
+  // ── Extraer conteo de resultados de búsqueda ─────────────────────────────
 
-  async function sendConnectionRequest(payload) {
-    const { note } = payload || {};
+  function extractSearchCount() {
+    const selectors = [
+      '.search-results-container .pb2 h2',
+      '.search-results__total',
+      '[data-total-count]',
+      '.artdeco-card h2',
+      '.search-results-container h2',
+    ];
 
-    // Buscar botón "Conectar"
-    const connectBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-      const text = b.innerText?.trim().toLowerCase();
-      return text === 'conectar' || text === 'connect';
-    });
-
-    if (!connectBtn) {
-      // Puede estar en el menú "Más"
-      const moreBtn = Array.from(document.querySelectorAll('button')).find((b) =>
-        b.innerText?.trim().toLowerCase() === 'más' || b.innerText?.trim().toLowerCase() === 'more'
-      );
-      if (moreBtn) {
-        simulateClick(moreBtn);
-        await sleep(800);
-        const connectInMenu = Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) =>
-          el.innerText?.toLowerCase().includes('conectar') || el.innerText?.toLowerCase().includes('connect')
-        );
-        if (!connectInMenu) return { success: false, error: 'Botón conectar no encontrado en menú' };
-        simulateClick(connectInMenu);
-      } else {
-        return { success: false, error: 'Botón conectar no encontrado' };
-      }
-    } else {
-      simulateClick(connectBtn);
-    }
-
-    await sleep(1200);
-
-    // Modal "Agregar nota"
-    if (note) {
-      const addNoteBtn = Array.from(document.querySelectorAll('button')).find((b) =>
-        b.innerText?.toLowerCase().includes('nota') || b.innerText?.toLowerCase().includes('note')
-      );
-      if (addNoteBtn) {
-        simulateClick(addNoteBtn);
-        await sleep(600);
-        const noteField = document.querySelector('textarea#custom-message');
-        if (noteField) {
-          typeIntoField(noteField, note.slice(0, 300)); // LinkedIn limit
-          await sleep(400);
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        const text = el.innerText || el.textContent || '';
+        const m = text.match(/([\d,.]+)/);
+        if (m) {
+          const n = parseInt(m[1].replace(/[,.]/g, ''), 10);
+          if (!isNaN(n) && n > 0) return n;
         }
       }
     }
 
-    // Enviar
-    const sendBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-      const t = b.innerText?.toLowerCase();
-      return t === 'enviar' || t === 'send' || t === 'enviar invitación' || t === 'send invitation';
+    const snSelectors = [
+      '.search-results__total-results',
+      '.list-header-count',
+      '[data-anonymize="result-count"]',
+      '.artdeco-pill-choice__count',
+    ];
+    for (const sel of snSelectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        const text = el.innerText || el.textContent || '';
+        const m = text.match(/([\d,.]+)/);
+        if (m) {
+          const n = parseInt(m[1].replace(/[,.]/g, ''), 10);
+          if (!isNaN(n) && n > 0) return n;
+        }
+      }
+    }
+
+    const bodyText = document.body.innerText || '';
+    const patterns = [
+      /Aproximadamente\s+([\d,.]+)\s+resultado/i,
+      /About\s+([\d,.]+)\s+result/i,
+      /([\d,.]+)\s+resultado/i,
+      /([\d,.]+)\s+result/i,
+    ];
+    for (const pat of patterns) {
+      const m = bodyText.match(pat);
+      if (m) {
+        const n = parseInt(m[1].replace(/[,.]/g, ''), 10);
+        if (!isNaN(n) && n > 0) return n;
+      }
+    }
+
+    return null;
+  }
+
+  // ── Detectar perfil propio ────────────────────────────────────────────────
+
+  function detectOwnProfile() {
+    const nameEl =
+      document.querySelector('.profile-nav-card-mini__title') ||
+      document.querySelector('[data-anonymize="person-name"]') ||
+      document.querySelector('.feed-identity-module__actor-meta .t-bold') ||
+      document.querySelector('.global-nav__me-photo + span') ||
+      document.querySelector('.profile-nav-card-mini__profile-picture ~ div .t-bold');
+
+    const imgEl =
+      document.querySelector('.profile-nav-card-mini__profile-picture img') ||
+      document.querySelector('.feed-identity-module__actor-meta img') ||
+      document.querySelector('.global-nav__me-photo');
+
+    const headlineEl =
+      document.querySelector('.profile-nav-card-mini__headline') ||
+      document.querySelector('.feed-identity-module__actor-meta .t-14');
+
+    const name = nameEl?.textContent?.trim() || nameEl?.innerText?.trim();
+    if (!name) return;
+
+    const profile = {
+      name,
+      profile_url:  'https://www.linkedin.com/in/me/',
+      headline:     headlineEl?.textContent?.trim() ?? '',
+      avatar_url:   imgEl?.src ?? '',
+      detected_at:  new Date().toISOString(),
+    };
+
+    safeStorageSet({ linkedin_profile: profile });
+    safeSendMessage({ type: 'LINKEDIN_PROFILE_DETECTED', profile });
+  }
+
+  if (window.location.hostname === 'www.linkedin.com') {
+    const path = window.location.pathname;
+    if (path === '/feed/' || path === '/feed' || path.startsWith('/in/me') || path === '/') {
+      setTimeout(detectOwnProfile, 2000);
+      setTimeout(detectOwnProfile, 5000);
+    }
+  }
+
+  // ── Auto-extracción al cargar un perfil ───────────────────────────────────
+
+  function onProfilePageLoad() {
+    const isProfile =
+      /linkedin\.com\/in\//.test(window.location.href) ||
+      /linkedin\.com\/sales\/people\//.test(window.location.href);
+
+    if (!isProfile) return;
+
+    setTimeout(() => {
+      const profile = isSalesNavigator()
+        ? extractSalesNavProfile()
+        : extractLinkedInProfile();
+
+      if (profile.name && profile.name !== 'No encontrado') {
+        safeSendMessage({ type: 'PROFILE_LOADED', profile });
+      }
+    }, 2000);
+  }
+
+  onProfilePageLoad();
+
+  let lastUrl = window.location.href;
+  new MutationObserver(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      onProfilePageLoad();
+    }
+  }).observe(document.body, { subtree: true, childList: true });
+
+  // ── Observer de inbox para mensajes recibidos ─────────────────────────────
+
+  const isLiMessaging = window.location.pathname.startsWith('/messaging');
+  const isSnInbox     = window.location.href.includes('/sales/inbox') ||
+                        window.location.href.includes('/sales/messaging');
+
+  if (isLiMessaging || isSnInbox) {
+    function getActiveContact() {
+      if (isSnInbox) {
+        const nameEl = document.querySelector(
+          '.conversation-header [data-anonymize="person-name"], ' +
+          '.thread-detail__header-name, ' +
+          '[class*="conversation-header"] [class*="name"]'
+        );
+        const linkEl = document.querySelector('a[href*="/sales/lead/"]');
+        return {
+          name:       nameEl?.innerText?.trim() ?? null,
+          profileUrl: linkEl?.href?.split('?')[0] ?? null,
+        };
+      } else {
+        const nameEl = document.querySelector(
+          '.msg-thread__link-to-profile, .msg-entity-lockup__entity-title, ' +
+          'h2.msg-entity-lockup__entity-title'
+        );
+        const linkEl = document.querySelector(
+          '.msg-thread__link-to-profile[href], a.msg-entity-lockup__entity-title[href]'
+        );
+        return {
+          name:       nameEl?.innerText?.trim() ?? null,
+          profileUrl: linkEl?.href?.split('?')[0].replace(/\/$/, '') ?? null,
+        };
+      }
+    }
+
+    const observedMessages = new Set();
+
+    const msgObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType !== 1) continue;
+
+          const msgEl =
+            node.querySelector?.('.msg-s-event-listitem__body') ??
+            (node.matches?.('.msg-s-event-listitem__body') ? node : null) ??
+            node.querySelector?.('[class*="message-body"]') ??
+            node.querySelector?.('.conversation-item__message-content');
+
+          if (!msgEl) continue;
+
+          const text = msgEl.innerText?.trim();
+          if (!text || text.length < 1) continue;
+
+          const msgKey = text.substring(0, 50) + '_' + Date.now().toString().slice(0, -3);
+          if (observedMessages.has(msgKey)) continue;
+
+          const listItem   = msgEl.closest('.msg-s-event-listitem, [class*="message-item"]');
+          const isOutgoing =
+            listItem?.querySelector('.msg-s-message-group__meta')?.innerText?.includes('Tú') ||
+            listItem?.classList?.toString().includes('outgoing') ||
+            listItem?.querySelector('[class*="outgoing"]');
+
+          if (isOutgoing) continue;
+
+          observedMessages.add(msgKey);
+          setTimeout(() => observedMessages.delete(msgKey), 30000);
+
+          const contact = getActiveContact();
+          safeSendMessage({
+            type: 'MESSAGE_RECEIVED',
+            data: {
+              text,
+              timestamp:    new Date().toISOString(),
+              contact_name: contact.name,
+              profile_url:  contact.profileUrl,
+              source:       isSnInbox ? 'salesnav' : 'linkedin',
+              lead_id:      null,
+            },
+          });
+        }
+      }
     });
 
-    if (sendBtn) {
-      simulateClick(sendBtn);
-      await sleep(800);
-      return { success: true, action: 'connection_sent' };
-    }
-
-    return { success: false, error: 'Botón enviar no encontrado' };
+    msgObserver.observe(document.body, { childList: true, subtree: true });
+    console.log(`[NexusAI] Inbox observer activo para ${isSnInbox ? 'SalesNav' : 'LinkedIn'}`);
   }
 
-  // ── ACCIÓN: Enviar mensaje directo ────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // ACCIONES DEL GHOST ENGINE
+  // ══════════════════════════════════════════════════════════
 
-  async function sendDirectMessage(payload) {
-    const { messageText } = payload || {};
-    if (!messageText) return { success: false, error: 'Sin texto de mensaje' };
-
-    // Buscar botón Mensaje
-    const msgBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-      const t = b.innerText?.trim().toLowerCase();
-      return t === 'mensaje' || t === 'message';
-    });
-
-    if (!msgBtn) return { success: false, error: 'Botón Mensaje no encontrado — ¿son 1er grado?' };
-
-    simulateClick(msgBtn);
-    await sleep(1500);
-
-    // Campo de texto del mensaje
-    const textBox = document.querySelector(
-      '.msg-form__contenteditable[contenteditable="true"], ' +
-      '[role="textbox"][data-placeholder]'
-    );
-
-    if (!textBox) return { success: false, error: 'Campo de texto no encontrado' };
-
-    // Escribir mensaje
-    textBox.focus();
-    textBox.innerText = messageText;
-    textBox.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(500);
-
-    // Enviar
-    const submitBtn = document.querySelector(
-      '.msg-form__send-button, button[type="submit"][class*="send"]'
-    );
-
-    if (submitBtn && !submitBtn.disabled) {
-      simulateClick(submitBtn);
-      await sleep(600);
-      return { success: true, action: 'message_sent' };
-    }
-
-    // Fallback: Enter
-    textBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    await sleep(600);
-    return { success: true, action: 'message_sent_enter' };
-  }
-
-  // ── ACCIÓN: Like a una publicación ───────────────────────────────────────
-
-  async function likePost() {
-    // Buscar el primer post no likeado
-    const likeButtons = Array.from(document.querySelectorAll('button[aria-label*="Me gusta"], button[aria-label*="Like"]'))
-      .filter((b) => !b.classList.contains('active') && b.getAttribute('aria-pressed') !== 'true');
-
-    if (likeButtons.length === 0) return { success: false, error: 'No hay publicaciones para likear' };
-
-    simulateClick(likeButtons[0]);
-    await sleep(500);
-    return { success: true, action: 'post_liked' };
-  }
-
-  // ── ACCIÓN: Visitar perfil (solo registro) ────────────────────────────────
-
-  async function visitProfile() {
-    // La navegación ya fue hecha por background.js
-    // Solo esperamos que cargue y devolvemos éxito
-    await sleep(2000);
-    return { success: true, action: 'profile_visited' };
-  }
-
-  // ── Escuchar tareas inyectadas por background via postMessage ────────────
-
-  window.addEventListener('message', async (event) => {
-    if (event.source !== window) return;
-    if (!event.data || event.data.type !== 'NEXUSAI_TASK') return;
-
-    const { task, taskId, ...params } = event.data;
-
-    switch (task) {
-      case 'view_profile':      await executeViewProfile(taskId);                                                       break;
-      case 'connect':           await executeConnect(taskId, params.note, params.leadId, params.campaignId);           break;
-      case 'message':           await executeMessage(taskId, params.text, params.leadId, params.campaignId);           break;
-      case 'count_leads':       await executeCountLeads(taskId, params.campaignId, params.segmentId);                  break;
-      case 'extract_profile':   await executeExtractProfile(taskId, params.leadId);                                    break;
-      case 'check_connection':  await executeCheckConnection(taskId, params.leadId, params.campaignId);                break;
-      case 'check_inbox':       await executeCheckInbox(taskId, params.campaignId);                                    break;
-    }
-  });
-
-  // ── Acciones del Ghost Engine (ejecutadas vía postMessage) ────────────────
+  // ── ACCIÓN 1: VIEW PROFILE ────────────────────────────────────────────────
 
   async function executeViewProfile(taskId) {
     const totalHeight = document.body.scrollHeight;
@@ -370,246 +552,624 @@
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'view_profile', success: true } });
   }
 
+  // ── ACCIÓN 2: CONNECT ─────────────────────────────────────────────────────
+
   async function executeConnect(taskId, note, leadId, campaignId) {
-    await sleep(2000 + Math.random() * 2000);
-    window.scrollTo({ top: 300, behavior: 'smooth' });
+    const platform = getPlatform();
+    console.log(`[NexusAI] executeConnect platform=${platform} leadId=${leadId}`);
+    await sleep(2500 + Math.random() * 1500);
+
+    if (isFirstDegreeConnection()) {
+      console.log('[NexusAI] Already 1st degree');
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'already_connected',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    if (isPendingConnection()) {
+      console.log('[NexusAI] Connection pending');
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'already_pending',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    if (platform === 'salesnav') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await sleep(1000);
+
+      const opened = await clickMoreButton();
+      if (!opened) {
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: false, reason: 'more_button_not_found',
+          lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+
+      const connectItem = findMenuItemByText('conectar', 'connect', 'invitar', 'invite');
+      if (!connectItem) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: false, reason: 'connect_item_not_found',
+          lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+      simulateClick(connectItem);
+
+    } else {
+      window.scrollTo({ top: 200, behavior: 'smooth' });
+      await sleep(1200);
+
+      let connectBtn = null;
+      for (let i = 0; i < 4; i++) {
+        connectBtn = Array.from(document.querySelectorAll(
+          'button, div[role="button"], a[role="button"]'
+        )).find(el => {
+          if (!el.offsetParent || el.disabled) return false;
+          const t     = (el.innerText || el.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const label = (el.getAttribute('aria-label') || '').toLowerCase();
+          return t === 'conectar' || t === 'connect' ||
+                 (label.includes('conectar') && !label.includes('seguir') && !label.includes('mensaje')) ||
+                 (label.includes('connect')  && !label.includes('follow') && !label.includes('message'));
+        });
+        if (connectBtn) break;
+        await sleep(800);
+      }
+
+      if (!connectBtn) {
+        const opened = await clickMoreButton();
+        if (!opened) {
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: false, reason: 'button_not_found',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        const item = findMenuItemByText('conectar', 'connect');
+        if (!item) {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: false, reason: 'button_not_found',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        simulateClick(item);
+      } else {
+        simulateClick(connectBtn);
+      }
+    }
+
+    // Modal de confirmación (igual en ambas plataformas)
     await sleep(1500);
 
-    const connectBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-      const t = b.innerText?.trim().toLowerCase();
-      return t === 'conectar' || t === 'connect';
-    });
-
-    if (!connectBtn) {
-      // Intentar desde menú "Más"
-      const moreBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-        const t = b.innerText?.trim().toLowerCase();
-        return t === 'más' || t === 'more';
-      });
-      if (moreBtn) {
-        simulateClick(moreBtn);
-        await sleep(800);
-        const menuItem = Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) =>
-          el.innerText?.toLowerCase().includes('conectar') || el.innerText?.toLowerCase().includes('connect')
-        );
-        if (!menuItem) {
-          safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
-          return;
-        }
-        simulateClick(menuItem);
-      } else {
-        safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'connect', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
-        return;
-      }
-    } else {
-      simulateClick(connectBtn);
-    }
-
-    await sleep(1200);
-
     if (note) {
-      const addNoteBtn = Array.from(document.querySelectorAll('button')).find((b) =>
-        b.innerText?.toLowerCase().includes('nota') || b.innerText?.toLowerCase().includes('note')
-      );
-      if (addNoteBtn) {
-        simulateClick(addNoteBtn);
-        await sleep(600);
-        const noteField = document.querySelector('textarea#custom-message');
-        if (noteField) typeIntoField(noteField, note.slice(0, 300));
-        await sleep(400);
+      const noteBtn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
+        const t = (el.innerText || el.textContent || '').toLowerCase();
+        return t.includes('nota') || t.includes('note') || t.includes('agregar') || t.includes('add a');
+      });
+      if (noteBtn) {
+        simulateClick(noteBtn);
+        await sleep(700);
+        const field = document.querySelector(
+          'textarea#custom-message, textarea[name="message"], ' +
+          'textarea[placeholder*="nota"], textarea[placeholder*="note"]'
+        );
+        if (field) {
+          field.focus();
+          field.value = '';
+          document.execCommand('insertText', false, note.slice(0, 300));
+          field.dispatchEvent(new Event('input',  { bubbles: true }));
+          field.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(400);
+        }
       }
     }
 
-    // Buscar botón "Enviar" con reintentos — confirma que el modal está abierto
     let sendBtn = null;
-    for (let i = 0; i < 3; i++) {
-      sendBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-        const t = b.innerText?.toLowerCase() ?? '';
+    for (let i = 0; i < 6; i++) {
+      sendBtn = Array.from(document.querySelectorAll(
+        'button, [role="button"], [data-test-modal] button'
+      )).find(el => {
+        const t = (el.innerText || el.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
         return t === 'enviar' || t === 'send' ||
-               t.includes('invitación') || t.includes('invitation') ||
-               t.includes('send invitation') || t.includes('enviar invitación');
+               t.includes('enviar sin') || t.includes('send without') ||
+               t.includes('enviar invit') || t.includes('send invit') ||
+               t.includes('enviar ahora') || t.includes('send now');
       });
       if (sendBtn) break;
-      await sleep(500);
+      await sleep(600);
     }
 
     if (!sendBtn) {
-      console.warn('[NexusAI Content] Botón "Enviar" no encontrado');
-      safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'connect', success: false,
-        reason: 'send_button_not_found',
+      const modal = document.querySelector('.artdeco-modal,[role="dialog"],.send-invite');
+      console.warn('[NexusAI] Send btn not found. Modal:',
+        modal ? modal.innerHTML.slice(0, 800) : 'NO MODAL');
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'send_button_not_found',
         lead_id: leadId, campaign_id: campaignId,
       }});
-      return;
     }
 
     simulateClick(sendBtn);
-    await sleep(1500);
+    await sleep(2000);
 
-    // Verificar envío exitoso: el modal debe haberse cerrado
     const modalOpen = !!document.querySelector(
-      '.send-invite, .artdeco-modal--layer-default, [data-test-modal]'
+      '.send-invite, .artdeco-modal--layer-default, [role="dialog"][aria-modal="true"]'
     );
-    const limitReached = modalOpen && (
-      document.body.innerText.toLowerCase().includes('límite') ||
-      document.body.innerText.toLowerCase().includes('limit')
-    );
+    const limitHit = modalOpen &&
+      document.body.innerText.toLowerCase().match(/límite|limit|weekly invitation/);
 
-    if (limitReached) {
-      safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'connect', success: false,
-        reason: 'daily_limit_reached',
+    if (limitHit) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'daily_limit_reached',
         lead_id: leadId, campaign_id: campaignId,
       }});
-      return;
     }
 
-    const connectionNote = note || '';
+    console.log(`[NexusAI] connect done: success=${!modalOpen}`);
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
       action: 'connect', success: !modalOpen,
       lead_id: leadId, campaign_id: campaignId,
-      connection_note: connectionNote,
+      connection_note: note || '',
     }});
   }
 
+  // ── ACCIÓN 3: SEND MESSAGE ────────────────────────────────────────────────
+
+  async function executeMessage(taskId, text, leadId, campaignId) {
+    const platform = getPlatform();
+    console.log(`[NexusAI] executeMessage platform=${platform} leadId=${leadId}`);
+    await sleep(2000 + Math.random() * 1500);
+    window.scrollTo({ top: 200, behavior: 'smooth' });
+    await sleep(1000);
+
+    const msgBtn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
+      const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
+      const label = (el.getAttribute('aria-label') || '').toLowerCase();
+      return t === 'mensaje' || t === 'message' ||
+             label.includes('mensaje') || label.includes('message') ||
+             label.includes('inmail');
+    });
+
+    if (!msgBtn) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'message', success: false, reason: 'button_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    simulateClick(msgBtn);
+    await sleep(2200);
+
+    let inputEl = null;
+
+    if (platform === 'salesnav') {
+      for (let i = 0; i < 4; i++) {
+        inputEl =
+          document.querySelector('textarea.message-anywhere-compose-box__msg-body') ||
+          document.querySelector('.compose-message__textarea') ||
+          document.querySelector('[data-test-compose-message-textarea]') ||
+          document.querySelector('textarea[placeholder*="mensaje"], textarea[placeholder*="message"]') ||
+          document.querySelector('.inmail-compose-form textarea') ||
+          document.querySelector('[contenteditable="true"][role="textbox"]') ||
+          document.querySelector('textarea:not([disabled])');
+        if (inputEl) break;
+        await sleep(700);
+      }
+    } else {
+      for (let i = 0; i < 4; i++) {
+        inputEl =
+          document.querySelector('.msg-form__contenteditable[contenteditable="true"]') ||
+          document.querySelector('[role="textbox"][data-placeholder]') ||
+          document.querySelector('[contenteditable="true"].msg-form__contenteditable') ||
+          document.querySelector('[data-artdeco-is-focused][contenteditable="true"]');
+        if (inputEl) break;
+        await sleep(700);
+      }
+    }
+
+    if (!inputEl) {
+      console.warn('[NexusAI] Message input not found. Page HTML fragment:',
+        document.body.innerHTML.slice(0, 600));
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'message', success: false, reason: 'input_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    inputEl.focus();
+    if (inputEl.tagName === 'TEXTAREA') {
+      inputEl.value = '';
+      document.execCommand('insertText', false, text);
+      inputEl.dispatchEvent(new Event('input',  { bubbles: true }));
+      inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      inputEl.innerText = '';
+      document.execCommand('insertText', false, text);
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await sleep(800 + Math.random() * 400);
+
+    let sendBtn = null;
+    if (platform === 'salesnav') {
+      sendBtn =
+        document.querySelector('button[data-test-inmail-compose-send-btn]') ||
+        document.querySelector('.inmail-compose-form button[type="submit"]') ||
+        document.querySelector('[data-test-compose-send-btn]') ||
+        Array.from(document.querySelectorAll('button')).find(b => {
+          const t = (b.innerText || '').trim().toLowerCase();
+          return (t === 'enviar' || t === 'send') && b.offsetParent;
+        });
+    } else {
+      sendBtn =
+        document.querySelector('.msg-form__send-button:not([disabled])') ||
+        document.querySelector('button.msg-form__send-button') ||
+        document.querySelector('button[type="submit"][class*="send"]');
+    }
+
+    if (sendBtn && !sendBtn.disabled) {
+      simulateClick(sendBtn);
+    } else {
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ctrlKey: false }));
+    }
+
+    await sleep(1000);
+    console.log(`[NexusAI] message sent platform=${platform} leadId=${leadId}`);
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'message', success: true,
+      lead_id: leadId, campaign_id: campaignId, message_text: text,
+    }});
+  }
+
+  // ── ACCIÓN 4: CHECK CONNECTION STATUS ────────────────────────────────────
+
   async function executeCheckConnection(taskId, leadId, campaignId) {
+    const platform = getPlatform();
     await sleep(2000);
 
-    const allButtons = Array.from(document.querySelectorAll('button, a'));
+    const connected = isFirstDegreeConnection();
+    const pending   = isPendingConnection();
 
-    const isConnected = allButtons.some(el => {
-      const text  = el.textContent?.trim().toLowerCase() ?? '';
-      const label = el.getAttribute('aria-label')?.toLowerCase() ?? '';
-      return text === 'mensaje' || text === 'message' ||
-             text === 'enviar mensaje' || text === 'send message' ||
-             label.includes('mensaje') || label.includes('message');
-    });
-
-    const isPending = allButtons.some(el => {
-      const text = el.textContent?.trim().toLowerCase() ?? '';
-      return text.includes('pendiente') || text.includes('pending') ||
-             text.includes('retirar')   || text.includes('withdraw');
-    });
-
+    console.log(`[NexusAI] checkConnection platform=${platform} connected=${connected} pending=${pending}`);
     safeSendMessage({
-      type: 'ACTION_DONE',
-      taskId,
+      type: 'ACTION_DONE', taskId,
       result: {
-        action:      'check_connection',
-        success:     true,
-        connected:   isConnected,
-        pending:     isPending,
-        lead_id:     leadId,
-        campaign_id: campaignId,
+        action: 'check_connection', success: true,
+        connected, pending,
+        lead_id: leadId, campaign_id: campaignId,
       },
     });
   }
 
-  async function executeCheckInbox(taskId, campaignId) {
+  // ── ACCIÓN 5: FOLLOW ──────────────────────────────────────────────────────
+
+  async function executeFollow(taskId, leadId, campaignId) {
+    const platform = getPlatform();
+    console.log(`[NexusAI] executeFollow platform=${platform}`);
     await sleep(2000);
 
-    const isSalesNav = window.location.href.includes('/sales/');
+    let followBtn = null;
 
-    const convSelectors = isSalesNav
-      ? '.conversation-list-item, [data-test-list-item]'
-      : '.msg-conversations-container__convo-item, ' +
-        '[data-test-li="msg-conversation-list-item"],' +
-        '.msg-conversation-list__list-item';
-
-    const convItems = Array.from(document.querySelectorAll(convSelectors));
-
-    const unreadConvs = convItems.filter(el => {
-      return el.querySelector(
-        '.notification-badge, .msg-conversation-listitem__unread-count, ' +
-        '[data-test-unread-count], .artdeco-notification-badge'
-      ) !== null ||
-        el.classList.contains('msg-conversation-list__list-item--is-unread') ||
-        el.querySelector('[aria-label*="unread"], [aria-label*="no leído"]') !== null;
-    });
-
-    const results = [];
-
-    for (const conv of unreadConvs.slice(0, 5)) {
-      const nameEl = conv.querySelector(
-        '.msg-conversation-listitem__participant-names, ' +
-        '.artdeco-entity-lockup__title, ' +
-        '.conversation-item__details-title, ' +
-        '[data-test-person-name]'
-      );
-      const name = nameEl?.innerText?.trim() ?? '';
-
-      const previewEl = conv.querySelector(
-        '.msg-conversation-listitem__message-snippet, ' +
-        '.t-12, ' +
-        '[data-test-message-snippet]'
-      );
-      const preview = previewEl?.innerText?.trim() ?? '';
-
-      const timeEl = conv.querySelector('time, .msg-s-message-group__timestamp, ' +
-        '[data-test-message-timestamp]');
-      const timestamp = timeEl?.getAttribute('datetime') ?? new Date().toISOString();
-
-      const profileLink = conv.querySelector('a[href*="/in/"], a[href*="/sales/lead/"]');
-      const profileUrl  = profileLink?.href ?? null;
-
-      if (name) {
-        results.push({ name, preview, profileUrl, timestamp });
+    if (platform === 'salesnav') {
+      const opened = await clickMoreButton();
+      if (!opened) {
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'follow', success: false, reason: 'more_button_not_found',
+          lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+      followBtn = findMenuItemByText('seguir', 'follow');
+    } else {
+      followBtn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
+        const t = (el.innerText || '').trim().toLowerCase();
+        return (t === 'seguir' || t === 'follow') && el.offsetParent;
+      });
+      if (!followBtn) {
+        const opened = await clickMoreButton();
+        if (opened) followBtn = findMenuItemByText('seguir', 'follow');
       }
     }
 
-    safeSendMessage({
-      type: 'ACTION_DONE',
-      taskId,
-      result: {
-        action:        'check_inbox',
-        success:       true,
-        unreadCount:   unreadConvs.length,
-        conversations: results,
-        campaign_id:   campaignId,
-      }
-    });
+    if (!followBtn) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'follow', success: false, reason: 'button_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    simulateClick(followBtn);
+    await sleep(800);
+    console.log('[NexusAI] follow done');
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'follow', success: true, lead_id: leadId, campaign_id: campaignId,
+    }});
   }
 
-  async function executeMessage(taskId, text, leadId, campaignId) {
-    await sleep(2000 + Math.random() * 2000);
-    window.scrollTo({ top: 200, behavior: 'smooth' });
-    await sleep(1000);
+  // ── ACCIÓN 5b: UNFOLLOW ───────────────────────────────────────────────────
 
-    const msgBtn = Array.from(document.querySelectorAll('button')).find((b) => {
-      const t = b.innerText?.trim().toLowerCase();
-      return t === 'mensaje' || t === 'message';
-    });
-
-    if (!msgBtn) {
-      safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'message', success: false, reason: 'button_not_found', lead_id: leadId, campaign_id: campaignId } });
-      return;
-    }
-
-    simulateClick(msgBtn);
+  async function executeUnfollow(taskId, leadId, campaignId) {
+    const platform = getPlatform();
+    console.log(`[NexusAI] executeUnfollow platform=${platform}`);
     await sleep(2000);
 
-    const input = document.querySelector('.msg-form__contenteditable[contenteditable="true"], [role="textbox"][data-placeholder]');
-    if (input) {
-      input.focus();
-      input.innerText = text;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(1000 + Math.random() * 500);
+    const opened = await clickMoreButton();
+    if (!opened) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'unfollow', success: false, reason: 'more_button_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
 
-      const sendBtn = document.querySelector('.msg-form__send-button, button[type="submit"][class*="send"]');
-      if (sendBtn && !sendBtn.disabled) {
-        simulateClick(sendBtn);
-      } else {
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      }
+    const unfollowItem = findMenuItemByText(
+      'dejar de seguir', 'unfollow', 'stop following', 'dejar seguir'
+    );
+    if (!unfollowItem) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'unfollow', success: false, reason: 'item_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    simulateClick(unfollowItem);
+    await sleep(800);
+    console.log('[NexusAI] unfollow done');
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'unfollow', success: true, lead_id: leadId, campaign_id: campaignId,
+    }});
+  }
+
+  // ── ACCIÓN 6: DISCONNECT ──────────────────────────────────────────────────
+
+  async function executeDisconnect(taskId, leadId, campaignId) {
+    console.log('[NexusAI] executeDisconnect');
+    await sleep(2000);
+
+    const opened = await clickMoreButton();
+    if (!opened) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'disconnect', success: false, reason: 'more_button_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    const disconnectItem = findMenuItemByText(
+      'eliminar conexión', 'remove connection', 'desconectar', 'disconnect'
+    );
+    if (!disconnectItem) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'disconnect', success: false, reason: 'item_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    simulateClick(disconnectItem);
+    await sleep(800);
+
+    const confirmBtn = Array.from(document.querySelectorAll('button')).find(b => {
+      const t = (b.innerText || '').trim().toLowerCase();
+      return t.includes('eliminar') || t.includes('remove') || t.includes('confirmar');
+    });
+    if (confirmBtn) {
+      simulateClick(confirmBtn);
+      await sleep(600);
+    }
+
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'disconnect', success: true, lead_id: leadId, campaign_id: campaignId,
+    }});
+  }
+
+  // ── ACCIÓN 7: LIKE POST ───────────────────────────────────────────────────
+
+  async function executeLikePost(taskId, leadId, campaignId) {
+    console.log('[NexusAI] executeLikePost');
+    await sleep(2000);
+
+    const likeButtons = Array.from(document.querySelectorAll(
+      'button[aria-label*="Me gusta"]:not([aria-pressed="true"]), ' +
+      'button[aria-label*="Like"]:not([aria-pressed="true"]), ' +
+      'button[data-control-name="react"]:not(.active), ' +
+      'button.react-button__trigger:not([aria-pressed="true"])'
+    )).filter(b => b.offsetParent && !b.disabled);
+
+    if (!likeButtons.length) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'like', success: false, reason: 'no_posts_to_like',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    simulateClick(likeButtons[0]);
+    await sleep(600);
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'like', success: true, lead_id: leadId, campaign_id: campaignId,
+    }});
+  }
+
+  // ── ACCIÓN 8: COMMENT ON POST ─────────────────────────────────────────────
+
+  async function executeCommentPost(taskId, text, leadId, campaignId) {
+    console.log('[NexusAI] executeCommentPost');
+    await sleep(2000);
+
+    const commentBtn = Array.from(document.querySelectorAll('button')).find(b => {
+      const t     = (b.innerText || '').trim().toLowerCase();
+      const label = (b.getAttribute('aria-label') || '').toLowerCase();
+      return t.includes('comentar') || t.includes('comment') ||
+             label.includes('comentar') || label.includes('comment');
+    });
+
+    if (!commentBtn) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'comment', success: false, reason: 'comment_button_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    simulateClick(commentBtn);
+    await sleep(1200);
+
+    const commentBox = document.querySelector(
+      '.comments-comment-texteditor [contenteditable="true"], ' +
+      '.ql-editor[contenteditable="true"], ' +
+      '[data-placeholder*="comentario"], [data-placeholder*="comment"]'
+    );
+
+    if (!commentBox) {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'comment', success: false, reason: 'comment_box_not_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    commentBox.focus();
+    document.execCommand('insertText', false, text);
+    commentBox.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(600);
+
+    const submitBtn = document.querySelector(
+      'button.comments-comment-texteditor__submitButton, ' +
+      'button[type="submit"][class*="comment"]'
+    );
+    if (submitBtn && !submitBtn.disabled) {
+      simulateClick(submitBtn);
+    } else {
+      commentBox.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })
+      );
     }
 
     await sleep(800);
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-      action:       'message',
-      success:      true,
-      lead_id:      leadId,
-      campaign_id:  campaignId,
-      message_text: text,
+      action: 'comment', success: true, lead_id: leadId, campaign_id: campaignId,
+    }});
+  }
+
+  // ── ACCIONES AUXILIARES ───────────────────────────────────────────────────
+
+  async function executeCheckInbox(taskId, campaignId) {
+    await sleep(2500);
+
+    const isSalesNav = window.location.href.includes('/sales/inbox') ||
+                       window.location.href.includes('/sales/messaging');
+
+    console.log(`[NexusAI] checkInbox isSalesNav=${isSalesNav}`);
+
+    if (isSalesNav) {
+      return await checkSalesNavInbox(taskId, campaignId);
+    } else {
+      return await checkLinkedInInbox(taskId, campaignId);
+    }
+  }
+
+  async function checkLinkedInInbox(taskId, campaignId) {
+    const container = document.querySelector('.msg-conversations-container__conversations-list');
+    if (container) {
+      container.scrollTop = 0;
+      await sleep(500);
+    }
+
+    const convSelectors = [
+      '.msg-conversations-container__convo-item',
+      '[data-test-li="msg-conversation-list-item"]',
+      '.msg-conversation-list__list-item',
+      'li[class*="conversation-list"]',
+    ];
+
+    let convItems = [];
+    for (const sel of convSelectors) {
+      convItems = Array.from(document.querySelectorAll(sel));
+      if (convItems.length) { console.log(`[NexusAI] LI inbox selector: ${sel} → ${convItems.length} convs`); break; }
+    }
+
+    const unreadConvs = convItems.filter(el =>
+      el.querySelector('.notification-badge, .msg-conversation-listitem__unread-count, [data-test-unread-count], .artdeco-notification-badge') !== null ||
+      el.classList.contains('msg-conversation-list__list-item--is-unread') ||
+      el.querySelector('[aria-label*="unread"], [aria-label*="no leído"]') !== null
+    );
+
+    const results = [];
+    for (const conv of unreadConvs.slice(0, 8)) {
+      const name = (
+        conv.querySelector('.msg-conversation-listitem__participant-names, .artdeco-entity-lockup__title')
+      )?.innerText?.trim() ?? '';
+      const preview = (
+        conv.querySelector('.msg-conversation-listitem__message-snippet, [data-test-message-snippet]')
+      )?.innerText?.trim() ?? '';
+      const profileLink = conv.querySelector('a[href*="/in/"]');
+      const profileUrl  = profileLink?.href?.split('?')[0] ?? null;
+      const timeEl = conv.querySelector('time');
+      const timestamp = timeEl?.getAttribute('datetime') ?? new Date().toISOString();
+      if (name) results.push({ name, preview, profileUrl, timestamp, source: 'linkedin' });
+    }
+
+    console.log(`[NexusAI] LI inbox: ${unreadConvs.length} unread, ${results.length} procesando`);
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'check_inbox', success: true,
+      unreadCount: unreadConvs.length,
+      conversations: results,
+      campaign_id: campaignId,
+      source: 'linkedin',
+    }});
+  }
+
+  async function checkSalesNavInbox(taskId, campaignId) {
+    await sleep(1000);
+
+    const convSelectors = [
+      '.conversation-list-item',
+      '[data-test-list-item]',
+      '.inbox-list-item',
+      '[class*="conversation-list__item"]',
+      'li[class*="conversation"]',
+    ];
+
+    let convItems = [];
+    for (const sel of convSelectors) {
+      convItems = Array.from(document.querySelectorAll(sel));
+      if (convItems.length) { console.log(`[NexusAI] SN inbox selector: ${sel} → ${convItems.length}`); break; }
+    }
+
+    if (!convItems.length) {
+      console.warn('[NexusAI] SalesNav inbox: no conversations found. DOM sample:',
+        document.body.innerHTML.slice(0, 400));
+    }
+
+    const unreadConvs = convItems.filter(el =>
+      el.querySelector('[class*="unread-indicator"], [class*="badge"], .artdeco-notification-badge') ||
+      el.classList.toString().includes('unread') ||
+      el.querySelector('[aria-label*="unread"], [aria-label*="no leído"]')
+    );
+
+    const results = [];
+    for (const conv of (unreadConvs.length ? unreadConvs : convItems).slice(0, 8)) {
+      const nameEl = conv.querySelector(
+        '[data-anonymize="person-name"], .conversation-list-item__title, ' +
+        '.artdeco-entity-lockup__title, [class*="sender-name"]'
+      );
+      const previewEl = conv.querySelector(
+        '[class*="message-preview"], [class*="snippet"], .conversation-list-item__message, ' +
+        '[data-test-message-snippet]'
+      );
+      const profileLink = conv.querySelector('a[href*="/sales/lead/"]');
+
+      const name       = nameEl?.innerText?.trim() ?? '';
+      const preview    = previewEl?.innerText?.trim() ?? '';
+      const profileUrl = profileLink?.href?.split('?')[0] ?? null;
+      const timestamp  = new Date().toISOString();
+
+      if (name) results.push({ name, preview, profileUrl, timestamp, source: 'salesnav' });
+    }
+
+    console.log(`[NexusAI] SN inbox: ${unreadConvs.length} unread, ${results.length} procesando`);
+    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'check_inbox', success: true,
+      unreadCount: unreadConvs.length,
+      conversations: results,
+      campaign_id: campaignId,
+      source: 'salesnav',
     }});
   }
 
@@ -659,88 +1219,29 @@
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'extract_profile', success: true, lead_id: leadId } });
   }
 
-  // ── Observer de inbox para mensajes recibidos ─────────────────────────────
+  // ── Escuchar tareas inyectadas por background via postMessage ────────────
 
-  if (window.location.pathname.startsWith('/messaging')) {
-    // Helper: extraer datos del contacto activo en la conversación abierta
-    function getActiveConversationContact() {
-      const nameEl = document.querySelector(
-        '.msg-thread__link-to-profile, ' +
-        '.msg-entity-lockup__entity-title, ' +
-        'h2.msg-entity-lockup__entity-title, ' +
-        '[data-control-name="thread_detail_header_name"]'
-      );
-      const name = nameEl?.innerText?.trim() ?? null;
+  window.addEventListener('message', async (event) => {
+    if (event.source !== window) return;
+    if (!event.data || event.data.type !== 'NEXUSAI_TASK') return;
 
-      const profileLinkEl = document.querySelector(
-        '.msg-thread__link-to-profile[href], ' +
-        'a.msg-entity-lockup__entity-title[href]'
-      );
-      const profileUrl = profileLinkEl?.href
-        ? profileLinkEl.href.split('?')[0].replace(/\/$/, '')
-        : null;
+    const { task, taskId, ...params } = event.data;
 
-      return { name, profileUrl };
+    switch (task) {
+      case 'view_profile':     await executeViewProfile(taskId);                                                     break;
+      case 'connect':          await executeConnect(taskId, params.note, params.leadId, params.campaignId);         break;
+      case 'message':          await executeMessage(taskId, params.text, params.leadId, params.campaignId);         break;
+      case 'count_leads':      await executeCountLeads(taskId, params.campaignId, params.segmentId);                break;
+      case 'extract_profile':  await executeExtractProfile(taskId, params.leadId);                                  break;
+      case 'check_connection': await executeCheckConnection(taskId, params.leadId, params.campaignId);              break;
+      case 'check_inbox':      await executeCheckInbox(taskId, params.campaignId);                                  break;
+      case 'follow':           await executeFollow(taskId, params.leadId, params.campaignId);                       break;
+      case 'unfollow':         await executeUnfollow(taskId, params.leadId, params.campaignId);                     break;
+      case 'disconnect':       await executeDisconnect(taskId, params.leadId, params.campaignId);                   break;
+      case 'like':             await executeLikePost(taskId, params.leadId, params.campaignId);                     break;
+      case 'comment':          await executeCommentPost(taskId, params.text ?? '', params.leadId, params.campaignId); break;
     }
-
-    const observedMessages = new Set(); // evitar duplicados
-
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeType !== 1) continue;
-
-          const msgEl = node.querySelector?.('.msg-s-event-listitem__body') ??
-                        (node.matches?.('.msg-s-event-listitem__body') ? node : null);
-
-          if (msgEl) {
-            const text = msgEl.innerText?.trim();
-            if (!text || text.length < 1) continue;
-
-            // ID único para este mensaje (texto + timestamp truncado al segundo)
-            const msgKey = text.substring(0, 50) + '_' + Date.now().toString().slice(0,-3);
-            if (observedMessages.has(msgKey)) continue;
-
-            // Ignorar mensajes propios (salientes)
-            const listItem = msgEl.closest('.msg-s-event-listitem');
-            const isOutgoing = listItem?.querySelector(
-              '.msg-s-message-group__meta .msg-s-message-group__name'
-            )?.innerText?.includes('Tú') ??
-              listItem?.classList.contains('msg-s-event-listitem--other') === false;
-
-            if (isOutgoing) continue;
-
-            observedMessages.add(msgKey);
-            setTimeout(() => observedMessages.delete(msgKey), 30000);
-
-            const contact = getActiveConversationContact();
-
-            safeSendMessage({
-              type: 'MESSAGE_RECEIVED',
-              data: {
-                text,
-                timestamp:    new Date().toISOString(),
-                contact_name: contact.name,
-                profile_url:  contact.profileUrl,
-                lead_id:      null, // background.js lo resolverá con profile_url
-              },
-            });
-          }
-        }
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    // Limpiar set de duplicados al cambiar de conversación
-    const convObserver = new MutationObserver(() => {
-      observedMessages.clear();
-    });
-    const threadContainer = document.querySelector('.msg-conversations-container__conversations-list');
-    if (threadContainer) {
-      convObserver.observe(threadContainer, { childList: true, subtree: false });
-    }
-  }
+  });
 
   // ── Listener de mensajes desde background.js ──────────────────────────────
 
@@ -749,6 +1250,54 @@
       try {
         let result;
         switch (msg.action) {
+
+          case 'execute_task': {
+            sendResponse({ received: true });
+            console.log(`[NexusAI] execute_task recibido: ${msg.task} | taskId: ${msg.taskId}`);
+            (async () => {
+              switch (msg.task) {
+                case 'view_profile':
+                  await executeViewProfile(msg.taskId);
+                  break;
+                case 'connect':
+                  await executeConnect(msg.taskId, msg.note ?? '', msg.leadId, msg.campaignId);
+                  break;
+                case 'message':
+                  await executeMessage(msg.taskId, msg.text ?? '', msg.leadId, msg.campaignId);
+                  break;
+                case 'extract_profile':
+                  await executeExtractProfile(msg.taskId, msg.leadId);
+                  break;
+                case 'check_connection':
+                  await executeCheckConnection(msg.taskId, msg.leadId, msg.campaignId);
+                  break;
+                case 'count_leads':
+                  await executeCountLeads(msg.taskId, msg.campaignId, msg.segmentId);
+                  break;
+                case 'check_inbox':
+                  await executeCheckInbox(msg.taskId, msg.campaignId);
+                  break;
+                case 'follow':
+                  await executeFollow(msg.taskId, msg.leadId, msg.campaignId);
+                  break;
+                case 'unfollow':
+                  await executeUnfollow(msg.taskId, msg.leadId, msg.campaignId);
+                  break;
+                case 'disconnect':
+                  await executeDisconnect(msg.taskId, msg.leadId, msg.campaignId);
+                  break;
+                case 'like':
+                  await executeLikePost(msg.taskId, msg.leadId, msg.campaignId);
+                  break;
+                case 'comment':
+                  await executeCommentPost(msg.taskId, msg.text ?? '', msg.leadId, msg.campaignId);
+                  break;
+                default:
+                  console.warn('[NexusAI] execute_task desconocido:', msg.task);
+              }
+            })();
+            break;
+          }
 
           case 'extract_profile':
             result = isSalesNavigator()
@@ -761,42 +1310,19 @@
             sendResponse({ success: true, data: extractInboxMessages() });
             break;
 
-          case 'send_connection':
-            result = await sendConnectionRequest(msg.payload);
-            sendResponse(result);
-            break;
-
-          case 'send_message':
-            result = await sendDirectMessage(msg.payload);
-            sendResponse(result);
-            break;
-
-          case 'like_post':
-            result = await likePost();
-            sendResponse(result);
-            break;
-
-          case 'visit_profile':
-            result = await visitProfile();
-            sendResponse(result);
-            break;
-
           case 'count_search_results':
-            // Esperar a que LinkedIn termine de renderizar el contador
             await sleep(2500);
             result = extractSearchCount();
             sendResponse({ success: true, count: result, url: window.location.href });
             break;
 
           case 'count_leads_quick': {
-            // Conteo rápido para estimación en el wizard — sin navegación
             const href = window.location.href;
             const onLinkedIn = href.includes('linkedin.com/sales') || href.includes('linkedin.com/search');
             if (!onLinkedIn) {
               sendResponse({ count: null, error: 'NOT_ON_LINKEDIN', needsNavigation: true });
               break;
             }
-            // Delay humano antes de leer DOM
             await sleep(500 + Math.random() * 1000);
             const snEl = document.querySelector('.search-results__total-results')
               || document.querySelector('[data-view-name="search-results-header"] span')
@@ -812,10 +1338,8 @@
           }
 
           case 'scrape_profiles': {
-            // Extrae perfiles de la página actual de resultados de búsqueda
             await sleep(500 + Math.random() * 1000);
             const profiles = [];
-            // Sales Navigator
             document.querySelectorAll(
               '.artdeco-entity-lockup__title a, [data-view-name="search-result-entity-lockup"] a'
             ).forEach((el) => {
@@ -829,7 +1353,6 @@
                 profiles.push({ url, name, headline });
               }
             });
-            // LinkedIn estándar (fallback)
             if (profiles.length === 0) {
               document.querySelectorAll('.entity-result__title-text a').forEach((el) => {
                 const url = el.href?.split('?')[0];
@@ -894,14 +1417,12 @@
               if (raw.split(' ').length > 6) return raw.split(' ').slice(0, 3).join(' ');
               return raw;
             }
+
             const results = [];
 
-            // ─── PASO 1: Scroll completo para forzar renderizado virtual ───────
             async function scrollToLoadAll() {
               const sleepMs = (ms) => new Promise(r => setTimeout(r, ms));
 
-              // Buscar el contenedor scrollable real de Sales Navigator
-              // Es un DIV con overflow-y:auto y scrollHeight mucho mayor que clientHeight
               const scroller =
                 document.querySelector('div.overflow-x-hidden.overflow-y-auto') ||
                 document.querySelector('[class*="overflow-y-auto"]') ||
@@ -920,14 +1441,12 @@
               let lastCount = 0;
               let stableRounds = 0;
               const totalHeight = scroller.scrollHeight;
-              const steps = 20; // pasos de scroll
+              const steps = 20;
 
               for (let i = 0; i < 30; i++) {
-                // Scroll incremental hacia abajo en pasos pequeños
                 const targetTop = Math.min(scroller.scrollTop + (totalHeight / steps), scroller.scrollHeight);
                 scroller.scrollTop = targetTop;
 
-                // También intentar window scroll por si acaso
                 window.scrollTo({ top: window.scrollY + 300, behavior: 'auto' });
 
                 await sleepMs(700);
@@ -945,21 +1464,18 @@
                 }
                 lastCount = currentLinks;
 
-                // Si llegamos al fondo, volver al inicio y dar una ronda más
                 if (scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 50) {
                   console.log('[NexusAI Content] Llegamos al fondo del scroller');
                   break;
                 }
               }
 
-              // Volver arriba para que la extracción sea consistente
               scroller.scrollTop = 0;
               await sleepMs(500);
             }
 
             await scrollToLoadAll();
 
-            // ─── PASO 2: Extraer todos los perfiles del DOM ──────────────────
             const profileLinks = Array.from(document.querySelectorAll(
               'a[href*="/sales/lead/"], a[href*="/in/"]'
             )).filter((a) => {
@@ -1031,144 +1547,5 @@
     })();
     return true; // async
   });
-
-  // ── Extraer conteo de resultados de búsqueda ─────────────────────────────
-
-  function extractSearchCount() {
-    // LinkedIn estándar: "Aproximadamente X resultados"
-    const selectors = [
-      '.search-results-container .pb2 h2',
-      '.search-results__total',
-      '[data-total-count]',
-      '.artdeco-card h2',
-      '.search-results-container h2',
-    ];
-
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el) {
-        const text = el.innerText || el.textContent || '';
-        const m = text.match(/([\d,.]+)/);
-        if (m) {
-          const n = parseInt(m[1].replace(/[,.]/g, ''), 10);
-          if (!isNaN(n) && n > 0) return n;
-        }
-      }
-    }
-
-    // Sales Navigator: número en el header
-    const snSelectors = [
-      '.search-results__total-results',
-      '.list-header-count',
-      '[data-anonymize="result-count"]',
-      '.artdeco-pill-choice__count',
-    ];
-    for (const sel of snSelectors) {
-      const el = document.querySelector(sel);
-      if (el) {
-        const text = el.innerText || el.textContent || '';
-        const m = text.match(/([\d,.]+)/);
-        if (m) {
-          const n = parseInt(m[1].replace(/[,.]/g, ''), 10);
-          if (!isNaN(n) && n > 0) return n;
-        }
-      }
-    }
-
-    // Fallback: buscar cualquier texto con patrón "X results" o "X resultados"
-    const bodyText = document.body.innerText || '';
-    const patterns = [
-      /Aproximadamente\s+([\d,.]+)\s+resultado/i,
-      /About\s+([\d,.]+)\s+result/i,
-      /([\d,.]+)\s+resultado/i,
-      /([\d,.]+)\s+result/i,
-    ];
-    for (const pat of patterns) {
-      const m = bodyText.match(pat);
-      if (m) {
-        const n = parseInt(m[1].replace(/[,.]/g, ''), 10);
-        if (!isNaN(n) && n > 0) return n;
-      }
-    }
-
-    return null;
-  }
-
-  // ── Detectar perfil propio del usuario logueado en LinkedIn ─────────────
-  function detectOwnProfile() {
-    const nameEl =
-      document.querySelector('.profile-nav-card-mini__title') ||
-      document.querySelector('[data-anonymize="person-name"]') ||
-      document.querySelector('.feed-identity-module__actor-meta .t-bold') ||
-      document.querySelector('.global-nav__me-photo + span') ||
-      document.querySelector('.profile-nav-card-mini__profile-picture ~ div .t-bold');
-
-    const imgEl =
-      document.querySelector('.profile-nav-card-mini__profile-picture img') ||
-      document.querySelector('.feed-identity-module__actor-meta img') ||
-      document.querySelector('.global-nav__me-photo');
-
-    const headlineEl =
-      document.querySelector('.profile-nav-card-mini__headline') ||
-      document.querySelector('.feed-identity-module__actor-meta .t-14');
-
-    const name = nameEl?.textContent?.trim() || nameEl?.innerText?.trim();
-    if (!name) return;
-
-    const profile = {
-      name,
-      profile_url:  'https://www.linkedin.com/in/me/',
-      headline:     headlineEl?.textContent?.trim() ?? '',
-      avatar_url:   imgEl?.src ?? '',
-      detected_at:  new Date().toISOString(),
-    };
-
-    safeStorageSet({ linkedin_profile: profile });
-    safeSendMessage({ type: 'LINKEDIN_PROFILE_DETECTED', profile });
-  }
-
-  // Run on feed and /in/me pages, with retries for SPA load
-  if (window.location.hostname === 'www.linkedin.com') {
-    const path = window.location.pathname;
-    if (path === '/feed/' || path === '/feed' || path.startsWith('/in/me') || path === '/') {
-      setTimeout(detectOwnProfile, 2000);
-      setTimeout(detectOwnProfile, 5000);
-    }
-  }
-
-  // ── Auto-extracción al cargar un perfil ───────────────────────────────────
-  // Notifica al background que se cargó un perfil de LinkedIn
-
-  function onProfilePageLoad() {
-    const isProfile =
-      /linkedin\.com\/in\//.test(window.location.href) ||
-      /linkedin\.com\/sales\/people\//.test(window.location.href);
-
-    if (!isProfile) return;
-
-    setTimeout(() => {
-      const profile = isSalesNavigator()
-        ? extractSalesNavProfile()
-        : extractLinkedInProfile();
-
-      if (profile.name && profile.name !== 'No encontrado') {
-        safeSendMessage({
-          type:    'PROFILE_LOADED',
-          profile,
-        });
-      }
-    }, 2000);
-  }
-
-  // Ejecutar al cargar y en navegación SPA de LinkedIn
-  onProfilePageLoad();
-
-  let lastUrl = window.location.href;
-  new MutationObserver(() => {
-    if (window.location.href !== lastUrl) {
-      lastUrl = window.location.href;
-      onProfilePageLoad();
-    }
-  }).observe(document.body, { subtree: true, childList: true });
 
 })();

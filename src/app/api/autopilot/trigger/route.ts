@@ -14,12 +14,12 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     // ── Auth ──────────────────────────────────────────────────────────────────
-    const authHeader = req.headers.get("authorization");
-    const token = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : authHeader;
+    const authHeader = req.headers.get("authorization") ?? "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+    const isValid = token === WEBHOOK_SECRET || authHeader.includes(WEBHOOK_SECRET);
 
-    if (token !== WEBHOOK_SECRET) {
+    if (!isValid) {
+      console.error("[Autopilot] Unauthorized - header prefix:", authHeader.slice(0, 20));
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -31,8 +31,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Only react to messages from the prospect
-    if (record.sender && record.sender !== "prospect") {
-      return NextResponse.json({ skipped: true, reason: "not_a_prospect_message" });
+    const sender = record.sender as string | undefined;
+    if (!sender || sender === "user" || sender === "ai") {
+      return NextResponse.json({ skipped: true, reason: "not_prospect_message" });
     }
 
     const supabase = await createClient();
