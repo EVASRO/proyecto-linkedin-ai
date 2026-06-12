@@ -1,152 +1,110 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant,
   Controls, MiniMap, addEdge, useNodesState, useEdgesState,
   useReactFlow, type Connection, type Node, type Edge,
 } from "@xyflow/react";
-import {
-  ArrowLeft, BookmarkPlus, Check, CheckCircle2, Layers,
-  Loader2, Rocket, Save, Sparkles, Trash2, X, XCircle,
-} from "lucide-react";
+import { Loader2, Rocket, Save, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { nodeTypes } from "./CustomNodes";
+import { NodePalette } from "./NodePalette";
 import { PropertyPanel } from "./PropertyPanel";
-import { Sidebar } from "./Sidebar";
-import type { Campaign, FlowConfig, NodeData, Segment, Template } from "./types";
+import { ABTestPanel, type ABStats } from "./ABTestPanel";
+import {
+  FlowToolbar, Toast, PreviewModal, ValidationModal,
+  validateFlow, type ToastState, type ValidationResult,
+} from "./FlowToolbar";
+import type {
+  Campaign, FlowConfig, FlowNode, FlowEdge,
+  NodeData, Segment, Template, WorkflowJSON, ABVariant,
+} from "./types";
 import { updateCampaignWorkflow } from "@/app/dashboard/campanas/actions";
 
-// ── ID generator (module-level counter, only for fallback) ───────────────────
-let _uid = 1;
+// -- UID factory ---------------------------------------------------------------
 
-// ── Default flow: START → Enviar conexión → Esperar respuesta → Enviar mensaje ─
+function makeUidFactory(existingNodes: FlowNode[]) {
+  const max = existingNodes
+    .map((n) => parseInt(n.id.replace(/^[a-z]+_?/i, ""), 10))
+    .filter((n) => !isNaN(n))
+    .reduce((a, b) => Math.max(a, b), 4);
+  let counter = max + 1;
+  return () => `n${counter++}`;
+}
+
+// -- Default flow --------------------------------------------------------------
 
 function buildDefaultFlow(): { nodes: Node[]; edges: Edge[] } {
-  const nodes: Node[] = [
-    {
-      id: "start_1",
-      type: "start",
-      position: { x: 220, y: 40 },
-      data: { nodeType: "start", label: "Inicio de Secuencia" } satisfies NodeData,
-    },
-    {
-      id: "n2",
-      type: "connect",
-      position: { x: 220, y: 180 },
-      data: { nodeType: "connect", label: "Enviar conexión", addNote: false } satisfies NodeData,
-    },
-    {
-      id: "n3",
-      type: "wait",
-      position: { x: 220, y: 320 },
-      data: { nodeType: "wait", label: "Esperar respuesta", days: 3 } satisfies NodeData,
-    },
-    {
-      id: "n4",
-      type: "message",
-      position: { x: 220, y: 460 },
-      data: { nodeType: "message", label: "Enviar mensaje", bodyA: "" } satisfies NodeData,
-    },
-  ];
-  const edgeStyle = { stroke: "#6366f1", strokeWidth: 2 };
-  const edges: Edge[] = [
-    { id: "e1-2", source: "start_1", target: "n2", animated: true, style: edgeStyle },
-    { id: "e2-3", source: "n2",      target: "n3", animated: true, style: edgeStyle },
-    { id: "e3-4", source: "n3",      target: "n4", animated: true, style: edgeStyle },
-  ];
-  return { nodes, edges };
+  const edgeSt = { stroke: "#6366f1", strokeWidth: 2 };
+  return {
+    nodes: [
+      { id: "start_1", type: "start",   position: { x: 220, y: 40  }, data: { nodeType: "start",   label: "Inicio de Secuencia" } as NodeData },
+      { id: "n2",      type: "connect", position: { x: 220, y: 180 }, data: { nodeType: "connect", label: "Enviar Conexión", addNote: false } as NodeData },
+      { id: "n3",      type: "delay",   position: { x: 220, y: 320 }, data: { nodeType: "delay",   label: "Esperar respuesta", days: 3 } as NodeData },
+      { id: "n4",      type: "message", position: { x: 220, y: 460 }, data: { nodeType: "message", label: "Enviar Mensaje", bodyA: "" } as NodeData },
+    ],
+    edges: [
+      { id: "e1-2", source: "start_1", target: "n2", animated: true, style: edgeSt },
+      { id: "e2-3", source: "n2",      target: "n3", animated: true, style: edgeSt },
+      { id: "e3-4", source: "n3",      target: "n4", animated: true, style: edgeSt },
+    ],
+  };
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
-
-type ToastState = { type: "success" | "error"; msg: string } | null;
-
-function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void }) {
-  if (!toast) return null;
-  return (
-    <div
-      className={[
-        "absolute bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-xl border transition-all",
-        toast.type === "success"
-          ? "border-green-200 bg-green-50 text-green-800"
-          : "border-red-200 bg-red-50 text-red-800",
-      ].join(" ")}
-    >
-      {toast.type === "success"
-        ? <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-        : <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />}
-      {toast.msg}
-      <button onClick={onDismiss} className="ml-2 opacity-60 hover:opacity-100">
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
+function emptyVariant(splitPercent = 50): ABVariant {
+  const { nodes, edges } = buildDefaultFlow();
+  return {
+    nodes: nodes as FlowNode[],
+    edges: edges as FlowEdge[],
+    splitPercent,
+  };
 }
 
-// ── Status badge ──────────────────────────────────────────────────────────────
+// -- Build WorkflowJSON for persistence ---------------------------------------
 
-const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  draft:     { label: "Borrador",  cls: "bg-zinc-100 text-zinc-500" },
-  active:    { label: "Activa",    cls: "bg-green-100 text-green-700" },
-  paused:    { label: "Pausada",   cls: "bg-amber-100 text-amber-700" },
-  completed: { label: "Completada",cls: "bg-blue-100 text-blue-700" },
-};
-
-// ── Templates panel ───────────────────────────────────────────────────────────
-
-function TemplatesPanel({ onLoad, onClose }: { onLoad: (tpl: Template) => void; onClose: () => void }) {
-  return (
-    <div className="absolute right-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl">
-      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
-        <p className="text-xs font-bold text-zinc-900">Plantillas</p>
-        <button onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-600">✕</button>
-      </div>
-      <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100">
-        {([] as Template[]).map((tpl) => (
-          <button
-            key={tpl.id}
-            onClick={() => { onLoad(tpl); onClose(); }}
-            className="flex w-full flex-col items-start gap-1 px-4 py-3 text-left transition-colors hover:bg-zinc-50"
-          >
-            <p className="text-xs font-semibold text-zinc-900">{tpl.name}</p>
-            <p className="text-[10px] text-zinc-500 leading-snug">{tpl.description}</p>
-            <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[9px] font-bold text-zinc-500">
-              {tpl.nodeCount} nodos
-            </span>
-          </button>
-        ))}
-        {/* Empty state */}
-        <div className="py-8 text-center text-xs text-zinc-400">No hay plantillas disponibles</div>
-      </div>
-    </div>
-  );
+function buildWorkflowJSON(
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+  abEnabled: boolean,
+  variantA: ABVariant,
+  variantB: ABVariant,
+): WorkflowJSON {
+  return {
+    version:    "2.0",
+    nodes,
+    edges,
+    ab_enabled: abEnabled,
+    variant_a:  variantA,
+    variant_b:  variantB,
+    updated_at: new Date().toISOString(),
+  };
 }
 
-// ── Launch Modal ──────────────────────────────────────────────────────────────
+// -- Launch modal --------------------------------------------------------------
 
 interface LaunchModalProps {
   campaign: Campaign & { automationId: string };
   segments: Segment[];
-  flowConfig: FlowConfig;
   onClose: () => void;
-  onDone: (status: "active" | "draft") => void;
+  onConfirm: (status: "active" | "draft") => Promise<void>;
 }
 
-function LaunchModal({ campaign, segments, flowConfig, onClose, onDone }: LaunchModalProps) {
+function LaunchModal({ campaign, segments, onClose, onConfirm }: LaunchModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
 
   async function submit(status: "active" | "draft") {
     setLoading(true);
     setError("");
-    await updateCampaignWorkflow(campaign.id, flowConfig as Record<string, unknown>);
-    setLoading(false);
-    onDone(status);
+    try {
+      await onConfirm(status);
+    } catch (e) {
+      setError(String(e));
+      setLoading(false);
+    }
   }
 
-  const nodeCount  = flowConfig.nodes.length;
-  const segCount   = segments.length;
   const totalLeads = segments.reduce((s, seg) => s + (seg.metrics?.totalLeads ?? 0), 0);
 
   return (
@@ -165,25 +123,20 @@ function LaunchModal({ campaign, segments, flowConfig, onClose, onDone }: Launch
 
         <div className="px-6 py-5 space-y-4">
           <p className="text-sm text-zinc-600">Revisa el resumen antes de lanzar:</p>
-
           <div className="rounded-xl border border-zinc-100 bg-zinc-50 divide-y divide-zinc-100">
-            {[
-              ["Campaña", campaign.name],
-              ["Tipo", campaign.type.replace("_", " ")],
-              ["Segmentos", segCount],
+            {([
+              ["Campaña",      campaign.name],
+              ["Tipo",         campaign.type.replace("_", " ")],
+              ["Segmentos",    segments.length],
               ["Leads totales", totalLeads > 0 ? totalLeads.toLocaleString("es-PE") : "Pendiente"],
-              ["Nodos en el flow", nodeCount],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="flex items-center justify-between px-4 py-2.5">
+            ] as [string, string | number][]).map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between px-4 py-2.5">
                 <span className="text-xs text-zinc-500">{label}</span>
                 <span className="text-xs font-semibold text-zinc-900 capitalize">{value}</span>
               </div>
             ))}
           </div>
-
-          {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 border border-red-200">{error}</p>
-          )}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 border border-red-200">{error}</p>}
         </div>
 
         <div className="flex items-center gap-3 border-t border-zinc-100 bg-zinc-50/60 px-6 py-4">
@@ -209,96 +162,131 @@ function LaunchModal({ campaign, segments, flowConfig, onClose, onDone }: Launch
   );
 }
 
-// ── Inner canvas (inside ReactFlowProvider) ───────────────────────────────────
+// -- Empty canvas hint ---------------------------------------------------------
 
-interface InnerProps {
+function EmptyHint() {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <div className="rounded-2xl border-2 border-dashed border-zinc-300 bg-white/80 backdrop-blur-sm px-8 py-6 text-center shadow-sm">
+        <p className="text-sm font-semibold text-zinc-500">Arrastra un nodo para empezar tu secuencia</p>
+        <p className="mt-1 text-xs text-zinc-400">O usa los nodos del panel izquierdo</p>
+      </div>
+    </div>
+  );
+}
+
+// -- Inner canvas --------------------------------------------------------------
+
+interface FlowCanvasProps {
   campaign: Campaign & { automationId: string };
   segments: Segment[];
   initialFlow?: FlowConfig;
+  abStats?: ABStats;
   onBack: () => void;
   onLaunched: (status: "active" | "draft", currentFlow: FlowConfig) => void;
   onSave?: (flowConfig: FlowConfig) => void;
 }
 
-function FlowCanvas({ campaign, segments, initialFlow, onBack, onLaunched, onSave }: InnerProps) {
+function FlowCanvas({ campaign, segments, initialFlow, abStats, onBack, onLaunched, onSave }: FlowCanvasProps) {
   const { screenToFlowPosition } = useReactFlow();
 
-  // Computed only once on mount — never re-run on re-render
-  const { startNodes, startEdges, uidRef } = useMemo(() => {
-    const defaultFlow = buildDefaultFlow();
-    const sNodes: Node[] = initialFlow?.nodes ?? defaultFlow.nodes;
-    const sEdges: Edge[] = initialFlow?.edges ?? defaultFlow.edges;
-    // Calculate initial counter value from existing node IDs
-    const maxN = sNodes
-      .map((n) => parseInt(n.id.replace(/^n/, ""), 10))
-      .filter((n) => !isNaN(n))
-      .reduce((a, b) => Math.max(a, b), 4); // min 4 to match default flow
-    return { startNodes: sNodes, startEdges: sEdges, uidRef: { current: maxN + 1 } };
+  // -- Init from prop once -----------------------------------------------------
+  const { startNodes, startEdges, uid, initVariantA, initVariantB, initAB } = useMemo(() => {
+    const wf = campaign.workflow_json as Partial<WorkflowJSON> | undefined;
+    const df  = buildDefaultFlow();
+
+    const sNodes: FlowNode[] = (initialFlow?.nodes ?? wf?.nodes ?? df.nodes) as FlowNode[];
+    const sEdges: FlowEdge[] = (initialFlow?.edges ?? wf?.edges ?? df.edges) as FlowEdge[];
+
+    const varA: ABVariant = (wf?.variant_a) ?? emptyVariant(50);
+    const varB: ABVariant = (wf?.variant_b) ?? emptyVariant(50);
+    const abOn: boolean   = wf?.ab_enabled ?? false;
+
+    return {
+      startNodes:    sNodes,
+      startEdges:    sEdges,
+      uid:           makeUidFactory(sNodes),
+      initVariantA:  varA,
+      initVariantB:  varB,
+      initAB:        abOn,
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Per-instance UID generator backed by a stable ref
-  const uid = useCallback(() => `n${uidRef.current++}`, [uidRef]);
+  // -- State --------------------------------------------------------------------
+  const [nodes, setNodes, onNodesChange] = useNodesState(startNodes as Node[]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(startEdges as Edge[]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(startNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(startEdges);
-  const [selectedId, setSelectedId]         = useState<string | null>(null);
-  const [saving, setSaving]                 = useState(false);
-  const [toast, setToast]                   = useState<ToastState>(null);
-  const [templatesOpen, setTemplatesOpen]   = useState(false);
-  const [savedAsTemplate, setSavedAsTemplate] = useState(false);
-  const [savingTemplate, setSavingTemplate]   = useState(false);
-  const [launchOpen, setLaunchOpen]           = useState(false);
-  const [campaignName, setCampaignName]       = useState(campaign.name);
-  const [editingName, setEditingName]         = useState(false);
-  const [, setCustomTemplates]                = useState<object[]>([]);
+  const [abEnabled,  setAbEnabled]  = useState(initAB);
+  const [variantA,   setVariantA]   = useState<ABVariant>(initVariantA);
+  const [variantB,   setVariantB]   = useState<ABVariant>(initVariantB);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [selectedId,   setSelectedId]   = useState<string | null>(null);
+  const [saving,       setSaving]       = useState(false);
+  const [dirty,        setDirty]        = useState(false);
+  const [toast,        setToast]        = useState<ToastState>(null);
+  const [launchOpen,   setLaunchOpen]   = useState(false);
+  const [previewOpen,  setPreviewOpen]  = useState(false);
+  const [validResult,  setValidResult]  = useState<ValidationResult | null>(null);
 
-  const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) ?? null : null;
-  const status       = campaign.status ?? "draft";
-  const badge        = STATUS_BADGE[status] ?? STATUS_BADGE.draft;
+  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dirtyRef     = useRef(false);
 
-  // ── Save to Supabase ──────────────────────────────────────────────────────
+  const selectedNode = selectedId ? (nodes as FlowNode[]).find((n) => n.id === selectedId) ?? null : null;
 
-  async function persistFlow(ns: Node[], es: Edge[]) {
+  // -- Mark dirty on any node/edge change ---------------------------------------
+  useEffect(() => {
+    dirtyRef.current = true;
+    setDirty(true);
+  }, [nodes, edges]);
+
+  // -- Auto-save every 30 seconds if dirty --------------------------------------
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (dirtyRef.current) {
+        doPersist(nodes as FlowNode[], edges as FlowEdge[], false);
+      }
+    }, 30_000);
+    return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, edges, abEnabled, variantA, variantB]);
+
+  // -- Dismiss toast automatically -----------------------------------------------
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // -- Persistence ---------------------------------------------------------------
+
+  async function doPersist(ns: FlowNode[], es: FlowEdge[], showToast: boolean) {
     setSaving(true);
     try {
-      const flowConfig: FlowConfig = { nodes: ns as FlowConfig["nodes"], edges: es as FlowConfig["edges"] };
-      const res = await updateCampaignWorkflow(campaign.id, flowConfig as Record<string, unknown>);
+      const wf = buildWorkflowJSON(ns, es, abEnabled, variantA, variantB);
+      const res = await updateCampaignWorkflow(campaign.id, wf as Record<string, unknown>);
       if (res.success) {
-        onSave?.(flowConfig);
-        setToast({ type: "success", msg: "✓ Flujo guardado" });
+        dirtyRef.current = false;
+        setDirty(false);
+        const fc: FlowConfig = { nodes: ns, edges: es };
+        onSave?.(fc);
+        if (showToast) setToast({ type: "success", msg: "Flujo guardado correctamente" });
       } else {
-        setToast({ type: "error", msg: `✗ Error al guardar: ${res.error ?? ""}` });
+        if (showToast) setToast({ type: "error", msg: `Error al guardar: ${res.error ?? ""}` });
       }
     } catch (err) {
-      setToast({ type: "error", msg: `✗ Error al guardar: ${String(err)}` });
+      if (showToast) setToast({ type: "error", msg: `Error: ${String(err)}` });
     } finally {
       setSaving(false);
-      setTimeout(() => setToast(null), 3500);
     }
   }
 
   function saveFlow() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    persistFlow(nodes, edges);
+    doPersist(nodes as FlowNode[], edges as FlowEdge[], true);
   }
 
-  // ── Auto-save with 3s debounce on nodes/edges change ─────────────────────
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      persistFlow(nodes, edges);
-    }, 3000);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges]);
-
-  // ── Handlers ─────────────────────────────────────────────────────────────
+  // -- Handlers ------------------------------------------------------------------
 
   const onConnect = useCallback(
     (conn: Connection) =>
@@ -312,7 +300,16 @@ function FlowCanvas({ campaign, segments, initialFlow, onBack, onLaunched, onSav
   function onPaneClick() { setSelectedId(null); }
 
   function updateNode(id: string, partial: Partial<NodeData>) {
-    setNodes((nds) => nds.map((n) => n.id === id ? { ...n, data: { ...n.data, ...partial } } : n));
+    setNodes((nds) =>
+      nds.map((n) => n.id === id ? { ...n, data: { ...n.data, ...partial } } : n)
+    );
+  }
+
+  function deleteNode(id: string) {
+    if (id === "start_1") return;
+    setNodes((nds) => nds.filter((n) => n.id !== id));
+    setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+    setSelectedId(null);
   }
 
   function onDragOver(e: React.DragEvent<HTMLDivElement>) {
@@ -322,289 +319,255 @@ function FlowCanvas({ campaign, segments, initialFlow, onBack, onLaunched, onSav
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
-    const type     = e.dataTransfer.getData("application/reactflow/type");
-    const nodeType = e.dataTransfer.getData("application/reactflow/nodeType");
+    const rfType   = e.dataTransfer.getData("application/reactflow/type");
+    const nodeType = e.dataTransfer.getData("application/reactflow/nodeType") as NodeData["nodeType"];
     const label    = e.dataTransfer.getData("application/reactflow/label");
-    if (!type || !nodeType) return;
+    if (!rfType || !nodeType) return;
+
     const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const newNode: Node = {
-      id: uid(), type, position,
-      data: { nodeType: nodeType as NodeData["nodeType"], label } as NodeData,
+      id:       uid(),
+      type:     rfType,
+      position,
+      data:     buildDefaultData(nodeType, label),
     };
     setNodes((nds) => [...nds, newNode]);
   }
 
-  function deleteSelectedNode() {
-    if (!selectedId || selectedId === "start_1") return;
-    setNodes((nds) => nds.filter((n) => n.id !== selectedId));
-    setEdges((eds) => eds.filter((e) => e.source !== selectedId && e.target !== selectedId));
-    setSelectedId(null);
-  }
+  // -- A/B drop handler ---------------------------------------------------------
+  function onDropToVariant(e: React.DragEvent<HTMLDivElement>, variant: "A" | "B") {
+    e.preventDefault();
+    const rfType   = e.dataTransfer.getData("application/reactflow/type");
+    const nodeType = e.dataTransfer.getData("application/reactflow/nodeType") as NodeData["nodeType"];
+    const label    = e.dataTransfer.getData("application/reactflow/label");
+    if (!rfType || !nodeType) return;
 
-  function loadTemplate(tpl: Template) {
-    const tplNodes = tpl.flowConfig.nodes as Node[];
-    const maxN = tplNodes
-      .map((n) => parseInt(n.id.replace(/^n/, ""), 10))
-      .filter((n) => !isNaN(n))
-      .reduce((a, b) => Math.max(a, b), 0);
-    uidRef.current = maxN + 1;
-    setNodes(tplNodes);
-    setEdges(tpl.flowConfig.edges as Edge[]);
-    setSelectedId(null);
-  }
-
-  function clearCanvas() {
-    const df = buildDefaultFlow();
-    setNodes(df.nodes);
-    setEdges(df.edges);
-    setSelectedId(null);
-  }
-
-  function saveAsTemplate() {
-    if (nodes.length <= 1) return;
-    setSavingTemplate(true);
-    const flowConfig: FlowConfig = { nodes: nodes as FlowConfig["nodes"], edges: edges as FlowConfig["edges"] };
-    const tpl = {
-      id: `tpl_${Date.now()}`, name: campaignName,
-      description: `Creada el ${new Date().toLocaleDateString("es")}`,
-      nodeCount: nodes.length, types: [campaign.type], flowConfig, isCustom: true,
+    const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const newNode: FlowNode = {
+      id: uid(), type: rfType, position,
+      data: { ...buildDefaultData(nodeType, label), abVariant: variant },
     };
-    setCustomTemplates((prev) => [tpl, ...prev]);
-    setSavingTemplate(false);
-    setSavedAsTemplate(true);
-    setTimeout(() => setSavedAsTemplate(false), 2500);
+
+    if (variant === "A") {
+      setVariantA((prev) => ({ ...prev, nodes: [...prev.nodes, newNode] }));
+    } else {
+      setVariantB((prev) => ({ ...prev, nodes: [...prev.nodes, newNode] }));
+    }
   }
 
-  function currentFlowConfig(): FlowConfig {
-    return { nodes: nodes as FlowConfig["nodes"], edges: edges as FlowConfig["edges"] };
+  // -- Validate ------------------------------------------------------------------
+  function handleValidate() {
+    const result = validateFlow(nodes as FlowNode[], edges as FlowEdge[]);
+    setValidResult(result);
   }
+
+  // -- Toggle A/B ----------------------------------------------------------------
+  function toggleAB() {
+    setAbEnabled((prev) => !prev);
+    setToast({ type: "info", msg: abEnabled ? "A/B Test desactivado" : "A/B Test activado — configura las variantes en el lienzo dividido" });
+  }
+
+  // -- Launch confirm ------------------------------------------------------------
+  async function handleLaunchConfirm(status: "active" | "draft") {
+    await doPersist(nodes as FlowNode[], edges as FlowEdge[], false);
+    setLaunchOpen(false);
+    onLaunched(status, { nodes: nodes as FlowNode[], edges: edges as FlowEdge[] });
+  }
+
+  // -- Render --------------------------------------------------------------------
+
+  const isEmpty = nodes.filter((n) => n.type !== "start").length === 0;
 
   return (
-    <div className="flex flex-1 overflow-hidden min-h-0">
-      <Sidebar />
+    <div className="flex flex-1 overflow-hidden min-h-0 flex-col">
+      <FlowToolbar
+        campaignName={campaign.name}
+        campaignStatus={campaign.status}
+        nodeCount={nodes.length}
+        saving={saving}
+        dirty={dirty}
+        abEnabled={abEnabled}
+        onBack={onBack}
+        onSave={saveFlow}
+        onValidate={handleValidate}
+        onToggleAB={toggleAB}
+        onPreview={() => setPreviewOpen(true)}
+        onLaunch={() => setLaunchOpen(true)}
+      />
 
-      <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-        {/* ── Toolbar ── */}
-        <div className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-white px-4 py-2.5">
-          {/* Back */}
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Campañas
-          </button>
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        <NodePalette />
 
-          <div className="h-4 w-px bg-zinc-200" />
+        <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+          {abEnabled ? (
+            <ABTestPanel
+              variantA={variantA}
+              variantB={variantB}
+              abStats={abStats}
+              onVariantAChange={(ns, es) => setVariantA((p) => ({ ...p, nodes: ns, edges: es }))}
+              onVariantBChange={(ns, es) => setVariantB((p) => ({ ...p, nodes: ns, edges: es }))}
+              onSplitAChange={(pct) => setVariantA((p) => ({ ...p, splitPercent: pct }))}
+              onSplitBChange={(pct) => setVariantB((p) => ({ ...p, splitPercent: pct }))}
+              onDropToVariant={onDropToVariant}
+              onDeclareWinner={(winner) => {
+                setToast({ type: "success", msg: `Variante ${winner.toUpperCase()} declarada ganadora` });
+              }}
+            />
+          ) : (
+            <div className="flex flex-1 min-h-0 relative">
+              {/* Main canvas */}
+              <div className="flex-1 min-h-0 relative" style={{ background: "#0f0f0f" }}>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onNodeClick={onNodeClick}
+                  onPaneClick={onPaneClick}
+                  onDrop={onDrop}
+                  onDragOver={onDragOver}
+                  nodeTypes={nodeTypes}
+                  fitView
+                  fitViewOptions={{ padding: 0.3 }}
+                  deleteKeyCode="Delete"
+                  proOptions={{ hideAttribution: true }}
+                  defaultEdgeOptions={{
+                    animated: true,
+                    style: { stroke: "#818cf8", strokeWidth: 2 },
+                  }}
+                >
+                  <Background
+                    variant={BackgroundVariant.Dots}
+                    gap={28}
+                    size={1}
+                    color="#2a2a2a"
+                  />
+                  <Controls
+                    showInteractive={false}
+                    style={{ bottom: 16, right: 16, left: "auto", top: "auto" }}
+                  />
+                  <MiniMap
+                    nodeColor={(n) => {
+                      const t = n.type ?? "";
+                      if (t === "start")     return "#22c55e";
+                      if (t === "end")       return "#64748b";
+                      if (t === "delay" || t === "wait") return "#f59e0b";
+                      if (t === "condition") return "#f97316";
+                      if (t === "email" || t === "email_node") return "#3b82f6";
+                      if (t === "message")   return "#10b981";
+                      if (t === "autopilot") return "#9333ea";
+                      return "#6366f1";
+                    }}
+                    style={{
+                      bottom: 16, left: 16, top: "auto", right: "auto",
+                      borderRadius: 8, border: "1px solid #2a2a2a",
+                      background: "#1a1a1a",
+                    }}
+                    maskColor="rgba(0,0,0,0.5)"
+                  />
+                </ReactFlow>
 
-          {/* Campaign name (editable) + status */}
-          <div className="flex items-center gap-2">
-            {editingName ? (
-              <input
-                autoFocus
-                value={campaignName}
-                onChange={(e) => setCampaignName(e.target.value)}
-                onBlur={() => setEditingName(false)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingName(false); }}
-                className="rounded-lg border border-indigo-300 px-2 py-0.5 text-sm font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-200 w-48"
-              />
-            ) : (
-              <button
-                onClick={() => setEditingName(true)}
-                className="text-sm font-bold text-zinc-900 hover:text-indigo-600 transition-colors"
-                title="Clic para editar el nombre"
-              >
-                {campaignName}
-              </button>
-            )}
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}>
-              {badge.label}
-            </span>
-          </div>
+                {isEmpty && <EmptyHint />}
 
-          {/* Node counter */}
-          <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] text-zinc-500">
-            <Layers className="h-3.5 w-3.5" />
-            {nodes.length} nodo{nodes.length !== 1 ? "s" : ""}
-          </div>
+                {/* Toast overlay */}
+                <div className="pointer-events-none absolute inset-0">
+                  <div className="pointer-events-auto">
+                    <Toast toast={toast} onDismiss={() => setToast(null)} />
+                  </div>
+                </div>
+              </div>
 
-          {/* Right actions */}
-          <div className="ml-auto flex items-center gap-2">
-            {selectedId && selectedId !== "start_1" && (
-              <button
-                onClick={deleteSelectedNode}
-                className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Eliminar nodo
-              </button>
-            )}
-
-            {/* Templates */}
-            <div className="relative">
-              <button
-                onClick={() => setTemplatesOpen((o) => !o)}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Plantillas
-              </button>
-              {templatesOpen && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setTemplatesOpen(false)} />
-                  <TemplatesPanel onLoad={loadTemplate} onClose={() => setTemplatesOpen(false)} />
-                </>
+              {/* Property panel */}
+              {selectedNode && (
+                <PropertyPanel
+                  node={selectedNode}
+                  onUpdate={updateNode}
+                  onDelete={deleteNode}
+                  onClose={() => setSelectedId(null)}
+                />
               )}
             </div>
+          )}
 
-            {/* Save as template */}
-            <button
-              onClick={saveAsTemplate}
-              disabled={savingTemplate}
-              className={[
-                "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
-                savedAsTemplate
-                  ? "border-green-400 bg-green-50 text-green-700"
-                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50",
-              ].join(" ")}
-            >
-              {savingTemplate
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : savedAsTemplate
-                ? <Check className="h-3.5 w-3.5" />
-                : <BookmarkPlus className="h-3.5 w-3.5" />}
-              {savedAsTemplate ? "¡Plantilla guardada!" : "Guardar plantilla"}
-            </button>
-
-            {/* Clear */}
-            <button
-              onClick={clearCanvas}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Limpiar
-            </button>
-
-            {/* Save flow */}
-            <button
-              onClick={saveFlow}
-              disabled={saving}
-              className={[
-                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
-                "bg-zinc-900 text-white hover:bg-zinc-700 disabled:opacity-60",
-              ].join(" ")}
-            >
-              {saving
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Save className="h-3.5 w-3.5" />}
-              {saving ? "Guardando…" : "Guardar flujo"}
-            </button>
-
-            {/* Launch */}
-            <button
-              onClick={() => setLaunchOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-1.5 text-xs font-bold text-white shadow-md shadow-indigo-200 hover:from-indigo-700 hover:to-violet-700 transition-all"
-            >
-              <Rocket className="h-3.5 w-3.5" />
-              Lanzar campaña
-            </button>
-          </div>
-        </div>
-
-        {/* ── Canvas ── */}
-        <div className="flex flex-1 min-h-0 relative">
-          <div className="flex-1 min-h-0" style={{ background: "#0f0f0f" }}>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onNodeClick={onNodeClick}
-              onPaneClick={onPaneClick}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.3 }}
-              deleteKeyCode="Delete"
-              proOptions={{ hideAttribution: true }}
-              defaultEdgeOptions={{ animated: true, style: { stroke: "#818cf8", strokeWidth: 2 } }}
-            >
-              <Background
-                variant={BackgroundVariant.Dots}
-                gap={28}
-                size={1}
-                color="#2a2a2a"
-              />
-              <Controls
-                showInteractive={false}
-                style={{ bottom: 16, right: 16, left: "auto", top: "auto" }}
-              />
-              <MiniMap
-                nodeColor={(n) =>
-                  n.type === "start"     ? "#22c55e" :
-                  n.type === "autopilot" ? "#9333ea" :
-                  n.type === "end"       ? "#ef4444" :
-                  n.type === "wait"      ? "#f59e0b" :
-                  n.type === "condition" ? "#f97316" : "#6366f1"
-                }
-                style={{
-                  bottom: 16, left: 16, top: "auto", right: "auto",
-                  borderRadius: 8, border: "1px solid #2a2a2a",
-                  background: "#1a1a1a",
-                }}
-                maskColor="rgba(0,0,0,0.5)"
-              />
-            </ReactFlow>
-
-            <Toast toast={toast} onDismiss={() => setToast(null)} />
-          </div>
-
-          {selectedNode && (
-            <PropertyPanel
-              node={selectedNode as Node<NodeData>}
-              onUpdate={updateNode}
-              onClose={() => setSelectedId(null)}
-            />
+          {/* Toast for A/B mode */}
+          {abEnabled && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0">
+              <div className="pointer-events-auto">
+                <Toast toast={toast} onDismiss={() => setToast(null)} />
+              </div>
+            </div>
           )}
         </div>
       </div>
 
+      {/* Modals */}
       {launchOpen && (
         <LaunchModal
           campaign={campaign}
           segments={segments}
-          flowConfig={currentFlowConfig()}
           onClose={() => setLaunchOpen(false)}
-          onDone={(status) => {
-            setLaunchOpen(false);
-            onLaunched(status, currentFlowConfig());
-          }}
+          onConfirm={handleLaunchConfirm}
+        />
+      )}
+
+      {previewOpen && (
+        <PreviewModal
+          nodes={nodes as FlowNode[]}
+          edges={edges as FlowEdge[]}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
+
+      {validResult && (
+        <ValidationModal
+          result={validResult}
+          onClose={() => setValidResult(null)}
         />
       )}
     </div>
   );
 }
 
-// ── Public export ─────────────────────────────────────────────────────────────
+// -- Default node data factory -------------------------------------------------
 
-interface FlowBuilderProps {
+function buildDefaultData(nodeType: NodeData["nodeType"], label: string): NodeData {
+  const base: NodeData = { nodeType, label };
+  switch (nodeType) {
+    case "connect":   return { ...base, addNote: false };
+    case "delay":
+    case "wait":      return { ...base, days: 3, delayUnit: "dias" };
+    case "condition": return { ...base };
+    case "email":
+    case "email_node": return { ...base, subject: "" };
+    default:          return base;
+  }
+}
+
+// -- Public export -------------------------------------------------------------
+
+export interface FlowBuilderProps {
   campaign: Campaign & { automationId: string };
   segments: Segment[];
   initialFlow?: FlowConfig;
+  templates?: Template[];
+  abStats?: ABStats;
   onBack: () => void;
   onLaunched: (status: "active" | "draft", currentFlow: FlowConfig) => void;
   onSave?: (flowConfig: FlowConfig) => void;
 }
 
-export function FlowBuilder({ campaign, segments, initialFlow, onBack, onLaunched, onSave }: FlowBuilderProps) {
+export function FlowBuilder({
+  campaign, segments, initialFlow, abStats,
+  onBack, onLaunched, onSave,
+}: FlowBuilderProps) {
   return (
     <ReactFlowProvider>
       <FlowCanvas
         campaign={campaign}
         segments={segments}
         initialFlow={initialFlow}
+        abStats={abStats}
         onBack={onBack}
         onLaunched={onLaunched}
         onSave={onSave}

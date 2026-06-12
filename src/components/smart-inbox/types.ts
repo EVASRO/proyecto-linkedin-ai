@@ -1,11 +1,11 @@
 export type MessageSender = "user" | "lead" | "ai";
-export type InboxSource   = "linkedin" | "email";
+export type InboxSource   = "linkedin" | "salesnav" | "email";
 export type ConvStatus    = "new" | "active" | "ai_handling" | "human" | "archived";
 export type PipelineStage =
   | "leads_entrantes" | "en_contacto" | "demo_agendada"
   | "propuesta" | "cerrado" | "perdido";
 
-export type MessageStatus = "sending" | "sent" | "delivered" | "read" | "draft" | "approved" | "rejected" | "pending_send";
+export type MessageStatus = "sending" | "sent" | "delivered" | "read" | "draft" | "approved" | "rejected" | "pending_send" | "failed";
 
 export type Message = {
   id: string;
@@ -56,6 +56,7 @@ export type Conversation = {
   unreadCount: number;
   messages: Message[];
   aiSuggestions: AISuggestion[];
+  source?: "linkedin" | "salesnav";
   assignedTo?: string;      // member id
   resolvedAt?: string;      // ISO — set when archived
 };

@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 
-// ── Comparison table ──────────────────────────────────────────────────────────
+// -- Comparison table ----------------------------------------------------------
 
 const comparisonRows = [
   { feature: "Automatización LinkedIn",  nexus: "✅", waalaxy: "✅",   dripify: "✅"    },
@@ -79,7 +79,7 @@ function ComparisonTable() {
   );
 }
 
-// ── Pricing plans ─────────────────────────────────────────────────────────────
+// -- Pricing plans -------------------------------------------------------------
 
 const plans = [
   {

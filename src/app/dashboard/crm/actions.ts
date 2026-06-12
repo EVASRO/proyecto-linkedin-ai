@@ -2,13 +2,13 @@
 
 import { createClient } from "@/lib/supabase/server";
 
-// ── Shared result type ────────────────────────────────────────────────────────
+// -- Shared result type --------------------------------------------------------
 
 type Result<T = undefined> = T extends undefined
   ? { success: boolean; error?: string }
   : { success: boolean; error?: string; data?: T };
 
-// ── Exported types (match Supabase schema) ────────────────────────────────────
+// -- Exported types (match Supabase schema) ------------------------------------
 
 export type CrmLead = {
   id: string;
@@ -61,7 +61,7 @@ export type CrmAutomationFull = {
   created_at: string;
 };
 
-// ── Default columns (campaign flow) ──────────────────────────────────────────
+// -- Default columns (campaign flow) ------------------------------------------
 
 const DEFAULT_COLUMNS = [
   { title: "Extraídos",          color: "blue",   position: 0, key: "extraido"           },
@@ -72,7 +72,7 @@ const DEFAULT_COLUMNS = [
   { title: "Cliente",            color: "green",  position: 5, key: "cliente"            },
 ];
 
-// ── Auth context helper ───────────────────────────────────────────────────────
+// -- Auth context helper -------------------------------------------------------
 
 async function getAuthContext() {
   const supabase = await createClient();
@@ -101,7 +101,7 @@ async function getAuthContext() {
   return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
 }
 
-// ── 1. getCrmData ─────────────────────────────────────────────────────────────
+// -- 1. getCrmData -------------------------------------------------------------
 
 export async function getCrmData(): Promise<Result<{
   leads: CrmLead[];
@@ -220,7 +220,7 @@ export async function getCrmData(): Promise<Result<{
   }
 }
 
-// ── 2. createLead ─────────────────────────────────────────────────────────────
+// -- 2. createLead -------------------------------------------------------------
 
 export async function createLead(data: {
   full_name: string;
@@ -259,7 +259,7 @@ export async function createLead(data: {
   }
 }
 
-// ── 3. updateLeadStatus ───────────────────────────────────────────────────────
+// -- 3. updateLeadStatus -------------------------------------------------------
 
 export async function updateLeadStatus(id: string, status: string): Promise<Result> {
   try {
@@ -277,7 +277,7 @@ export async function updateLeadStatus(id: string, status: string): Promise<Resu
   }
 }
 
-// ── 4. updateLead ─────────────────────────────────────────────────────────────
+// -- 4. updateLead -------------------------------------------------------------
 
 export async function updateLead(
   id: string,
@@ -304,7 +304,7 @@ export async function updateLead(
   }
 }
 
-// ── 5. archiveLead ───────────────────────────────────────────────────────────
+// -- 5. archiveLead -----------------------------------------------------------
 
 export async function archiveLead(id: string): Promise<Result> {
   try {
@@ -321,7 +321,7 @@ export async function archiveLead(id: string): Promise<Result> {
   }
 }
 
-// ── 6. deleteLead ─────────────────────────────────────────────────────────────
+// -- 6. deleteLead -------------------------------------------------------------
 
 export async function deleteLead(id: string): Promise<Result> {
   try {
@@ -339,7 +339,7 @@ export async function deleteLead(id: string): Promise<Result> {
   }
 }
 
-// ── 6. upsertColumn ──────────────────────────────────────────────────────────
+// -- 6. upsertColumn ----------------------------------------------------------
 
 export async function upsertColumn(data: {
   id?: string;
@@ -372,7 +372,7 @@ export async function upsertColumn(data: {
   }
 }
 
-// ── 7. reorderColumns ─────────────────────────────────────────────────────────
+// -- 7. reorderColumns ---------------------------------------------------------
 
 export async function reorderColumns(
   columns: { id: string; position: number }[]
@@ -394,7 +394,7 @@ export async function reorderColumns(
   }
 }
 
-// ── 8. upsertAutomation ───────────────────────────────────────────────────────
+// -- 8. upsertAutomation -------------------------------------------------------
 
 export async function upsertAutomation(data: {
   id?: string;
@@ -439,7 +439,7 @@ export async function upsertAutomation(data: {
   }
 }
 
-// ── 9. enqueueProfileExtraction ──────────────────────────────────────────────
+// -- 9. enqueueProfileExtraction ----------------------------------------------
 
 export async function enqueueProfileExtraction(data: {
   lead_id: string;
@@ -470,7 +470,7 @@ export async function enqueueProfileExtraction(data: {
   }
 }
 
-// ── 10. toggleAutomation ──────────────────────────────────────────────────────
+// -- 10. toggleAutomation ------------------------------------------------------
 
 export async function toggleAutomation(id: string, is_active: boolean): Promise<Result> {
   try {
@@ -488,7 +488,7 @@ export async function toggleAutomation(id: string, is_active: boolean): Promise<
   }
 }
 
-// ── 11. triggerCrmAutomation ──────────────────────────────────────────────────
+// -- 11. triggerCrmAutomation --------------------------------------------------
 
 export async function triggerCrmAutomation(
   leadId: string,
@@ -554,7 +554,7 @@ export async function triggerCrmAutomation(
   }
 }
 
-// ── 12. moveLead ──────────────────────────────────────────────────────────────
+// -- 12. moveLead --------------------------------------------------------------
 
 export async function moveLead(leadId: string, newColumn: string): Promise<Result> {
   try {
@@ -589,7 +589,7 @@ export async function moveLead(leadId: string, newColumn: string): Promise<Resul
   }
 }
 
-// ── 16. calculateLeadScore ────────────────────────────────────────────────────
+// -- 16. calculateLeadScore ----------------------------------------------------
 
 export async function calculateLeadScore(lead: {
   crm_column?: string | null;
@@ -632,7 +632,7 @@ export async function calculateLeadScore(lead: {
   return Math.min(score, 100);
 }
 
-// ── 13. upsertCrmAutomation (new schema) ──────────────────────────────────────
+// -- 13. upsertCrmAutomation (new schema) --------------------------------------
 
 export async function upsertCrmAutomation(data: {
   id?: string;
@@ -679,7 +679,7 @@ export async function upsertCrmAutomation(data: {
   }
 }
 
-// ── 14. getCrmAutomations ─────────────────────────────────────────────────────
+// -- 14. getCrmAutomations -----------------------------------------------------
 
 export async function getCrmAutomations(): Promise<Result<CrmAutomationFull[]>> {
   try {
@@ -697,7 +697,7 @@ export async function getCrmAutomations(): Promise<Result<CrmAutomationFull[]>> 
   }
 }
 
-// ── getLeadDetail ─────────────────────────────────────────────────────────────
+// -- getLeadDetail -------------------------------------------------------------
 
 export async function getLeadDetail(leadId: string): Promise<{
   success: boolean;
@@ -776,7 +776,7 @@ export async function getLeadDetail(leadId: string): Promise<{
   }
 }
 
-// ── updateLeadField ───────────────────────────────────────────────────────────
+// -- updateLeadField -----------------------------------------------------------
 
 export async function updateLeadField(
   leadId: string,
@@ -799,7 +799,7 @@ export async function updateLeadField(
   }
 }
 
-// ── 15. deleteCrmAutomation ───────────────────────────────────────────────────
+// -- 15. deleteCrmAutomation ---------------------------------------------------
 
 export async function deleteCrmAutomation(id: string): Promise<Result> {
   try {

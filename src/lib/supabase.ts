@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-// ── Cliente Supabase server-side ──────────────────────────────────────────────
+// -- Cliente Supabase server-side ----------------------------------------------
 // Usa SUPABASE_SERVICE_ROLE_KEY si está disponible (bypasa RLS),
 // si no usa SUPABASE_KEY (anon key, respeta RLS).
 
@@ -13,7 +13,7 @@ const key =
 
 export const supabase = createClient(url, key);
 
-// ── Database types (coinciden con schema_v2.sql) ──────────────────────────────
+// -- Database types (coinciden con schema_v2.sql) ------------------------------
 
 export type Lead = {
   id: string;

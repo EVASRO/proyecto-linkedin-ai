@@ -14,7 +14,7 @@ import {
 } from "@/app/dashboard/agentes-ia/actions";
 
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 type AgentTone = "formal" | "consultivo" | "amigable" | "directo";
 type AgentObjective = "agendar_reunion" | "enviar_propuesta" | "calificar_lead" | "nutrir_lead";
@@ -45,7 +45,7 @@ interface TestMessage {
   text: string;
 }
 
-// ── Mock data ─────────────────────────────────────────────────────────────────
+// -- Mock data -----------------------------------------------------------------
 
 
 const TEMPLATES = [
@@ -72,7 +72,7 @@ const ICP_INDUSTRIES = ["SaaS", "Fintech", "Reclutamiento", "Consultoría", "E-c
 const ICP_ROLES       = ["CEO", "Fundador", "VP Ventas", "Director Comercial", "SDR Manager", "HR Manager", "CTO", "Marketing Manager", "Gerente General"];
 const ICP_SIZES       = ["1-10", "10-50", "50-200", "200-1000", "1000+"];
 
-// ── Subcomponents ──────────────────────────────────────────────────────────────
+// -- Subcomponents --------------------------------------------------------------
 
 function AgentCard({ agent, onSelect, onToggle, onDelete }: {
   agent: Agent;
@@ -155,7 +155,7 @@ function AgentCard({ agent, onSelect, onToggle, onDelete }: {
   );
 }
 
-// ── Wizard ─────────────────────────────────────────────────────────────────────
+// -- Wizard ---------------------------------------------------------------------
 
 function AgentWizard({ initial, onClose, onSave }: {
   initial?: Partial<Agent>;
@@ -293,7 +293,7 @@ function AgentWizard({ initial, onClose, onSave }: {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
 
-          {/* ── IDENTIDAD ── */}
+          {/* -- IDENTIDAD -- */}
           {step === "identidad" && (
             <div className="space-y-5">
               <div>
@@ -369,7 +369,7 @@ function AgentWizard({ initial, onClose, onSave }: {
             </div>
           )}
 
-          {/* ── ICP ── */}
+          {/* -- ICP -- */}
           {step === "icp" && (
             <div className="space-y-5">
               <p className="text-sm text-zinc-500">Define a quién debe prospectar tu agente — el Perfil de Cliente Ideal (ICP).</p>
@@ -433,7 +433,7 @@ function AgentWizard({ initial, onClose, onSave }: {
             </div>
           )}
 
-          {/* ── TONO ── */}
+          {/* -- TONO -- */}
           {step === "tono" && (
             <div className="space-y-4">
               <p className="text-sm text-zinc-500">El tono determina cómo escribe y habla tu agente en cada conversación.</p>
@@ -464,7 +464,7 @@ function AgentWizard({ initial, onClose, onSave }: {
             </div>
           )}
 
-          {/* ── PROPUESTA ── */}
+          {/* -- PROPUESTA -- */}
           {step === "propuesta" && (
             <div className="space-y-5">
               <div>
@@ -495,7 +495,7 @@ function AgentWizard({ initial, onClose, onSave }: {
             </div>
           )}
 
-          {/* ── OBJECIONES ── */}
+          {/* -- OBJECIONES -- */}
           {step === "objeciones" && (
             <div className="space-y-4">
               <p className="text-sm text-zinc-500">
@@ -546,7 +546,7 @@ function AgentWizard({ initial, onClose, onSave }: {
             </div>
           )}
 
-          {/* ── TEST CHAT ── */}
+          {/* -- TEST CHAT -- */}
           {step === "test" && (
             <div className="flex flex-col" style={{ height: "380px" }}>
               <div className="mb-3 flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-2.5">
@@ -655,7 +655,7 @@ function AgentWizard({ initial, onClose, onSave }: {
   );
 }
 
-// ── MAIN VIEW ─────────────────────────────────────────────────────────────────
+// -- MAIN VIEW -----------------------------------------------------------------
 
 function mapRowToAgent(row: AgentRow): Agent {
   return {

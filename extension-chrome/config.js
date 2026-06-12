@@ -19,20 +19,32 @@ async function supabaseFetch(path, opts = {}) {
     ...(opts.headers ?? {}),
   };
 
-  try {
-    const res = await fetch(url, { method, headers, body: opts.body });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.error('[NexusAI] supabaseFetch ERROR', res.status, path.split('?')[0], errText.slice(0, 300));
-      return null;
+  const MAX_RETRIES = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, { method, headers, body: opts.body ?? undefined });
+      const ct = res.headers.get('content-type') ?? '';
+      if (res.status === 204 || !ct.includes('json')) return null;
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        console.error(`[NexusAI] supabaseFetch ERROR ${res.status}`, path.split('?')[0], JSON.stringify(errBody));
+        return null;
+      }
+      return res.json();
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_RETRIES) {
+        const delay = attempt * 1500;
+        console.warn(`[NexusAI] supabaseFetch retry ${attempt}/${MAX_RETRIES} (${path.split('?')[0]}) en ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
-    const ct = res.headers.get('content-type') ?? '';
-    if (res.status === 204 || !ct.includes('json')) return null;
-    return res.json();
-  } catch (err) {
-    console.error('[NexusAI] supabaseFetch NETWORK ERROR', path.split('?')[0], err.message);
-    return null;
   }
+
+  console.error('[NexusAI] supabaseFetch NETWORK ERROR', path.split('?')[0], lastError?.message);
+  return null;
 }
 
 // ── Autenticar con email/password en Supabase Auth ────────────────────────────

@@ -10,12 +10,12 @@ import {
   type CrmAutomationFull,
 } from "@/app/dashboard/crm/actions";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 type TriggerEvent = "moved_to_column" | "tag_added" | "inactivity";
 type ActionType   = "add_to_queue"    | "update_lead";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// -- Constants -----------------------------------------------------------------
 
 const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   moved_to_column: "Lead se mueve a columna",
@@ -39,7 +39,7 @@ const ACTION_COLOR: Record<ActionType, string> = {
   update_lead:  "bg-green-50 text-green-700",
 };
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+// -- Empty state ---------------------------------------------------------------
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
@@ -64,7 +64,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-// ── Create form ───────────────────────────────────────────────────────────────
+// -- Create form ---------------------------------------------------------------
 
 interface CreateFormProps {
   columns: Column[];
@@ -255,7 +255,7 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
   );
 }
 
-// ── Automation card ───────────────────────────────────────────────────────────
+// -- Automation card -----------------------------------------------------------
 
 interface AutoCardProps {
   auto: CrmAutomationFull;
@@ -345,7 +345,7 @@ function AutoCard({ auto, columns, onToggle, onDelete }: AutoCardProps) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// -- Main component ------------------------------------------------------------
 
 interface AutomationMatrixProps {
   columns: Column[];

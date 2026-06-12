@@ -2,22 +2,24 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
-  AlertCircle, Bot, CheckCircle2, Clock, Flag, GitBranch,
-  Globe, Heart, Mail, Play, Sparkles, UserPlus, Eye,
+  AlertCircle, AtSign, Bot, CheckCircle2, Clock, Flag, GitBranch,
+  Globe, Heart, Mail, MailPlus, MessageSquare, Phone, Play, UserMinus, UserPlus,
 } from "lucide-react";
-import type { NodeData, CampaignNodeType } from "./types";
+import type { NodeData, NodeType } from "./types";
 
-// ── Validation ────────────────────────────────────────────────────────────────
+// -- Validation ----------------------------------------------------------------
 
 function isConfigured(data: NodeData): boolean {
   switch (data.nodeType) {
     case "message":
       return !!(data.bodyA?.trim());
+    case "email":
     case "email_node":
       return !!(data.subject?.trim() && data.bodyA?.trim());
     case "connect":
-      if (data.addNote) return !!(data.messageA?.trim());
+      if (data.addNote) return !!(data.connectionNote?.trim() || data.messageA?.trim());
       return true;
+    case "delay":
     case "wait":
       return !!(data.days && data.days > 0);
     default:
@@ -25,337 +27,437 @@ function isConfigured(data: NodeData): boolean {
   }
 }
 
-// ── Color registry ────────────────────────────────────────────────────────────
+// -- Color registry ------------------------------------------------------------
 
-const NODE_PALETTE: Record<CampaignNodeType, { header: string; icon: React.ElementType; ring: string }> = {
-  start:      { header: "bg-green-500",    icon: Play,       ring: "ring-green-200"  },
-  connect:    { header: "bg-blue-500",     icon: UserPlus,   ring: "ring-blue-200"   },
-  message:    { header: "bg-indigo-600",   icon: Sparkles,   ring: "ring-indigo-200" },
-  email_node: { header: "bg-sky-500",      icon: Mail,       ring: "ring-sky-200"    },
-  wait:       { header: "bg-amber-500",    icon: Clock,      ring: "ring-amber-200"  },
-  condition:  { header: "bg-orange-500",   icon: GitBranch,  ring: "ring-orange-200" },
-  autopilot:  { header: "bg-purple-600",   icon: Bot,        ring: "ring-purple-200" },
-  visit:      { header: "bg-cyan-500",     icon: Eye,        ring: "ring-cyan-200"   },
-  like:       { header: "bg-pink-500",     icon: Heart,      ring: "ring-pink-200"   },
-  end:        { header: "bg-red-500",      icon: Flag,       ring: "ring-red-200"    },
+type Palette = { header: string; ring: string; handle: string };
+
+const PALETTE: Record<NodeType, Palette> = {
+  start:      { header: "bg-green-500",                ring: "ring-green-300",   handle: "!bg-green-500"  },
+  connect:    { header: "bg-indigo-600",               ring: "ring-indigo-300",  handle: "!bg-indigo-500" },
+  message:    { header: "bg-emerald-600",              ring: "ring-emerald-300", handle: "!bg-emerald-500"},
+  delay:      { header: "bg-amber-500",                ring: "ring-amber-300",   handle: "!bg-amber-500"  },
+  wait:       { header: "bg-amber-500",                ring: "ring-amber-300",   handle: "!bg-amber-500"  },
+  condition:  { header: "bg-orange-500",               ring: "ring-orange-300",  handle: "!bg-orange-500" },
+  email:      { header: "bg-blue-600",                 ring: "ring-blue-300",    handle: "!bg-blue-500"   },
+  email_node: { header: "bg-blue-600",                 ring: "ring-blue-300",    handle: "!bg-blue-500"   },
+  end:        { header: "bg-slate-600",                ring: "ring-slate-300",   handle: "!bg-slate-500"  },
+  autopilot:     { header: "bg-purple-600",  ring: "ring-purple-300",  handle: "!bg-purple-500"  },
+  visit:         { header: "bg-cyan-500",    ring: "ring-cyan-300",    handle: "!bg-cyan-500"    },
+  like:          { header: "bg-pink-500",    ring: "ring-pink-300",    handle: "!bg-pink-500"    },
+  withdraw:      { header: "bg-red-500",     ring: "ring-red-300",     handle: "!bg-red-500"     },
+  find_email:    { header: "bg-teal-500",    ring: "ring-teal-300",    handle: "!bg-teal-500"    },
+  find_phone:    { header: "bg-teal-600",    ring: "ring-teal-300",    handle: "!bg-teal-500"    },
+  connect_email: { header: "bg-violet-500",  ring: "ring-violet-300",  handle: "!bg-violet-500"  },
 };
 
-// ── Status Badge ──────────────────────────────────────────────────────────────
+function getPalette(nodeType: NodeType): Palette {
+  return PALETTE[nodeType] ?? PALETTE.connect;
+}
 
-function StatusBadge({ configured }: { configured: boolean }) {
-  if (configured) {
-    return (
-      <span title="Configurado" className="flex h-4 w-4 items-center justify-center">
-        <CheckCircle2 className="h-3.5 w-3.5 text-white/80" />
-      </span>
-    );
-  }
+// -- Status badge --------------------------------------------------------------
+
+function StatusDot({ ok }: { ok: boolean }) {
+  return ok
+    ? <CheckCircle2 className="h-3.5 w-3.5 text-white/80 flex-shrink-0" />
+    : (
+        <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-red-500 ring-1 ring-white">
+          <AlertCircle className="h-2.5 w-2.5 text-white" />
+        </span>
+      );
+}
+
+// -- AB Badge ------------------------------------------------------------------
+
+function ABBadge({ variant }: { variant: "A" | "B" }) {
   return (
-    <span title="Falta configuración" className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 ring-1 ring-white">
-      <AlertCircle className="h-2.5 w-2.5 text-white" />
+    <span className={[
+      "absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black text-white shadow-sm",
+      variant === "A" ? "bg-blue-600" : "bg-purple-600",
+    ].join(" ")}>
+      {variant}
     </span>
   );
 }
 
-// ── Base Node Shell ───────────────────────────────────────────────────────────
+// -- Shared node shell ---------------------------------------------------------
 
-function NodeShell({
-  data,
-  isSelected,
-  showSource = true,
-  showTarget = true,
-  children,
-  extraSources,
-}: {
+interface ShellProps {
   data: NodeData;
-  isSelected?: boolean;
-  showSource?: boolean;
+  selected: boolean;
+  icon: React.ElementType;
   showTarget?: boolean;
+  showSource?: boolean;
   children?: React.ReactNode;
-  extraSources?: React.ReactNode;
-}) {
-  const palette = NODE_PALETTE[data.nodeType] ?? NODE_PALETTE.connect;
-  const Icon = palette.icon;
-  const configured = isConfigured(data);
+  extraHandles?: React.ReactNode;
+}
+
+function NodeShell({ data, selected, icon: Icon, showTarget = true, showSource = true, children, extraHandles }: ShellProps) {
+  const p       = getPalette(data.nodeType);
+  const ok      = isConfigured(data);
+  const variant = data.abVariant;
 
   return (
-    <div
-      className={[
-        "w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md transition-all duration-100",
-        isSelected
-          ? `${palette.ring} ring-2 ring-offset-1 border-transparent shadow-lg`
-          : "border-zinc-200",
-      ].join(" ")}
-    >
-      {showTarget && (
-        <Handle
-          type="target"
-          position={Position.Top}
-          className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400"
-        />
-      )}
+    <div className="relative">
+      {variant && <ABBadge variant={variant} />}
+      <div
+        className={[
+          "w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md transition-all duration-150",
+          selected
+            ? `${p.ring} ring-2 ring-offset-1 border-transparent shadow-lg scale-[1.02]`
+            : "border-zinc-200 hover:border-zinc-300 hover:shadow-lg",
+        ].join(" ")}
+      >
+        {showTarget && (
+          <Handle
+            type="target"
+            position={Position.Top}
+            className={`!border-2 !border-white !h-3 !w-3 ${p.handle}`}
+          />
+        )}
 
-      {/* Header */}
-      <div className={`flex items-center gap-2 ${palette.header} px-3 py-2`}>
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <Icon className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 truncate text-[11px] font-bold text-white">
-          {data.label}
-        </span>
-        <StatusBadge configured={configured} />
+        <div className={`flex items-center gap-2 ${p.header} px-3 py-2`}>
+          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-white/25">
+            <Icon className="h-2.5 w-2.5 text-white" />
+          </span>
+          <span className="flex-1 truncate text-[11px] font-bold text-white">{data.label}</span>
+          <StatusDot ok={ok} />
+        </div>
+
+        {children && <div className="px-3 py-2.5">{children}</div>}
+
+        {showSource && !extraHandles && (
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            className={`!border-2 !border-white !h-3 !w-3 ${p.handle}`}
+          />
+        )}
+        {extraHandles}
       </div>
-
-      {/* Body */}
-      {children && <div className="px-3 py-2.5">{children}</div>}
-
-      {showSource && !extraSources && (
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400"
-        />
-      )}
-      {extraSources}
     </div>
   );
 }
 
-// ── Individual Nodes ──────────────────────────────────────────────────────────
+// -- START ---------------------------------------------------------------------
 
 export function StartNode({ data, selected }: NodeProps) {
   const d = data as NodeData;
   return (
-    <div className="w-56 overflow-hidden rounded-xl border-2 border-green-200 bg-white shadow-md">
-      <div className="flex items-center gap-2 bg-green-500 px-3 py-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <Play className="h-2.5 w-2.5 fill-white text-white" />
-        </span>
-        <span className="flex-1 text-[11px] font-bold text-white">{d.label}</span>
-        <CheckCircle2 className="h-3.5 w-3.5 text-white/80" />
+    <div className="relative">
+      {d.abVariant && <ABBadge variant={d.abVariant} />}
+      <div
+        className={[
+          "w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md transition-all duration-150",
+          selected
+            ? "ring-2 ring-offset-1 ring-green-300 border-transparent shadow-lg scale-[1.02]"
+            : "border-green-300 hover:shadow-lg",
+        ].join(" ")}
+      >
+        <div className="flex items-center gap-2 bg-green-500 px-3 py-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
+            <Play className="h-2.5 w-2.5 fill-white text-white" />
+          </span>
+          <span className="flex-1 text-[11px] font-bold text-white">{d.label}</span>
+          <CheckCircle2 className="h-3.5 w-3.5 text-white/80" />
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-[10px] text-zinc-400">Punto de inicio de la secuencia</p>
+        </div>
+        <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-green-500" />
       </div>
-      <div className="px-3 py-2.5">
-        <p className="text-[10px] text-zinc-400">Punto de inicio de la secuencia</p>
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-green-500" />
     </div>
   );
 }
+
+// -- CONNECT -------------------------------------------------------------------
 
 export function ConnectNode({ data, selected }: NodeProps) {
-  const d = data as NodeData;
-  const configured = isConfigured(d);
-  const palette = NODE_PALETTE.connect;
-
+  const d    = data as NodeData;
+  const note = d.connectionNote ?? d.messageA ?? "";
   return (
-    <div className={["w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md", selected ? "ring-2 ring-offset-1 ring-blue-200 border-transparent" : "border-zinc-200"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400" />
-      <div className={`flex items-center gap-2 ${palette.header} px-3 py-2`}>
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <UserPlus className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 truncate text-[11px] font-bold text-white">{d.label}</span>
-        <StatusBadge configured={configured} />
-      </div>
-      <div className="px-3 py-2.5 space-y-1">
-        {d.addNote ? (
-          d.messageA ? (
-            <p className="line-clamp-2 text-[10px] text-zinc-600">
-              &ldquo;{d.messageA}&rdquo;
-            </p>
-          ) : (
-            <p className="text-[10px] italic text-red-400">← Añade una nota de conexión</p>
-          )
+    <NodeShell data={d} selected={selected} icon={UserPlus}>
+      {d.addNote ? (
+        note ? (
+          <p className="line-clamp-2 text-[10px] text-zinc-600">&ldquo;{note}&rdquo;</p>
         ) : (
-          <p className="text-[10px] text-zinc-400">Sin nota · Conexión directa</p>
-        )}
-        {d.useABTest && <span className="inline-flex rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-600">A/B</span>}
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-blue-400" />
-    </div>
+          <p className="text-[10px] italic text-red-400">Añade una nota de conexión</p>
+        )
+      ) : (
+        <p className="text-[10px] text-zinc-400">Sin nota · Conexión directa</p>
+      )}
+      {d.useABTest && (
+        <span className="mt-1 inline-flex rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600">A/B</span>
+      )}
+    </NodeShell>
   );
 }
+
+// -- MESSAGE -------------------------------------------------------------------
 
 export function MessageNode({ data, selected }: NodeProps) {
   const d = data as NodeData;
-  const configured = isConfigured(d);
-  const palette = NODE_PALETTE.message;
-
   return (
-    <div className={["w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md", selected ? "ring-2 ring-offset-1 ring-indigo-200 border-transparent" : "border-zinc-200"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400" />
-      <div className={`flex items-center gap-2 ${palette.header} px-3 py-2`}>
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <Sparkles className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 truncate text-[11px] font-bold text-white">{d.label}</span>
-        <StatusBadge configured={configured} />
-      </div>
-      <div className="px-3 py-2.5 space-y-1">
-        {d.bodyA ? (
-          <p className="line-clamp-2 text-[10px] text-zinc-600">&ldquo;{d.bodyA}&rdquo;</p>
-        ) : (
-          <p className="text-[10px] italic text-red-400">← Escribe el mensaje</p>
-        )}
-        {d.useABTest && <span className="inline-flex rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600">A/B</span>}
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-indigo-400" />
-    </div>
+    <NodeShell data={d} selected={selected} icon={MessageSquare}>
+      {d.bodyA ? (
+        <p className="line-clamp-2 text-[10px] text-zinc-600">&ldquo;{d.bodyA}&rdquo;</p>
+      ) : (
+        <p className="text-[10px] italic text-red-400">Escribe el mensaje</p>
+      )}
+      {d.useABTest && (
+        <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600">A/B</span>
+      )}
+    </NodeShell>
   );
 }
 
-export function EmailNodeComponent({ data, selected }: NodeProps) {
-  const d = data as NodeData;
-  const configured = isConfigured(d);
-  const palette = NODE_PALETTE.email_node;
+// -- DELAY / WAIT --------------------------------------------------------------
 
+export function DelayNode({ data, selected }: NodeProps) {
+  const d    = data as NodeData;
+  const days = d.days ?? 1;
+  const unit = d.delayUnit ?? "dias";
   return (
-    <div className={["w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md", selected ? "ring-2 ring-offset-1 ring-sky-200 border-transparent" : "border-zinc-200"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400" />
-      <div className={`flex items-center gap-2 ${palette.header} px-3 py-2`}>
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <Mail className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 truncate text-[11px] font-bold text-white">{d.label}</span>
-        <StatusBadge configured={configured} />
+    <NodeShell data={d} selected={selected} icon={Clock}>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-black tabular-nums text-zinc-900">{days}</span>
+        <span className="text-xs text-zinc-500">{unit === "horas" ? `hora${days !== 1 ? "s" : ""}` : `día${days !== 1 ? "s" : ""}`}</span>
       </div>
-      <div className="px-3 py-2.5 space-y-1">
-        {d.subject ? (
-          <p className="truncate text-[10px] font-medium text-zinc-700">📧 {d.subject}</p>
-        ) : (
-          <p className="text-[10px] italic text-red-400">← Añade asunto y cuerpo</p>
-        )}
-        {d.useABTest && <span className="inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold text-sky-600">A/B</span>}
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-sky-400" />
-    </div>
+    </NodeShell>
   );
 }
 
-export function WaitNode({ data, selected }: NodeProps) {
-  const d = data as NodeData;
-  const palette = NODE_PALETTE.wait;
+// -- CONDITION -----------------------------------------------------------------
 
-  return (
-    <div className={["w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md", selected ? "ring-2 ring-offset-1 ring-amber-200 border-transparent" : "border-zinc-200"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400" />
-      <div className={`flex items-center gap-2 ${palette.header} px-3 py-2`}>
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <Clock className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 truncate text-[11px] font-bold text-white">Esperar</span>
-        <CheckCircle2 className="h-3.5 w-3.5 text-white/80" />
-      </div>
-      <div className="flex items-baseline gap-1.5 px-3 py-2.5">
-        <span className="text-2xl font-bold tabular-nums text-zinc-900">{d.days ?? 1}</span>
-        <span className="text-xs text-zinc-500">día{(d.days ?? 1) !== 1 ? "s" : ""}</span>
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-amber-400" />
-    </div>
-  );
-}
+const CONDITION_LABELS: Record<string, string> = {
+  conexion_aceptada: "¿Aceptó la conexión?",
+  respondio:         "¿Respondió el mensaje?",
+  no_respondio:      "Sin respuesta",
+  // legacy keys
+  accepted_connection: "¿Aceptó la conexión?",
+  replied:             "¿Respondió el mensaje?",
+  no_response:         "Sin respuesta",
+};
 
 export function ConditionNode({ data, selected }: NodeProps) {
   const d = data as NodeData;
-  const LABELS: Record<string, string> = {
-    accepted_connection: "¿Aceptó la conexión?",
-    replied:             "¿Respondió el mensaje?",
-    no_response:         "Sin respuesta tras",
-  };
   return (
-    <div className={["w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md", selected ? "ring-2 ring-offset-1 ring-orange-200 border-transparent" : "border-zinc-200"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400" />
-      <div className="flex items-center gap-2 bg-orange-500 px-3 py-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <GitBranch className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 truncate text-[11px] font-bold text-white">
-          {d.label || "Condición IF"}
-        </span>
-        <CheckCircle2 className="h-3.5 w-3.5 text-white/80" />
+    <div className="relative">
+      {d.abVariant && <ABBadge variant={d.abVariant} />}
+      <div
+        className={[
+          "w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md transition-all duration-150",
+          selected
+            ? "ring-2 ring-offset-1 ring-orange-300 border-transparent shadow-lg scale-[1.02]"
+            : "border-zinc-200 hover:border-zinc-300 hover:shadow-lg",
+        ].join(" ")}
+      >
+        <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-orange-500" />
+        <div className="flex items-center gap-2 bg-orange-500 px-3 py-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
+            <GitBranch className="h-2.5 w-2.5 text-white" />
+          </span>
+          <span className="flex-1 truncate text-[11px] font-bold text-white">{d.label || "Condición"}</span>
+          <CheckCircle2 className="h-3.5 w-3.5 text-white/80" />
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-[10px] text-zinc-600">
+            {d.conditionType ? CONDITION_LABELS[d.conditionType] ?? d.conditionType : "Selecciona condición →"}
+          </p>
+        </div>
+        <div className="flex justify-between px-4 pb-2 pt-0.5">
+          <span className="text-[9px] font-bold text-green-600">SÍ ↙</span>
+          <span className="text-[9px] font-bold text-red-500">NO ↘</span>
+        </div>
+        <Handle type="source" id="yes" position={Position.Bottom} style={{ left: "28%" }} className="!border-2 !border-white !h-3 !w-3 !bg-green-500" />
+        <Handle type="source" id="no"  position={Position.Bottom} style={{ left: "72%" }} className="!border-2 !border-white !h-3 !w-3 !bg-red-400"   />
       </div>
-      <div className="px-3 py-2.5">
-        <p className="text-[10px] text-zinc-600">
-          {d.conditionType ? LABELS[d.conditionType] : "Selecciona condición →"}
-          {d.conditionType === "no_response" && d.waitDays ? ` ${d.waitDays} días` : ""}
-        </p>
-      </div>
-      {/* Two source handles: YES (left) and NO (right) */}
-      <div className="flex justify-between px-3 pb-2">
-        <span className="text-[9px] font-bold text-green-500 ml-2">SÍ ↓</span>
-        <span className="text-[9px] font-bold text-red-500 mr-2">NO ↓</span>
-      </div>
-      <Handle type="source" position={Position.Bottom} id="yes" style={{ left: "30%"  }} className="!border-2 !border-white !h-3 !w-3 !bg-green-500" />
-      <Handle type="source" position={Position.Bottom} id="no"  style={{ left: "70%"  }} className="!border-2 !border-white !h-3 !w-3 !bg-red-400"   />
     </div>
   );
 }
+
+// -- EMAIL ---------------------------------------------------------------------
+
+export function EmailNode({ data, selected }: NodeProps) {
+  const d = data as NodeData;
+  return (
+    <NodeShell data={d} selected={selected} icon={Mail}>
+      {d.subject ? (
+        <p className="truncate text-[10px] font-medium text-zinc-700">{d.subject}</p>
+      ) : (
+        <p className="text-[10px] italic text-red-400">Añade asunto y cuerpo</p>
+      )}
+      {d.bodyA && <p className="mt-0.5 line-clamp-1 text-[10px] text-zinc-400">{d.bodyA}</p>}
+      {d.useABTest && (
+        <span className="mt-1 inline-flex rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-600">A/B</span>
+      )}
+    </NodeShell>
+  );
+}
+
+// -- END -----------------------------------------------------------------------
+
+export function EndNode({ data, selected }: NodeProps) {
+  const d = data as NodeData;
+  return (
+    <div className="relative">
+      {d.abVariant && <ABBadge variant={d.abVariant} />}
+      <div
+        className={[
+          "w-48 overflow-hidden rounded-xl border-2 shadow-md transition-all duration-150",
+          selected
+            ? "ring-2 ring-offset-1 ring-slate-400 border-transparent shadow-lg scale-[1.02]"
+            : "border-slate-300 hover:shadow-lg",
+        ].join(" ")}
+      >
+        <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-slate-500" />
+        <div className="flex items-center gap-2 bg-slate-600 px-3 py-2">
+          <Flag className="h-3.5 w-3.5 text-white" />
+          <span className="text-[11px] font-bold text-white">Fin del flujo</span>
+        </div>
+        <div className="bg-slate-50 px-3 py-2">
+          <p className="text-[10px] text-slate-500">Lead archivado automáticamente.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -- AUTOPILOT -----------------------------------------------------------------
 
 export function AutopilotNode({ data, selected }: NodeProps) {
-  return (
-    <div className={["w-56 overflow-hidden rounded-xl border-2 bg-gradient-to-br from-purple-50 to-indigo-50 shadow-md", selected ? "ring-2 ring-offset-1 ring-purple-200 border-transparent" : "border-purple-200"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-purple-400" />
-      <div className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <Bot className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 text-[11px] font-bold text-white">Autopilot IA</span>
-        <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-white">PRO</span>
-      </div>
-      <div className="px-3 py-2.5">
-        <p className="text-[10px] text-purple-700">Claude negocia y cierra la reunión de forma autónoma.</p>
-      </div>
-    </div>
-  );
-}
-
-export function EndNode({ selected }: NodeProps) {
-  return (
-    <div className={["w-44 overflow-hidden rounded-xl border-2 shadow-md", selected ? "ring-2 ring-offset-1 ring-red-200 border-transparent" : "border-red-300"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-red-400" />
-      <div className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-rose-500 px-3 py-2">
-        <Flag className="h-3.5 w-3.5 text-white" />
-        <span className="text-[11px] font-bold text-white">Fin del flujo</span>
-      </div>
-      <div className="bg-red-50 px-3 py-2">
-        <p className="text-[10px] text-red-600">El lead sale de la secuencia. Archivado automáticamente.</p>
-      </div>
-    </div>
-  );
-}
-
-export function GenericActionNode({ data, selected }: NodeProps) {
   const d = data as NodeData;
-  const palette = NODE_PALETTE[d.nodeType] ?? NODE_PALETTE.visit;
-  const Icon = palette.icon;
-
   return (
-    <div className={["w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md", selected ? `ring-2 ring-offset-1 ${palette.ring} border-transparent` : "border-zinc-200"].join(" ")}>
-      <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400" />
-      <div className={`flex items-center gap-2 ${palette.header} px-3 py-2`}>
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-          <Icon className="h-2.5 w-2.5 text-white" />
-        </span>
-        <span className="flex-1 truncate text-[11px] font-bold text-white">{d.label}</span>
-        <CheckCircle2 className="h-3.5 w-3.5 text-white/80" />
+    <div className="relative">
+      {d.abVariant && <ABBadge variant={d.abVariant} />}
+      <div
+        className={[
+          "w-56 overflow-hidden rounded-xl border-2 bg-gradient-to-br from-purple-50 to-indigo-50 shadow-md transition-all duration-150",
+          selected
+            ? "ring-2 ring-offset-1 ring-purple-300 border-transparent shadow-lg scale-[1.02]"
+            : "border-purple-200 hover:shadow-lg",
+        ].join(" ")}
+      >
+        <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-purple-500" />
+        <div className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
+            <Bot className="h-2.5 w-2.5 text-white" />
+          </span>
+          <span className="flex-1 text-[11px] font-bold text-white">Autopilot IA</span>
+          <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-white">PRO</span>
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-[10px] text-purple-700">
+            {d.autopilotEnabled ? "Claude negocia y cierra la reunión." : "Configura el agente →"}
+          </p>
+        </div>
+        <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-purple-500" />
       </div>
-      <div className="px-3 py-2.5">
-        <p className="text-[10px] text-zinc-400">{d.label}</p>
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-zinc-400" />
     </div>
   );
 }
+
+// -- GENERIC (visit / like) ----------------------------------------------------
+
+export function GenericNode({ data, selected }: NodeProps) {
+  const d = data as NodeData;
+  const Icon = d.nodeType === "like" ? Heart : Globe;
+  return (
+    <NodeShell data={d} selected={selected} icon={Icon}>
+      <p className="text-[10px] text-zinc-400">{d.label}</p>
+    </NodeShell>
+  );
+}
+
+// -- WITHDRAW ------------------------------------------------------------------
+
+export function WithdrawNode({ data, selected }: NodeProps) {
+  const d = data as NodeData;
+  return (
+    <NodeShell data={d} selected={selected} icon={UserMinus}>
+      <p className="text-[10px] text-zinc-400">Retira solicitud pendiente o desconecta al lead</p>
+    </NodeShell>
+  );
+}
+
+// -- FIND EMAIL ----------------------------------------------------------------
+
+export function FindEmailNode({ data, selected }: NodeProps) {
+  const d = data as NodeData;
+  return (
+    <NodeShell data={d} selected={selected} icon={AtSign}>
+      {d.foundEmail ? (
+        <p className="text-[10px] font-medium text-teal-700">✓ Email guardado</p>
+      ) : (
+        <p className="text-[10px] text-zinc-400">Buscando email del lead...</p>
+      )}
+    </NodeShell>
+  );
+}
+
+// -- FIND PHONE ----------------------------------------------------------------
+
+export function FindPhoneNode({ data, selected }: NodeProps) {
+  const d = data as NodeData;
+  return (
+    <NodeShell data={d} selected={selected} icon={Phone}>
+      {d.foundPhone ? (
+        <p className="text-[10px] font-medium text-teal-700">✓ Teléfono guardado</p>
+      ) : (
+        <p className="text-[10px] text-zinc-400">Buscando teléfono...</p>
+      )}
+    </NodeShell>
+  );
+}
+
+// -- CONNECT EMAIL -------------------------------------------------------------
+
+export function ConnectEmailNode({ data, selected }: NodeProps) {
+  const d = data as NodeData;
+  return (
+    <div className="relative">
+      {d.abVariant && <ABBadge variant={d.abVariant} />}
+      <div
+        className={[
+          "w-56 overflow-hidden rounded-xl border-2 bg-white shadow-md transition-all duration-150",
+          selected
+            ? "ring-2 ring-offset-1 ring-violet-300 border-transparent shadow-lg scale-[1.02]"
+            : "border-zinc-200 hover:border-zinc-300 hover:shadow-lg",
+        ].join(" ")}
+      >
+        <Handle type="target" position={Position.Top} className="!border-2 !border-white !h-3 !w-3 !bg-violet-500" />
+        <div className="flex items-center gap-2 bg-violet-500 px-3 py-2">
+          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-white/25">
+            <MailPlus className="h-2.5 w-2.5 text-white" />
+          </span>
+          <span className="flex-1 truncate text-[11px] font-bold text-white">{d.label}</span>
+          <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-white">PRO</span>
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-[10px] text-zinc-400">Usa email del lead para conectar</p>
+        </div>
+        <Handle type="source" position={Position.Bottom} className="!border-2 !border-white !h-3 !w-3 !bg-violet-500" />
+      </div>
+    </div>
+  );
+}
+
+// -- nodeTypes map -------------------------------------------------------------
 
 export const nodeTypes = {
   start:      StartNode,
   connect:    ConnectNode,
   message:    MessageNode,
-  email_node: EmailNodeComponent,
-  wait:       WaitNode,
+  delay:      DelayNode,
+  wait:       DelayNode,       // legacy alias
   condition:  ConditionNode,
-  autopilot:  AutopilotNode,
-  visit:      GenericActionNode,
-  like:       GenericActionNode,
+  email:      EmailNode,
+  email_node: EmailNode,       // legacy alias
   end:        EndNode,
-};
+  autopilot:     AutopilotNode,
+  visit:         GenericNode,
+  like:          GenericNode,
+  withdraw:      WithdrawNode,
+  find_email:    FindEmailNode,
+  find_phone:    FindPhoneNode,
+  connect_email: ConnectEmailNode,
+} as const;

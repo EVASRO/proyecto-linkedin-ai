@@ -24,7 +24,7 @@ import type {
   CrmAutomationFull,
 } from "@/app/dashboard/crm/actions";
 
-// ── Limpiar nombres con texto de actividad de LinkedIn ────────────────────────
+// -- Limpiar nombres con texto de actividad de LinkedIn ------------------------
 
 function cleanLinkedInName(raw: string | null | undefined): string {
   if (!raw) return "Sin nombre";
@@ -46,7 +46,7 @@ function cleanLinkedInName(raw: string | null | undefined): string {
   return raw;
 }
 
-// ── Map DB → UI ───────────────────────────────────────────────────────────────
+// -- Map DB → UI ---------------------------------------------------------------
 
 function mapDbLead(l: DbLead): CrmLead {
   const col = l.crm_column;
@@ -97,7 +97,7 @@ function mapDbColumn(c: DbColumn): Column {
   return { id: c.id, title: c.title, color, key: c.key };
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 type View = "kanban" | "list" | "automations" | "forecast";
 
@@ -110,7 +110,7 @@ interface CrmViewProps {
 
 const SOURCES: LeadSource[] = ["LinkedIn", "Web", "Referido", "Email", "Llamada"];
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// -- Component -----------------------------------------------------------------
 
 export function CrmView({ initialLeads, initialColumns, initialAutomations, workspaceId }: CrmViewProps) {
   const router = useRouter();
@@ -229,7 +229,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
     }, 2000);
   }
 
-  // ── Board: drag lead between columns ────────────────────────────────────────
+  // -- Board: drag lead between columns ----------------------------------------
 
   function handleLeadsChange(updated: CrmLead[]) {
     // Find which leads changed status compared to current state
@@ -245,14 +245,14 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
     setLeads(updated);
   }
 
-  // ── Create lead ──────────────────────────────────────────────────────────────
+  // -- Create lead --------------------------------------------------------------
 
   function handleCreate(lead: CrmLead) {
     // Modal already persisted to DB — just add to local state
     setLeads((prev) => [lead, ...prev]);
   }
 
-  // ── Delete lead ──────────────────────────────────────────────────────────────
+  // -- Delete lead --------------------------------------------------------------
 
   function handleLeadDelete(lead: CrmLead) {
     setLeads((prev) => prev.filter((l) => l.id !== lead.id));
@@ -265,7 +265,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
     });
   }
 
-  // ── Archive lead ─────────────────────────────────────────────────────────────
+  // -- Archive lead -------------------------------------------------------------
 
   function handleLeadArchive(leadId: string) {
     setLeads((prev) => prev.filter((l) => l.id !== leadId));
@@ -278,7 +278,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
     });
   }
 
-  // ── Lead modal stage change ───────────────────────────────────────────────────
+  // -- Lead modal stage change ---------------------------------------------------
 
   function handleStageChange(leadId: string, newStatus: string) {
     setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status: newStatus } : l));
@@ -291,7 +291,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
 
-      {/* ── Error banner ─────────────────────────────────────────────── */}
+      {/* -- Error banner ----------------------------------------------- */}
       {crmError && (
         <div className="flex flex-shrink-0 items-center gap-3 bg-red-500 px-5 py-2 text-white text-sm">
           <span className="flex-1">{crmError}</span>
@@ -299,7 +299,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         </div>
       )}
 
-      {/* ── Campaign success banner ───────────────────────────────────── */}
+      {/* -- Campaign success banner ------------------------------------- */}
       {campaignSuccess && (
         <div className="flex flex-shrink-0 items-center gap-3 bg-green-500 px-5 py-2.5 text-white">
           <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
@@ -312,7 +312,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         </div>
       )}
 
-      {/* ── Toolbar ──────────────────────────────────────────────────── */}
+      {/* -- Toolbar ---------------------------------------------------- */}
       <div className="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-border bg-white px-5 py-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-zinc-900">Pipeline CRM</p>
@@ -435,7 +435,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         </div>
       </div>
 
-      {/* ── Content ──────────────────────────────────────────────────── */}
+      {/* -- Content ---------------------------------------------------- */}
       <div className={[
         "flex flex-1 min-h-0",
         view === "kanban"     ? "overflow-hidden px-5 pt-4"          : "",
@@ -603,7 +603,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         )}
       </div>
 
-      {/* ── Lead Modal (legacy, kept for fallback) ───────────────────── */}
+      {/* -- Lead Modal (legacy, kept for fallback) --------------------- */}
       {selectedLead && !selectedLeadId && (
         <LeadModal
           lead={selectedLead}
@@ -614,7 +614,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         />
       )}
 
-      {/* ── Lead Detail Panel ────────────────────────────────────────── */}
+      {/* -- Lead Detail Panel ------------------------------------------ */}
       <LeadDetailPanel
         leadId={selectedLeadId}
         onClose={() => setSelectedLeadId(null)}
@@ -625,12 +625,12 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         }}
       />
 
-      {/* ── Settings Modal ───────────────────────────────────────────── */}
+      {/* -- Settings Modal --------------------------------------------- */}
       {settingsOpen && (
         <SettingsModal leads={leads} onClose={() => setSettingsOpen(false)} />
       )}
 
-      {/* ── Campaign Wizard ──────────────────────────────────────────── */}
+      {/* -- Campaign Wizard -------------------------------------------- */}
       {wizardOpen && (
         <CampaignWizard
           onComplete={handleWizardComplete}
@@ -638,7 +638,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         />
       )}
 
-      {/* ── Create Lead Modal ────────────────────────────────────────── */}
+      {/* -- Create Lead Modal ------------------------------------------ */}
       {createLeadOpen && (
         <CreateLeadModal
           columns={columns}

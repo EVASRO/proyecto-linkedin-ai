@@ -1,12 +1,5 @@
-import { getConfigData } from "./actions";
-import { ConfiguracionView } from "@/components/configuracion/ConfiguracionView";
+import { redirect } from "next/navigation";
 
-export default async function ConfiguracionPage() {
-  const result = await getConfigData();
-  return (
-    <ConfiguracionView
-      initialSettings={result.data?.settings ?? null}
-      initialWebhooks={result.data?.webhooks ?? []}
-    />
-  );
+export default function ConfiguracionPage() {
+  redirect("/dashboard/settings?tab=webhooks");
 }

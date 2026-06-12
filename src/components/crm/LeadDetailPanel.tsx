@@ -231,7 +231,7 @@ export function LeadDetailPanel({ leadId, onClose, onStageChange }: LeadDetailPa
             {/* CONTENT */}
             <div className="flex-1 overflow-y-auto space-y-4 p-4">
 
-              {/* ── PERFIL ── */}
+              {/* -- PERFIL -- */}
               {tab === 'profile' && (
                 <>
                   <Section title="Datos de contacto">
@@ -319,7 +319,7 @@ export function LeadDetailPanel({ leadId, onClose, onStageChange }: LeadDetailPa
                 </>
               )}
 
-              {/* ── ACTIVIDAD ── */}
+              {/* -- ACTIVIDAD -- */}
               {tab === 'activity' && (
                 <div className="relative pl-6">
                   <div className="absolute bottom-2 left-[15px] top-2 w-px bg-zinc-200" />
@@ -347,7 +347,7 @@ export function LeadDetailPanel({ leadId, onClose, onStageChange }: LeadDetailPa
                 </div>
               )}
 
-              {/* ── MENSAJES ── */}
+              {/* -- MENSAJES -- */}
               {tab === 'messages' && (
                 <div className="space-y-2">
                   {(data?.messages ?? []).length === 0 && (

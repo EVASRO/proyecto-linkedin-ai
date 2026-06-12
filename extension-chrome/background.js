@@ -78,7 +78,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await chrome.storage.local.remove([
           'supabase_token', 'supabase_refresh_token',
           'supabase_user_id', 'supabase_workspace_id',
-          'engine_running',
+          'engine_running', 'daily_stats', 'action_counter',
         ]);
         sendResponse({ ok: true });
         break;
@@ -93,6 +93,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const wsId = await getWorkspaceId();
         if (!wsId) { sendResponse({ ok: false, error: 'No se pudo obtener workspace. Cierra sesión y vuelve a entrar.' }); break; }
         await chrome.storage.local.set({ engine_running: true });
+        // Sincronizar stats al arrancar (evita contar mal desde 0)
+        const freshWsId = await getWorkspaceId();
+        if (freshWsId) await getTodayStats(freshWsId);
         await sendHeartbeat();
         await syncLinkedInAccount();
         sendResponse({ ok: true });
@@ -109,6 +112,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await handleActionDone(msg.taskId, msg.result);
         sendResponse({ ok: true });
         break;
+
+      case 'FORCE_INBOX_CHECK': {
+        const { supabase_workspace_id: wsIdForce } = await chrome.storage.local.get('supabase_workspace_id');
+        if (wsIdForce) await scheduleInboxCheck(wsIdForce);
+        sendResponse({ ok: true });
+        break;
+      }
 
       case 'LINKEDIN_PROFILE_DETECTED': {
         await chrome.storage.local.set({ linkedin_profile: msg.profile });
@@ -256,12 +266,6 @@ async function processTick() {
   // TODO: Re-enable for production
   // if (await isWeekendPaused()) return;
 
-  // Verificar cuota diaria antes de cualquier tarea
-  if (!await checkDailyLimits()) {
-    console.log('[NexusAI] Límite diario alcanzado, saltando tick');
-    return;
-  }
-
   // Validate token before hitting Supabase — avoids "Failed to fetch" on expiry
   const token = await getStoredToken();
   if (!token) {
@@ -271,6 +275,15 @@ async function processTick() {
 
   const wsId = await getWorkspaceId();
   if (!wsId) return;
+
+  // Check de límites desde Supabase (fuente de verdad)
+  const _settings = await getSettings();
+  const _stats = await getTodayStats(wsId);
+  if (_stats.connections >= _settings.maxConnections &&
+      _stats.messages >= _settings.maxMessages) {
+    console.log('[NexusAI] Límite diario alcanzado (Supabase), saltando tick');
+    return;
+  }
 
   const { processing } = await chrome.storage.local.get('processing');
   if (processing) {
@@ -294,11 +307,40 @@ async function processTick() {
 
   try {
     const now = new Date().toISOString();
-    const tasks = await supabaseFetch(
-      `engine_queue?workspace_id=eq.${wsId}&status=eq.pending&scheduled_at=lte.${now}&order=priority.desc,scheduled_at.asc&limit=1`
-    );
+
+    // Fetch only tasks belonging to active, non-archived campaigns
+    const activeCampaigns = await supabaseFetch(
+      `campaigns?workspace_id=eq.${wsId}&status=eq.active&deleted_at=is.null&select=id,priority`
+    ).catch(() => []);
+    const activeCampaignIds = (activeCampaigns ?? []).map(c => c.id);
+
+    let tasks = [];
+    if (activeCampaignIds.length > 0) {
+      // Order by campaign priority (desc) then scheduled_at (asc)
+      const sortedIds = (activeCampaigns ?? [])
+        .sort((a, b) => (b.priority ?? 5) - (a.priority ?? 5))
+        .map(c => c.id);
+      tasks = await supabaseFetch(
+        `engine_queue?workspace_id=eq.${wsId}&status=in.(pending,scheduled)` +
+        `&campaign_id=in.(${sortedIds.join(',')})` +
+        `&scheduled_at=lte.${now}&order=scheduled_at.asc&limit=1`
+      ).catch(() => []) ?? [];
+    }
+
     if (!tasks || tasks.length === 0) {
-      // Sin tareas de alta prioridad — detectar conexiones aceptadas en segundo plano
+      // SIEMPRE procesar check_connection y check_inbox sin filtro de campaña activa
+      const maintenanceTasks = await supabaseFetch(
+        `engine_queue?workspace_id=eq.${wsId}` +
+        `&action_type=in.(check_connection,check_inbox)` +
+        `&status=in.(pending,scheduled)` +
+        `&scheduled_at=lte.${now}` +
+        `&order=scheduled_at.asc&limit=1`
+      ).catch(() => []) ?? [];
+      if (maintenanceTasks.length > 0) tasks = maintenanceTasks;
+    }
+
+    if (!tasks || tasks.length === 0) {
+      // Sin tareas — detectar conexiones aceptadas en segundo plano
       await detectNewConnections(wsId).catch(() => {});
 
       // Verificar inbox cada ~15 min
@@ -333,7 +375,7 @@ async function processTick() {
 
 // ── Detectar nuevas conexiones aceptadas ──────────────────────────────────────
 async function detectNewConnections(wsId) {
-  const cutoff = new Date(Date.now() - 2 * 3600 * 1000).toISOString(); // >2h
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString(); // >30min
   const pendingLeads = await supabaseFetch(
     `leads?workspace_id=eq.${wsId}&crm_column=eq.conexion_enviada` +
     `&connection_sent_at=lte.${cutoff}` +
@@ -344,9 +386,10 @@ async function detectNewConnections(wsId) {
   if (!pendingLeads?.length) return;
 
   for (const lead of pendingLeads) {
-    if (!lead.linkedin_url) continue;
+    const profileUrl = lead.linkedin_url ?? lead.salesnav_url;
+    if (!profileUrl) continue;
     const existing = await supabaseFetch(
-      `engine_queue?lead_id=eq.${lead.id}&task_type=eq.check_connection&status=eq.pending&select=id`,
+      `engine_queue?lead_id=eq.${lead.id}&action_type=eq.check_connection&status=eq.pending&select=id`,
       { method: 'GET' }
     ).catch(() => []);
     if (existing?.length) continue;
@@ -361,7 +404,7 @@ async function detectNewConnections(wsId) {
         action_type:  'check_connection',
         priority:     1,
         scheduled_at: new Date().toISOString(),
-        payload:      { profile_url: lead.linkedin_url, lead_id: lead.id, campaign_id: lead.campaign_id },
+        payload:      { profile_url: profileUrl, lead_id: lead.id, campaign_id: lead.campaign_id },
       }),
     }).catch(() => {});
   }
@@ -413,6 +456,26 @@ async function executeTask(task) {
   }
 
   try {
+    // Double-check: verify campaign is still active before executing
+    // EXCEPCIÓN: check_connection y check_inbox son tareas de mantenimiento que deben
+    // correr siempre, independientemente del estado de la campaña
+    const MAINTENANCE_TASKS = ['check_connection', 'check_inbox'];
+    if (task.campaign_id && !MAINTENANCE_TASKS.includes(task.action_type)) {
+      const campCheck = await supabaseFetch(
+        `campaigns?id=eq.${task.campaign_id}&select=status,deleted_at&limit=1`
+      ).catch(() => null);
+      const camp = campCheck?.[0];
+      if (!camp || camp.status !== 'active' || camp.deleted_at) {
+        console.log(`[NexusAI] Campaign ${task.campaign_id} no está activa, marcando tarea como paused`);
+        await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body:   JSON.stringify({ status: 'paused' }),
+        }).catch(() => {});
+        await chrome.storage.local.set({ processing: false });
+        return;
+      }
+    }
+
     const profileUrl = task.payload?.profile_url ?? task.payload?.linkedin_url ?? null;
 
     // Cases that navigate to a profile URL need it to be present
@@ -481,32 +544,101 @@ async function executeTask(task) {
         });
         break;
 
-      case 'connect':
+      case 'connect': {
         await chrome.tabs.update(tab.id, { url: profileUrl });
         await waitForTabComplete(tab.id);
         await sleep(3000 + Math.random() * 2000);
+        await chrome.tabs.update(tab.id, { active: true });
+        await sleep(500);
+        const connectLeadId = task.payload?.lead_id ?? null;
+        const rawNote       = task.payload?.note ?? '';
+        const finalNote     = await interpolateVariables(rawNote, connectLeadId);
+        const connectLead   = connectLeadId
+          ? await supabaseFetch(
+              `leads?id=eq.${connectLeadId}&select=full_name,company,headline,location`,
+              { method: 'GET' }
+            ).then(r => r?.[0] ?? null).catch(() => null)
+          : null;
         await sendToContentScript(tab.id, {
           action:     'execute_task',
           task:       'connect',
           taskId:     task.id,
-          note:       task.payload?.note        ?? '',
-          leadId:     task.payload?.lead_id     ?? null,
+          note:       finalNote,
+          addNote:    task.payload?.add_note ?? false,
+          lead:       connectLead ? (() => {
+            const parts     = (connectLead.full_name || '').trim().split(/\s+/);
+            const firstName = parts[0] || '';
+            const lastName  = parts.slice(1).join(' ') || '';
+            return {
+              full_name:  connectLead.full_name || '',
+              first_name: firstName,
+              last_name:  lastName,
+              company:    connectLead.company   || '',
+              job_title:  connectLead.headline  || '',
+              location:   connectLead.location  || '',
+            };
+          })() : null,
+          leadId:     connectLeadId,
           campaignId: task.payload?.campaign_id ?? null,
         });
         break;
+      }
 
       case 'message': {
+        // Si el task requiere conexión aceptada, verificar antes de ejecutar
+        if (task.payload?.require_accepted) {
+          const leadCheck = await supabaseFetch(
+            `leads?id=eq.${task.payload.lead_id}&select=crm_column`,
+            { method: 'GET' }
+          ).catch(() => null);
+          const col = leadCheck?.[0]?.crm_column;
+          const accepted = ['conexion_aceptada', 'en_conversacion', 'reunion_agendada', 'cliente'].includes(col);
+          if (!accepted) {
+            // Reschedule +4h — no dejar en 'processing' (quedaría bloqueado)
+            console.log(`[NexusAI] Mensaje pendiente — lead ${task.payload.lead_id} aún no aceptó (${col}) → reschedule +4h`);
+            const reschedAt = new Date(Date.now() + 4 * 3600 * 1000).toISOString();
+            await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: JSON.stringify({ status: 'scheduled', scheduled_at: reschedAt }),
+            }).catch(() => {});
+            await chrome.storage.local.set({ processing: false });
+            return;
+          }
+        }
+
         await chrome.tabs.update(tab.id, { url: profileUrl });
         await waitForTabComplete(tab.id);
         await sleep(3000 + Math.random() * 2000);
+        await chrome.tabs.update(tab.id, { active: true });
+        await sleep(500);
+        const msgLeadId = task.payload?.lead_id ?? null;
         const rawText   = task.payload?.message_text ?? '';
-        const finalText = await interpolateVariables(rawText, task.payload?.lead_id ?? null);
+        const finalText = await interpolateVariables(rawText, msgLeadId);
+        const msgLead   = msgLeadId
+          ? await supabaseFetch(
+              `leads?id=eq.${msgLeadId}&select=full_name,company,headline,location`,
+              { method: 'GET' }
+            ).then(r => r?.[0] ?? null).catch(() => null)
+          : null;
         await sendToContentScript(tab.id, {
           action:     'execute_task',
           task:       'message',
           taskId:     task.id,
           text:       finalText,
-          leadId:     task.payload?.lead_id     ?? null,
+          lead:       msgLead ? (() => {
+            const parts     = (msgLead.full_name || '').trim().split(/\s+/);
+            const firstName = parts[0] || '';
+            const lastName  = parts.slice(1).join(' ') || '';
+            return {
+              full_name:  msgLead.full_name || '',
+              first_name: firstName,
+              last_name:  lastName,
+              company:    msgLead.company   || '',
+              job_title:  msgLead.headline  || '',
+              location:   msgLead.location  || '',
+            };
+          })() : null,
+          leadId:     msgLeadId,
           campaignId: task.payload?.campaign_id ?? null,
         });
         await chrome.storage.local.set({
@@ -570,6 +702,160 @@ async function executeTask(task) {
           processing_started_at: Date.now(),
           processing_task_id:    task.id,
           processing_task_type:  'check_inbox',
+        });
+        break;
+      }
+
+      case 'withdraw': {
+        const profileUrl = task.payload?.linkedin_url ?? task.payload?.salesnav_url;
+        if (!profileUrl) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'failed', last_error: 'No profile URL' }),
+          }).catch(() => {});
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+        await chrome.tabs.update(tab.id, { url: profileUrl });
+        await waitForTabComplete(tab.id);
+        await sleep(3000 + Math.random() * 1000);
+        await sendToContentScript(tab.id, {
+          action: 'execute_task', task: 'withdraw',
+          taskId: task.id, leadId: task.payload?.lead_id ?? null,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id: task.id, processing_task_type: 'withdraw',
+        });
+        break;
+      }
+
+      case 'find_email': {
+        const profileUrl = task.payload?.linkedin_url ?? task.payload?.salesnav_url;
+        if (!profileUrl) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'failed', last_error: 'No profile URL' }),
+          }).catch(() => {});
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+        if (task.payload?.skip_if_exists) {
+          const leadData = await supabaseFetch(
+            `leads?id=eq.${task.payload.lead_id}&select=email`, { method: 'GET' }
+          ).catch(() => null);
+          if (leadData?.[0]?.email) {
+            await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: JSON.stringify({ status: 'done', executed_at: new Date().toISOString(),
+                                    last_error: 'skipped: already has email' }),
+            }).catch(() => {});
+            await chrome.storage.local.set({ processing: false });
+            return;
+          }
+        }
+        await chrome.tabs.update(tab.id, { url: profileUrl });
+        await waitForTabComplete(tab.id);
+        await sleep(3000 + Math.random() * 1500);
+        await sendToContentScript(tab.id, {
+          action: 'execute_task', task: 'find_email',
+          taskId: task.id, leadId: task.payload?.lead_id ?? null,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id: task.id, processing_task_type: 'find_email',
+        });
+        break;
+      }
+
+      case 'find_phone': {
+        const profileUrl = task.payload?.linkedin_url ?? task.payload?.salesnav_url;
+        if (!profileUrl) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'failed', last_error: 'No profile URL' }),
+          }).catch(() => {});
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+        if (task.payload?.skip_if_exists) {
+          const leadData = await supabaseFetch(
+            `leads?id=eq.${task.payload.lead_id}&select=phone`, { method: 'GET' }
+          ).catch(() => null);
+          if (leadData?.[0]?.phone) {
+            await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: JSON.stringify({ status: 'done', executed_at: new Date().toISOString(),
+                                    last_error: 'skipped: already has phone' }),
+            }).catch(() => {});
+            await chrome.storage.local.set({ processing: false });
+            return;
+          }
+        }
+        await chrome.tabs.update(tab.id, { url: profileUrl });
+        await waitForTabComplete(tab.id);
+        await sleep(3000 + Math.random() * 1500);
+        await sendToContentScript(tab.id, {
+          action: 'execute_task', task: 'find_phone',
+          taskId: task.id, leadId: task.payload?.lead_id ?? null,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id: task.id, processing_task_type: 'find_phone',
+        });
+        break;
+      }
+
+      case 'connect_email': {
+        const leadData = await supabaseFetch(
+          `leads?id=eq.${task.payload?.lead_id}&select=email,full_name`, { method: 'GET' }
+        ).catch(() => null);
+        const leadEmail = leadData?.[0]?.email;
+        if (!leadEmail) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'failed', last_error: 'Lead has no email in DB' }),
+          }).catch(() => {});
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+        const inviteUrl = `https://www.linkedin.com/people/invite-by-email/?emailAddress=${encodeURIComponent(leadEmail)}`;
+        await chrome.tabs.update(tab.id, { url: inviteUrl });
+        await waitForTabComplete(tab.id);
+        await sleep(3500 + Math.random() * 1500);
+        let ceNote = task.payload?.connection_note ?? '';
+        if (ceNote && task.payload?.lead_id) {
+          ceNote = await interpolateVariables(ceNote, task.payload.lead_id);
+        }
+        await sendToContentScript(tab.id, {
+          action: 'execute_task', task: 'connect_email',
+          taskId: task.id, leadId: task.payload?.lead_id ?? null,
+          addNote: task.payload?.add_note ?? false,
+          note: ceNote,
+          email: leadEmail,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id: task.id, processing_task_type: 'connect_email',
+        });
+        break;
+      }
+
+      case 'post_linkedin': {
+        const feedUrl = 'https://www.linkedin.com/feed/';
+        await chrome.tabs.update(tab.id, { url: feedUrl });
+        await waitForTabComplete(tab.id);
+        await sleep(4000 + Math.random() * 2000);
+        await sendToContentScript(tab.id, {
+          action:  'execute_task',
+          task:    'post_linkedin',
+          taskId:  task.id,
+          content: task.payload?.content ?? '',
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id:    task.id,
+          processing_task_type:  'post_linkedin',
         });
         break;
       }
@@ -638,6 +924,14 @@ async function executeTask(task) {
         return;
     }
 
+    // Minimizar ventana del engine para no interrumpir al usuario
+    // Solo si hay otra ventana disponible
+    const windows = await chrome.windows.getAll({ windowTypes: ['normal'] });
+    const engineWindow = windows.find(w => w.focused);
+    if (windows.length > 1 && engineWindow) {
+      await chrome.windows.update(engineWindow.id, { state: 'minimized' }).catch(() => {});
+    }
+
     // Registrar timestamp e id de la tarea en curso para el watchdog
     await chrome.storage.local.set({
       processing_started_at: Date.now(),
@@ -694,8 +988,9 @@ async function sendHeartbeat() {
   // Sync LinkedIn account on every heartbeat (idempotent upsert)
   await syncLinkedInAccount();
 
-  const { engine_running, daily_stats } =
-    await chrome.storage.local.get(['engine_running', 'daily_stats']);
+  const { engine_running } = await chrome.storage.local.get('engine_running');
+  // Leer stats del caché (ya actualizado por getTodayStats en el último tick)
+  const { daily_stats } = await chrome.storage.local.get('daily_stats');
 
   try {
     await supabaseFetch('ghost_engine_sessions?on_conflict=workspace_id', {
@@ -724,26 +1019,43 @@ async function sendHeartbeat() {
   chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: status }).catch(() => {});
 }
 
+// ── Helper: derivar plataforma de origen desde URL del lead ──────────────────
+async function getLeadSource(leadId, wsId) {
+  const lead = await supabaseFetch(
+    `leads?id=eq.${leadId}&select=linkedin_url`, { method: 'GET' }
+  ).catch(() => null);
+  const url = lead?.[0]?.linkedin_url ?? '';
+  return url.includes('sales/lead') || url.includes('salesnav') ? 'salesnav' : 'linkedin';
+}
+
 // ── Handlers de resultados del content script ─────────────────────────────────
 async function handleActionDone(taskId, result) {
   const wsId = await getWorkspaceId();
 
-  // 1. Marcar tarea como done en engine_queue
-  await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
-    method: 'PATCH', prefer: 'return=minimal',
-    body:   JSON.stringify({ status: 'done', executed_at: new Date().toISOString() }),
-  });
-
-  // 2. Actualizar stats diarias — siempre liberar processing en finally
+  // 1. Stats diarias — siempre liberar processing en finally
+  // El PATCH final a engine_queue se hace al final, solo si result.success
   try {
+    const { action_counter } = await chrome.storage.local.get('action_counter');
+    const newCount = (action_counter ?? 0) + 1;
+    await chrome.storage.local.set({ action_counter: newCount });
+
     const { daily_stats } = await chrome.storage.local.get('daily_stats');
-    const stats = daily_stats ?? { connections: 0, messages: 0, likes: 0, date: todayStr() };
+    const stats = daily_stats ?? { connections: 0, messages: 0, likes: 0, views: 0, date: todayStr() };
     if (stats.date !== todayStr())
-      Object.assign(stats, { connections: 0, messages: 0, likes: 0, date: todayStr() });
-    if (result.action === 'connect') stats.connections++;
-    if (result.action === 'message') stats.messages++;
-    if (result.action === 'like')    stats.likes++;
+      Object.assign(stats, { connections: 0, messages: 0, likes: 0, views: 0, date: todayStr() });
+    if (result.action === 'connect' && result.success &&
+        result.reason !== 'already_connected' && result.reason !== 'already_pending')
+      stats.connections++;
+    if (result.action === 'message'      && result.success) stats.messages++;
+    if (result.action === 'like'         && result.success) stats.likes++;
+    if (result.action === 'view_profile' && result.success) stats.views++;
     await chrome.storage.local.set({ daily_stats: stats });
+
+    // Re-sync desde Supabase cada 10 acciones (corrige drift)
+    if (newCount % 10 === 0) {
+      const freshStats = await getTodayStats(wsId);
+      console.log('[NexusAI] Re-sync stats cada 10 acciones:', freshStats);
+    }
   } finally {
     await chrome.storage.local.set({
       processing:            false,
@@ -768,7 +1080,9 @@ async function handleActionDone(taskId, result) {
       return;
     }
 
-    if (result.reason === 'send_button_not_found' || result.reason === 'button_not_found') {
+    if (['send_button_not_found', 'button_not_found', 'modal_not_opened',
+         'unconfirmed', 'dialog_send_button_not_found',
+         'more_button_not_found', 'connect_item_not_found'].includes(result.reason)) {
       const taskRow = await supabaseFetch(
         `engine_queue?id=eq.${taskId}&select=attempts`, { method: 'GET' }
       ).catch(() => null);
@@ -782,17 +1096,163 @@ async function handleActionDone(taskId, result) {
           ...(attempts < 3 && {
             scheduled_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
           }),
-          last_error: `Button not found (attempt ${attempts}/3)`,
+          last_error: `${result.reason} (attempt ${attempts}/3)`,
         }),
       }).catch(() => {});
       return;
     }
+
+    if (result.reason === 'out_of_network_locked') {
+      const taskRow = await supabaseFetch(
+        `engine_queue?id=eq.${taskId}&select=id,attempts`, { method: 'GET' }
+      ).catch(() => null);
+      const retryAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await supabaseFetch(`engine_queue?id=eq.${taskRow[0].id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({
+          status:       'scheduled',
+          scheduled_at: retryAt,
+          attempts:     (taskRow[0].attempts ?? 0) + 1,
+          last_error:   'OUT_OF_NETWORK: sin botón conectar. Reprogramado para 24h.',
+        }),
+      }).catch(() => {});
+      await chrome.storage.local.set({ processing: false });
+      return;
+    }
+
+    // Catch-all: fallo sin reason específico → marcar como failed
+    await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: JSON.stringify({
+        status:     'failed',
+        last_error: result.reason ?? 'unknown_failure',
+        executed_at: new Date().toISOString(),
+      }),
+    }).catch(() => {});
+
+    // Marcar mensaje como fallido si era un task de mensaje
+    if (result.action === 'message' && result.lead_id) {
+      const taskRow = await supabaseFetch(
+        `engine_queue?id=eq.${taskId}&select=payload`, { method: 'GET' }
+      ).catch(() => null);
+      const draftMsgId = taskRow?.[0]?.payload?.draft_msg_id ?? null;
+      const failFilter = draftMsgId
+        ? `messages?id=eq.${draftMsgId}`
+        : `messages?lead_id=eq.${result.lead_id}&status=eq.sending&sender=eq.user`;
+      await supabaseFetch(failFilter, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ status: 'failed' }),
+      }).catch(() => null);
+    }
+    return;
   }
 
   // 4. Actualizar el lead en el CRM según la acción completada
   if (wsId && result.lead_id) {
     try {
       const now = new Date().toISOString();
+
+      // ── Conexión ya existente → mover a conexion_aceptada ────────────────
+      if (result.action === 'connect' && result.reason === 'already_connected') {
+        await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            crm_column:             'conexion_aceptada',
+            connection_accepted_at: now,
+            status:                 'connected',
+          }),
+        }).catch(e => console.warn('[NexusAI] PATCH already_connected:', e));
+
+        // Obtener workspace_id real del lead (el wsId externo puede ser de otro workspace)
+        const acLeadData = await supabaseFetch(
+          `leads?id=eq.${result.lead_id}&select=workspace_id`,
+          { method: 'GET' }
+        ).catch(() => null);
+        const acWsId = acLeadData?.[0]?.workspace_id ?? wsId;
+        const convId = await createOrGetConversation(result.lead_id, acWsId, result.campaign_id ?? null);
+        if (convId) console.log('[NexusAI] already_connected: conversation creada/encontrada:', convId);
+
+        if (result.campaign_id) {
+          const campRows = await supabaseFetch(
+            `campaigns?id=eq.${result.campaign_id}&select=workflow_json`, { method: 'GET' }
+          ).catch(() => null);
+          const wf          = campRows?.[0]?.workflow_json ?? {};
+          const followUpMsg = wf.follow_up_message || wf.connection_message || '';
+          const delayDays   = wf.follow_up_delay_days ?? 0;
+
+          // Solo encolar follow-up manual si la campaña NO usa FlowBuilder (backward compat)
+          const usesFlowBuilder = Array.isArray(wf.nodes) && wf.nodes.length > 0;
+          if (!usesFlowBuilder && followUpMsg && result.lead_id) {
+            const interpolatedMsg = await interpolateVariables(followUpMsg, result.lead_id);
+            const leadRows = await supabaseFetch(
+              `leads?id=eq.${result.lead_id}&select=linkedin_url`, { method: 'GET' }
+            ).catch(() => null);
+            await supabaseFetch('engine_queue', {
+              method: 'POST', prefer: 'return=minimal',
+              body: JSON.stringify({
+                workspace_id: wsId,
+                campaign_id:  result.campaign_id,
+                lead_id:      result.lead_id,
+                task_type:    'message',
+                action_type:  'message',
+                status:       'pending',
+                priority:     9,
+                scheduled_at: new Date(Date.now() + delayDays * 24 * 3600 * 1000).toISOString(),
+                payload: {
+                  profile_url:  leadRows?.[0]?.linkedin_url,
+                  lead_id:      result.lead_id,
+                  campaign_id:  result.campaign_id,
+                  message_text: interpolatedMsg,
+                  message_type: 'follow_up_existing_connection',
+                },
+              }),
+            }).catch(() => {});
+            console.log('[NexusAI] already_connected: follow-up encolado para', result.lead_id);
+          }
+        }
+
+        await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            status:      'done',
+            executed_at: now,
+            last_error:  'already_connected — moved to conexion_aceptada',
+          }),
+        }).catch(() => {});
+        console.log('[NexusAI] already_connected → conexion_aceptada:', result.lead_id);
+        return;
+      }
+
+      // ── Conexión pendiente previa → mantener en conexion_enviada ─────────
+      if (result.action === 'connect' && result.reason === 'already_pending') {
+        const leadRow = await supabaseFetch(
+          `leads?id=eq.${result.lead_id}&select=crm_column,connection_sent_at`, { method: 'GET' }
+        ).catch(() => null);
+        const currentColumn = leadRow?.[0]?.crm_column;
+        const alreadySentAt = leadRow?.[0]?.connection_sent_at;
+
+        if (currentColumn !== 'conexion_enviada' && currentColumn !== 'conexion_aceptada') {
+          await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              crm_column:         'conexion_enviada',
+              connection_sent_at: alreadySentAt ?? now,
+              status:             'contacted',
+            }),
+          }).catch(() => {});
+        }
+
+        await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            status:      'done',
+            executed_at: now,
+            last_error:  'already_pending — no reenvío',
+          }),
+        }).catch(() => {});
+        console.log('[NexusAI] already_pending → conexion_enviada:', result.lead_id);
+        return;
+      }
 
       if (result.action === 'connect' && result.success !== false) {
         const nota = result.connection_note || result.note || result.message || null;
@@ -807,26 +1267,9 @@ async function handleActionDone(taskId, result) {
         }).catch(e => console.error('[NexusAI] PATCH lead connect error:', e));
 
         // Crear conversación en Smart Inbox
-        const existingConv = await supabaseFetch(
-          `conversations?lead_id=eq.${result.lead_id}&workspace_id=eq.${wsId}&select=id`,
-          { method: 'GET' }
-        ).catch(() => []);
+        const convId = await createOrGetConversation(result.lead_id, wsId, result.campaign_id ?? null);
+        if (convId) console.log('[NexusAI] conexion_enviada: conversation creada/encontrada:', convId);
 
-        let convId = existingConv?.[0]?.id;
-        if (!convId) {
-          const newConv = await supabaseFetch('conversations', {
-            method: 'POST', prefer: 'return=representation',
-            body: JSON.stringify({
-              workspace_id:     wsId,
-              lead_id:          result.lead_id,
-              campaign_id:      result.campaign_id ?? null,
-              status:           'active',
-              autopilot_active: false,
-              unread_count:     0,
-            }),
-          }).catch(() => null);
-          convId = newConv?.[0]?.id;
-        }
         if (convId && nota) {
           await supabaseFetch('messages', {
             method: 'POST', prefer: 'return=minimal',
@@ -836,11 +1279,20 @@ async function handleActionDone(taskId, result) {
               workspace_id:    wsId,
               sender:          'user',
               message_text:    nota,
-              event:           'connection_sent',
               status:          'sent',
               is_read:         true,
               timestamp:       now,
-              inserted_at:     now,
+            }),
+          }).catch(() => {});
+        }
+        if (convId) {
+          const source = result.lead_id ? await getLeadSource(result.lead_id, wsId) : 'linkedin';
+          await supabaseFetch(`conversations?id=eq.${convId}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              last_message_preview: nota ? nota.slice(0, 100) : '✓ Conexión enviada',
+              last_message_at:      now,
+              source,
             }),
           }).catch(() => {});
         }
@@ -850,7 +1302,7 @@ async function handleActionDone(taskId, result) {
         // Manejar aceptación con follow-up automático
         await handleConnectionAccepted(result.profile_url, wsId);
 
-        // Encolar follow-up si la campaña lo tiene configurado
+        // Encolar follow-up si la campaña lo tiene configurado (solo backward compat)
         if (result.campaign_id) {
           const campRows = await supabaseFetch(
             `campaigns?id=eq.${result.campaign_id}&select=workflow_json`,
@@ -859,7 +1311,9 @@ async function handleActionDone(taskId, result) {
           const wf           = campRows?.[0]?.workflow_json ?? {};
           const followUpMsg  = wf.follow_up_message || wf.connection_message || '';
           const followUpDays = wf.follow_up_delay_days ?? 1;
-          if (followUpMsg && result.lead_id) {
+          // Solo encolar follow-up manual si la campaña NO usa FlowBuilder (backward compat)
+          const usesFlowBuilder = Array.isArray(wf.nodes) && wf.nodes.length > 0;
+          if (!usesFlowBuilder && followUpMsg && result.lead_id) {
             const leadRows = await supabaseFetch(
               `leads?id=eq.${result.lead_id}&select=linkedin_url`,
               { method: 'GET' }
@@ -888,14 +1342,20 @@ async function handleActionDone(taskId, result) {
         }
 
       } else if (result.action === 'message' && result.success !== false) {
-        await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
-          method: 'PATCH', prefer: 'return=minimal',
-          body: JSON.stringify({
-            crm_column: 'en_conversacion',
-            status:     'in_conversation',
-            next_task:  'Esperar respuesta',
-          }),
-        }).catch(() => {});
+        const msgLeadRow = await supabaseFetch(
+          `leads?id=eq.${result.lead_id}&select=crm_column`, { method: 'GET' }
+        ).catch(() => null);
+        const currentMsgCol = msgLeadRow?.[0]?.crm_column;
+        if (currentMsgCol === 'conexion_aceptada' || currentMsgCol === 'conexion_enviada') {
+          await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              crm_column: 'en_conversacion',
+              status:     'in_conversation',
+              next_task:  'Esperar respuesta',
+            }),
+          }).catch(() => {});
+        }
 
         // Registrar mensaje enviado en conversations/messages
         const existingConv2 = await supabaseFetch(
@@ -926,11 +1386,16 @@ async function handleActionDone(taskId, result) {
               workspace_id:    wsId,
               sender:          'user',
               message_text:    result.message_text,
-              event:           'message_sent',
               status:          'sent',
               is_read:         true,
               timestamp:       now,
-              inserted_at:     now,
+            }),
+          }).catch(() => {});
+          await supabaseFetch(`conversations?id=eq.${convId2}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              last_message_preview: result.message_text.slice(0, 100),
+              last_message_at:      now,
             }),
           }).catch(() => {});
         }
@@ -963,11 +1428,9 @@ async function handleActionDone(taskId, result) {
               workspace_id:    wsId,
               sender:          'prospect',
               message_text:    result.reply_text,
-              event:           'reply_received',
               status:          'received',
               is_read:         false,
               timestamp:       now,
-              inserted_at:     now,
             }),
           }).catch(() => {});
         }
@@ -1049,12 +1512,10 @@ async function handleActionDone(taskId, result) {
                 workspace_id:    wsId,
                 sender:          'prospect',
                 message_text:    conv.preview,
-                event:           'reply_received',
-                status:          'received',
+                  status:          'received',
                 is_read:         false,
                 timestamp:       conv.timestamp ?? now,
-                inserted_at:     now,
-              }),
+                }),
             }).catch(() => {});
           }
 
@@ -1115,16 +1576,18 @@ async function handleActionDone(taskId, result) {
             }),
           }).catch(e => console.error('[NexusAI] PATCH check_connection error:', e));
 
-          // Obtener config follow-up de la campaña
+          // Obtener config follow-up de la campaña (solo backward compat)
           if (result.campaign_id) {
             const campRows2 = await supabaseFetch(
               `campaigns?id=eq.${result.campaign_id}&select=workflow_json`,
               { method: 'GET' }
             ).catch(() => null);
-            const wf2          = campRows2?.[0]?.workflow_json ?? {};
-            const followUpMsg2 = wf2.follow_up_message || wf2.connection_message || '';
+            const wf2           = campRows2?.[0]?.workflow_json ?? {};
+            const followUpMsg2  = wf2.follow_up_message || wf2.connection_message || '';
             const followUpDays2 = wf2.follow_up_delay_days ?? 1;
-            if (followUpMsg2) {
+            // Solo encolar follow-up manual si la campaña NO usa FlowBuilder (backward compat)
+            const usesFlowBuilder2 = Array.isArray(wf2.nodes) && wf2.nodes.length > 0;
+            if (!usesFlowBuilder2 && followUpMsg2) {
               const lead2 = await supabaseFetch(
                 `leads?id=eq.${result.lead_id}&select=linkedin_url`,
                 { method: 'GET' }
@@ -1151,6 +1614,30 @@ async function handleActionDone(taskId, result) {
               }).catch(() => {});
             }
           }
+          const convIdAccepted = await createOrGetConversation(result.lead_id, wsId, result.campaign_id ?? null);
+          if (convIdAccepted) {
+            const acceptedNow = new Date().toISOString();
+            await supabaseFetch('messages', {
+              method: 'POST', prefer: 'return=minimal',
+              body: JSON.stringify({
+                conversation_id: convIdAccepted,
+                lead_id:         result.lead_id,
+                workspace_id:    wsId,
+                sender:          'user',
+                message_text:    '✓ Conexión aceptada',
+                status:          'sent',
+                is_read:         true,
+                timestamp:       acceptedNow,
+              }),
+            }).catch(() => {});
+            await supabaseFetch(`conversations?id=eq.${convIdAccepted}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: JSON.stringify({
+                last_message_preview: '✓ Conexión aceptada',
+                last_message_at:      acceptedNow,
+              }),
+            }).catch(() => {});
+          }
           console.log('[NexusAI] conexion_aceptada:', result.lead_id);
         }
         // Si pending: dejar en conexion_enviada, se reintentará
@@ -1161,13 +1648,9 @@ async function handleActionDone(taskId, result) {
   }
 
   // 3b. Incrementar leads_queued en la campaña al enviar conexión exitosa
-  if (wsId && result.campaign_id && result.action === 'connect' && result.success !== false) {
-    try {
-      await supabaseFetch('rpc/increment_leads_queued', {
-        method: 'POST',
-        body:   JSON.stringify({ campaign_id: result.campaign_id }),
-      });
-    } catch (_) {}
+  if (wsId && result.campaign_id && result.action === 'connect' && result.success !== false &&
+      result.reason !== 'already_connected' && result.reason !== 'already_pending') {
+    await incrementLeadsQueued(result.campaign_id);
   }
 
   // 5. Registrar en activity_log
@@ -1201,6 +1684,55 @@ async function handleActionDone(taskId, result) {
       timestamp: Date.now(),
     },
   }).catch(() => {});
+
+  // PATCH final: marcar done solo si fue exitoso (fallos ya retornaron arriba)
+  if (result.success) {
+    await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body:   JSON.stringify({ status: 'done', executed_at: new Date().toISOString() }),
+    }).catch(() => {});
+
+    // find_email / find_phone → guardar en lead
+    if (result.action === 'find_email' && result.data?.email && result.lead_id) {
+      await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ email: result.data.email }),
+      }).catch(() => {});
+    }
+    if (result.action === 'find_phone' && result.data?.phone && result.lead_id) {
+      await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ phone: result.data.phone }),
+      }).catch(() => {});
+    }
+
+    // connect_email → mover lead a conexion_enviada
+    if (result.action === 'connect_email' && result.lead_id) {
+      await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({
+          crm_column:         'conexion_enviada',
+          connection_sent_at: new Date().toISOString(),
+          status:             'contacted',
+        }),
+      }).catch(() => {});
+    }
+
+    // Actualizar messages.status de 'sending' → 'sent' para mensajes del inbox
+    if (result.action === 'message' && result.lead_id) {
+      const taskRow = await supabaseFetch(
+        `engine_queue?id=eq.${taskId}&select=payload`, { method: 'GET' }
+      ).catch(() => null);
+      const draftMsgId = taskRow?.[0]?.payload?.draft_msg_id ?? null;
+      const msgFilter = draftMsgId
+        ? `messages?id=eq.${draftMsgId}`
+        : `messages?lead_id=eq.${result.lead_id}&status=eq.sending&sender=eq.user`;
+      await supabaseFetch(msgFilter, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ status: 'sent', is_read: true }),
+      }).catch(e => console.warn('[NexusAI] messages status update failed:', e));
+    }
+  }
 }
 
 async function handleProfileExtracted(data) {
@@ -1216,6 +1748,28 @@ async function handleProfileExtracted(data) {
       status:       'nuevo',
     }),
   }).catch(() => {});
+}
+
+async function createOrGetConversation(leadId, wsId, campaignId = null) {
+  const existing = await supabaseFetch(
+    `conversations?lead_id=eq.${leadId}&workspace_id=eq.${wsId}&select=id,unread_count`,
+    { method: 'GET' }
+  ).catch(() => null);
+  if (existing?.length > 0) return existing[0].id;
+
+  const created = await supabaseFetch('conversations', {
+    method: 'POST', prefer: 'return=representation',
+    body: JSON.stringify({
+      workspace_id:     wsId,
+      lead_id:          leadId,
+      campaign_id:      campaignId ?? null,
+      status:           'active',
+      autopilot_active: false,
+      autopilot_mode:   'review',
+      unread_count:     0,
+    }),
+  }).catch(() => null);
+  return created?.[0]?.id ?? null;
 }
 
 async function handleMessageReceived(data) {
@@ -1279,11 +1833,12 @@ async function handleMessageReceived(data) {
       convId = newConv?.[0]?.id;
     } else {
       convId = convs[0].id;
+      const currentUnread = convs[0].unread_count ?? 0;
       await supabaseFetch(`conversations?id=eq.${convId}`, {
         method: 'PATCH',
         prefer: 'return=minimal',
-        body:   JSON.stringify({ unread_count: (convs[0].unread_count ?? 0) + 1 }),
-      });
+        body:   JSON.stringify({ unread_count: currentUnread + 1 }),
+      }).catch(() => null);
     }
 
     if (!convId) return;
@@ -1298,9 +1853,11 @@ async function handleMessageReceived(data) {
         sender:              'prospect',
         message_text:        data.text,
         linkedin_message_id: data.linkedin_id ?? null,
+        status:              'delivered',
+        is_read:             false,
         timestamp:           data.timestamp ?? new Date().toISOString(),
       }),
-    });
+    }).catch(() => null);
 
     await supabaseFetch('activity_log', {
       method: 'POST',
@@ -1343,6 +1900,81 @@ async function handleCountResult(campaignId, segmentId, count) {
 const SCRAPER_MAX_PAGES      = 40;  // máx 40 páginas = 1000 leads
 const SCRAPER_PAGE_DELAY_MIN = 10000;
 const SCRAPER_PAGE_DELAY_MAX = 20000;
+
+function parseWorkflowSequence(wf) {
+  const nodes = wf.nodes ?? [];
+  const edges = wf.edges ?? [];
+
+  if (!nodes.length) {
+    return [{
+      type: 'connect',
+      delayMs: 0,
+      note: wf.connection_note || wf.connection_message || '',
+      message: '',
+    }];
+  }
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const next = new Map();
+  for (const e of edges) {
+    if (!next.has(e.source)) next.set(e.source, e.target);
+  }
+
+  const startNode = nodes.find(n => n.data?.nodeType === 'start' || n.type === 'start');
+  if (!startNode) return [];
+
+  const steps = [];
+  let currentId = next.get(startNode.id);
+  let accumulatedDelayMs = 0;
+  const visited = new Set();
+
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const node = nodeMap.get(currentId);
+    if (!node) break;
+
+    const data = node.data ?? {};
+    const nodeType = data.nodeType || node.type;
+
+    if (nodeType === 'connect') {
+      steps.push({
+        type: 'connect',
+        delayMs: accumulatedDelayMs,
+        note: data.noteA || data.note || data.bodyA || '',
+        message: '',
+      });
+    } else if (nodeType === 'delay') {
+      const days = data.days ?? data.waitDays ?? 1;
+      accumulatedDelayMs += days * 24 * 3600 * 1000;
+    } else if (nodeType === 'message') {
+      steps.push({
+        type: 'message',
+        delayMs: accumulatedDelayMs,
+        note: '',
+        message: data.bodyA || data.message || data.body || '',
+      });
+    } else if (nodeType === 'withdraw') {
+      steps.push({ type: 'withdraw', delayMs: accumulatedDelayMs });
+    } else if (nodeType === 'find_email') {
+      steps.push({ type: 'find_email', delayMs: accumulatedDelayMs,
+                   skipIfExists: data.skipIfExists ?? true });
+    } else if (nodeType === 'find_phone') {
+      steps.push({ type: 'find_phone', delayMs: accumulatedDelayMs,
+                   skipIfExists: data.skipIfExists ?? true });
+    } else if (nodeType === 'connect_email') {
+      steps.push({ type: 'connect_email', delayMs: accumulatedDelayMs,
+                   addNote: data.addNote ?? false,
+                   connectionNote: data.connectionNote ?? '' });
+    }
+    currentId = next.get(currentId);
+  }
+
+  if (!steps.find(s => s.type === 'connect')) {
+    steps.unshift({ type: 'connect', delayMs: 0, note: '', message: '' });
+  }
+
+  return steps;
+}
 
 async function scrapeSegmentProfiles(campaign, segment, searchUrl) {
   const wsId       = campaign.workspace_id;
@@ -1445,6 +2077,8 @@ async function scrapeSegmentProfiles(campaign, segment, searchUrl) {
 
       console.log(`[NexusAI Scraper] Página ${page}: ${profiles.length} perfiles encontrados`);
 
+      const { supabase_user_id: ownerId } = await chrome.storage.local.get('supabase_user_id');
+
       for (const profile of profiles) {
         if (!profile.url) continue;
 
@@ -1487,6 +2121,7 @@ async function scrapeSegmentProfiles(campaign, segment, searchUrl) {
               company:      profile.company  || null,
               status:       'extraido',
               crm_column:   'extraido',
+              assigned_to:  ownerId ?? null,
             }),
           }).catch(() => null);
           leadId = newLead?.[0]?.id;
@@ -1535,12 +2170,13 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
   const campData = campRows?.[0] ?? {};
   const fullWf   = campData.workflow_json ?? wf;
 
-  // Base note/message from workflow (fallback when A/B is off or winner declared)
-  const baseNote = fullWf.connection_note    || fullWf.connection_message || '';
-  const baseMsg  = fullWf.follow_up_message  || fullWf.connection_message || '';
-
   const abEnabled = !!(campData.ab_test_enabled);
   const abWinner  = campData.ab_winner ?? null;
+
+  // Parsear secuencia completa del FlowBuilder
+  const sequence = parseWorkflowSequence(fullWf);
+  const connectNode  = fullWf.nodes?.find(n => n.data?.nodeType === 'connect');
+  const abNoteMode   = connectNode?.data?.abNoteMode ?? 'note_vs_note';
 
   // Obtener todos los leads 'extraido' de esta campaña sin tarea pendiente
   const leads = await supabaseFetch(
@@ -1559,7 +2195,7 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
 
   // IDs que ya tienen tarea pendiente para no duplicar
   const existingTasks = await supabaseFetch(
-    `engine_queue?campaign_id=eq.${campaignId}&status=eq.pending&select=lead_id`,
+    `engine_queue?campaign_id=eq.${campaignId}&status=in.(pending,scheduled)&select=lead_id`,
     { method: 'GET' }
   ).catch(() => []);
   const enqueuedLeadIds = new Set((existingTasks ?? []).map((t) => t.lead_id));
@@ -1570,72 +2206,152 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
   const delayMax   = settings.delayMaxSec    || 480;
 
   const pendingLeads = leads.filter((l) => !enqueuedLeadIds.has(l.id));
-  console.log(`[NexusAI Scraper] Encolando ${pendingLeads.length} conexiones (cuota ${dailyQuota}/día)`);
+  console.log(`[NexusAI Scraper] Encolando ${pendingLeads.length} leads (secuencia de ${sequence.length} pasos, cuota ${dailyQuota}/día)`);
 
   const inserts = [];
-  const variantPatches = []; // { leadId, variant } to PATCH after insert batch
+  const variantPatches = [];
 
   for (let i = 0; i < pendingLeads.length; i++) {
     const lead      = pendingLeads[i];
     const dayOffset = Math.floor(i / dailyQuota);
     const jitter    = (delayMin + Math.random() * (delayMax - delayMin)) * 1000;
-    const scheduledAt = new Date(Date.now() + dayOffset * 24 * 3600 * 1000 + jitter);
+    const baseTime  = Date.now() + dayOffset * 24 * 3600 * 1000 + jitter;
 
     // ── A/B variant assignment ──────────────────────────────────────────────
-    let connNote       = baseNote;
-    let followUpMsg    = baseMsg;
     let assignedVariant = null;
-
+    let abVariantData = {};
     if (abEnabled && !abWinner) {
-      // Random 50/50 assignment
       assignedVariant = Math.random() < 0.5 ? 'a' : 'b';
-      const variantData = assignedVariant === 'a'
+      abVariantData = assignedVariant === 'a'
         ? (campData.ab_variant_a ?? {})
         : (campData.ab_variant_b ?? {});
-      connNote    = variantData.connection_note    ?? baseNote;
-      followUpMsg = variantData.follow_up_message  ?? baseMsg;
       variantPatches.push({ leadId: lead.id, variant: assignedVariant });
     } else if (abEnabled && abWinner) {
-      // Use the declared winner exclusively
-      const variantData = abWinner === 'a'
+      abVariantData = abWinner === 'a'
         ? (campData.ab_variant_a ?? {})
         : (campData.ab_variant_b ?? {});
-      connNote    = variantData.connection_note    ?? baseNote;
-      followUpMsg = variantData.follow_up_message  ?? baseMsg;
     }
     // ───────────────────────────────────────────────────────────────────────
 
-    inserts.push({
-      workspace_id: wsId,
-      campaign_id:  campaignId,
-      lead_id:      lead.id,
-      task_type:    'connect',
-      action_type:  'connect',
-      payload: {
-        profile_url:      lead.linkedin_url,
-        linkedin_url:     lead.linkedin_url,
-        lead_id:          lead.id,
-        lead_name:        lead.full_name || 'Sin nombre',
-        campaign_id:      campaignId,
-        campaign_name:    campaign?.name || '',
-        note:             connNote,
-        message_text:     followUpMsg,
-        ab_variant:       assignedVariant,
-      },
-      status:       'pending',
-      priority:     5,
-      scheduled_at: scheduledAt.toISOString(),
-    });
+    for (const step of sequence) {
+      const scheduledAt = new Date(baseTime + step.delayMs);
+
+      if (step.type === 'connect') {
+        // A/B note determination
+        let connNote     = '';
+        let connAddNote  = false;
+        if (abEnabled && !abWinner) {
+          const useVariantB = (assignedVariant === 'b');
+          if (abNoteMode === 'note_vs_no_note') {
+            connAddNote = !useVariantB;
+            connNote    = !useVariantB
+              ? (connectNode?.data?.connectionNote ?? connectNode?.data?.messageA ?? step.note ?? '')
+              : '';
+          } else {
+            connNote    = useVariantB
+              ? (campData.ab_variant_b?.connectionNote ?? campData.ab_variant_b?.messageB ?? step.note ?? '')
+              : (campData.ab_variant_a?.connectionNote ?? campData.ab_variant_a?.messageA ?? step.note ?? '');
+            connAddNote = !!connNote;
+          }
+        } else {
+          connNote    = abVariantData.connection_note ?? step.note ?? '';
+          connAddNote = !!connNote;
+        }
+        inserts.push({
+          workspace_id: wsId,
+          campaign_id:  campaignId,
+          lead_id:      lead.id,
+          task_type:    'connect',
+          action_type:  'connect',
+          payload: {
+            profile_url:   lead.linkedin_url,
+            linkedin_url:  lead.linkedin_url,
+            lead_id:       lead.id,
+            lead_name:     lead.full_name || 'Sin nombre',
+            campaign_id:   campaignId,
+            campaign_name: campaign?.name || '',
+            note:          connNote,
+            add_note:      connAddNote,
+            ab_variant:    assignedVariant,
+          },
+          status:       'pending',
+          priority:     5,
+          scheduled_at: scheduledAt.toISOString(),
+        });
+      } else if (step.type === 'message') {
+        const msgText = abVariantData.follow_up_message ?? step.message ?? '';
+        if (!msgText) continue;
+        inserts.push({
+          workspace_id: wsId,
+          campaign_id:  campaignId,
+          lead_id:      lead.id,
+          task_type:    'message',
+          action_type:  'message',
+          payload: {
+            profile_url:      lead.linkedin_url,
+            lead_id:          lead.id,
+            campaign_id:      campaignId,
+            message_text:     msgText,
+            message_type:     'sequence_followup',
+            ab_variant:       assignedVariant,
+            require_accepted: true,
+          },
+          status:       'scheduled',
+          priority:     8,
+          scheduled_at: scheduledAt.toISOString(),
+        });
+      } else if (step.type === 'withdraw') {
+        inserts.push({
+          workspace_id: wsId, campaign_id: campaignId, lead_id: lead.id,
+          task_type: 'withdraw', action_type: 'withdraw',
+          status: 'scheduled', priority: 5,
+          scheduled_at: scheduledAt.toISOString(),
+          payload: { lead_id: lead.id, linkedin_url: lead.linkedin_url,
+                     salesnav_url: lead.salesnav_url ?? null },
+        });
+      } else if (step.type === 'find_email') {
+        inserts.push({
+          workspace_id: wsId, campaign_id: campaignId, lead_id: lead.id,
+          task_type: 'find_email', action_type: 'find_email',
+          status: 'scheduled', priority: 4,
+          scheduled_at: scheduledAt.toISOString(),
+          payload: { lead_id: lead.id,
+                     linkedin_url: lead.linkedin_url ?? lead.salesnav_url,
+                     skip_if_exists: step.skipIfExists ?? true },
+        });
+      } else if (step.type === 'find_phone') {
+        inserts.push({
+          workspace_id: wsId, campaign_id: campaignId, lead_id: lead.id,
+          task_type: 'find_phone', action_type: 'find_phone',
+          status: 'scheduled', priority: 4,
+          scheduled_at: scheduledAt.toISOString(),
+          payload: { lead_id: lead.id,
+                     linkedin_url: lead.linkedin_url ?? lead.salesnav_url,
+                     skip_if_exists: step.skipIfExists ?? true },
+        });
+      } else if (step.type === 'connect_email') {
+        inserts.push({
+          workspace_id: wsId, campaign_id: campaignId, lead_id: lead.id,
+          task_type: 'connect_email', action_type: 'connect_email',
+          status: 'scheduled', priority: 4,
+          scheduled_at: scheduledAt.toISOString(),
+          payload: { lead_id: lead.id,
+                     add_note: step.addNote ?? false,
+                     connection_note: step.connectionNote ?? '',
+                     require_email: true },
+        });
+      }
+    }
   }
 
-  // INSERT en lotes de 50 para no sobrepasar límites de payload
-  const BATCH_SIZE = 50;
-  for (let b = 0; b < inserts.length; b += BATCH_SIZE) {
-    const batch = inserts.slice(b, b + BATCH_SIZE);
-    await supabaseFetch('engine_queue', {
-      method: 'POST', prefer: 'return=minimal',
-      body:   JSON.stringify(batch),
-    }).catch((err) => console.warn('[NexusAI Scraper] Insert queue batch error:', err.message));
+  if (inserts.length) {
+    for (let b = 0; b < inserts.length; b += 50) {
+      await supabaseFetch('engine_queue', {
+        method: 'POST', prefer: 'return=minimal',
+        body:   JSON.stringify(inserts.slice(b, b + 50)),
+      }).catch(e => console.error('[NexusAI] Batch insert error:', e));
+    }
+    console.log(`[NexusAI] Encolados ${inserts.length} tasks para ${pendingLeads.length} leads (secuencia de ${sequence.length} pasos)`);
   }
 
   // Persist A/B variant assignment on each lead (fire-and-forget, best-effort)
@@ -1659,7 +2375,7 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
     }),
   }).catch(() => {});
 
-  console.log(`[NexusAI Scraper] ${inserts.length} conexiones encoladas para campaña ${campaignId}`);
+  console.log(`[NexusAI Scraper] ${inserts.length} tasks encoladas para campaña ${campaignId}`);
 }
 
 // ── Conexión aceptada ─────────────────────────────────────────────────────────
@@ -1705,11 +2421,9 @@ async function handleConnectionAccepted(profileUrl, workspaceId) {
         workspace_id:    workspaceId,
         sender:          'lead',
         message_text:    preview,
-        event:           'connection_accepted',
         status:          'received',
         is_read:         false,
         timestamp:       now,
-        inserted_at:     now,
       }),
     }).catch(() => {});
 
@@ -1723,9 +2437,37 @@ async function handleConnectionAccepted(profileUrl, workspaceId) {
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
+// Tab dedicada para el engine — evita interferir con tabs del usuario
+const ENGINE_TAB_KEY = 'engine_tab_id';
+
+async function getOrCreateEngineTab() {
+  const { engine_tab_id } = await chrome.storage.local.get(ENGINE_TAB_KEY);
+  if (engine_tab_id) {
+    try {
+      const tab = await chrome.tabs.get(engine_tab_id);
+      if (tab && tab.url?.includes('linkedin.com')) {
+        console.log('[NexusAI] Reutilizando engine tab:', tab.id);
+        return tab;
+      }
+    } catch (_) {
+      // Tab cerrada — crear nueva
+    }
+  }
+  console.log('[NexusAI] Creando nueva engine tab...');
+  const tab = await chrome.tabs.create({
+    url: 'https://www.linkedin.com/feed/',
+    active: true,   // ACTIVA para que JS funcione correctamente
+  });
+  await chrome.storage.local.set({ [ENGINE_TAB_KEY]: tab.id });
+  // Esperar que cargue completamente
+  await waitForTabComplete(tab.id, 10000);
+  await sleep(2000);
+  return tab;
+}
+
+// Alias para compatibilidad
 async function getLinkedInTab() {
-  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
-  return tabs[0] ?? null;
+  return getOrCreateEngineTab();
 }
 
 // TODO: Re-enable for production
@@ -1734,45 +2476,64 @@ async function isActiveHour() { return true; }
 // TODO: Re-enable for production
 async function isWeekendPaused() { return false; }
 
-async function checkDailyLimits() {
-  const { daily_stats } = await chrome.storage.local.get('daily_stats');
-  const stats = daily_stats ?? { connections: 0, messages: 0, likes: 0, date: todayStr() };
-  if (stats.date !== todayStr()) {
-    await chrome.storage.local.set({ daily_stats: { connections: 0, messages: 0, likes: 0, date: todayStr() } });
-    return true;
+async function getTodayStats(wsId) {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    const rows = await supabaseFetch(
+      `engine_queue?workspace_id=eq.${wsId}&status=eq.done` +
+      `&executed_at=gte.${today}T00:00:00Z&select=action_type`
+    ).catch(() => []);
+
+    const stats = { connections: 0, messages: 0, likes: 0, views: 0, date: today };
+    for (const row of (rows ?? [])) {
+      if (row.action_type === 'connect')       stats.connections++;
+      if (row.action_type === 'message')       stats.messages++;
+      if (row.action_type === 'like')          stats.likes++;
+      if (row.action_type === 'view_profile')  stats.views++;
+    }
+
+    // Actualizar caché local (solo para sesión actual)
+    await chrome.storage.local.set({ daily_stats: stats });
+    console.log('[NexusAI] Stats sincronizadas desde Supabase:', stats);
+    return stats;
+  } catch (err) {
+    console.warn('[NexusAI] getTodayStats error:', err.message);
+    // Fallback a caché local si Supabase falla
+    const { daily_stats } = await chrome.storage.local.get('daily_stats');
+    return daily_stats ?? { connections: 0, messages: 0, likes: 0, views: 0, date: todayStr() };
   }
-  const s = await getSettings();
-  return stats.connections < s.maxConnections && stats.messages < s.maxMessages;
 }
 
-// Per-type daily limit check against Supabase engine_queue + workspace limits
+// Per-type daily limit check against Supabase engine_queue + user-configured settings
 async function checkDailyLimitsByType(wsId, taskType) {
   try {
-    const ws = await supabaseFetch(
-      `workspaces?id=eq.${wsId}&select=daily_connect_limit,daily_message_limit,daily_view_limit&limit=1`
-    );
-    const limits = ws?.[0] ?? { daily_connect_limit: 20, daily_message_limit: 50, daily_view_limit: 100 };
+    const settings = await getSettings();
+    const limitMap = {
+      connect:      settings.maxConnections ?? 20,
+      message:      settings.maxMessages    ?? 30,
+      view_profile: settings.maxLikes       ?? 50,
+      like:         settings.maxLikes       ?? 20,
+      follow:       settings.maxConnections ?? 20,
+    };
+    const limit = limitMap[taskType] ?? 999;
 
     const today = new Date().toISOString().split('T')[0];
-    const typeMap = { connect: 'daily_connect_limit', message: 'daily_message_limit', view_profile: 'daily_view_limit' };
-    const limitKey = typeMap[taskType];
-    if (!limitKey) return true;
-
+    // action_type is the correct column name in engine_queue (not task_type)
     const rows = await supabaseFetch(
-      `engine_queue?workspace_id=eq.${wsId}&task_type=eq.${taskType}&status=eq.done` +
+      `engine_queue?workspace_id=eq.${wsId}&action_type=eq.${taskType}&status=eq.done` +
       `&executed_at=gte.${today}T00:00:00Z&select=id`
     ).catch(() => []);
 
     const count = rows?.length ?? 0;
-    const limit = limits[limitKey] ?? 999;
     if (count >= limit) {
       console.log(`[NexusAI] Límite diario de ${taskType} alcanzado (${count}/${limit})`);
       return false;
     }
+    console.log(`[NexusAI] Daily ${taskType}: ${count}/${limit} ✓`);
     return true;
   } catch (err) {
     console.warn('[NexusAI] checkDailyLimitsByType error:', err.message);
-    return true; // Fail open to avoid blocking the engine on network errors
+    return true; // Fail open para no bloquear el engine
   }
 }
 
@@ -1819,7 +2580,7 @@ async function getStatus() {
   if (wsId) {
     try {
       const q = await supabaseFetch(
-        `engine_queue?workspace_id=eq.${wsId}&status=eq.pending&select=id`,
+        `engine_queue?workspace_id=eq.${wsId}&status=in.(pending,scheduled)&select=id`,
         { headers: { 'Prefer': 'count=exact' } }
       );
       queueCount = q?.length ?? 0;
@@ -1842,6 +2603,29 @@ async function getStatus() {
     lastAction: data.last_action_log ?? null,
     settings:   await getSettings(),
   };
+}
+
+async function incrementLeadsQueued(campaignId) {
+  try {
+    let campData;
+    try {
+      campData = await supabaseFetch(
+        `campaigns?id=eq.${campaignId}&select=leads_queued`, { method: 'GET' }
+      );
+    } catch (_) {
+      return; // columna no existe aún
+    }
+    if (!campData || campData.length === 0) return;
+    const currentCount = campData[0].leads_queued;
+    if (currentCount === undefined || currentCount === null) return;
+    await supabaseFetch(`campaigns?id=eq.${campaignId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ leads_queued: currentCount + 1 }),
+    });
+  } catch (e) {
+    console.warn('[NexusAI] incrementLeadsQueued omitido:', e.message);
+  }
 }
 
 function randomDelay(minSec, maxSec) {

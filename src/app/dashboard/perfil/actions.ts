@@ -2,13 +2,13 @@
 
 import { createClient } from "@/lib/supabase/server";
 
-// ── Shared result type ────────────────────────────────────────────────────────
+// -- Shared result type --------------------------------------------------------
 
 type Result<T = undefined> = T extends undefined
   ? { success: boolean; error?: string }
   : { success: boolean; error?: string; data?: T };
 
-// ── Helper: get authenticated user + workspace_id ─────────────────────────────
+// -- Helper: get authenticated user + workspace_id -----------------------------
 
 async function getAuthContext() {
   const supabase = await createClient();
@@ -37,7 +37,7 @@ async function getAuthContext() {
   return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 export type ProfileRow = {
   id: string;
@@ -114,15 +114,25 @@ export type ProfileData = {
   linkedinAccounts: LinkedInAccountRow[];
   emailConnections: EmailConnectionRow[];
   webhooks: WebhookRow[];
+  blacklist: BlacklistEntryRow[];
 };
 
-// ── 1. getProfileData ─────────────────────────────────────────────────────────
+export type BlacklistEntryRow = {
+  id: string;
+  workspace_id: string | null;
+  linkedin_url: string | null;
+  email: string | null;
+  reason: string | null;
+  created_at: string;
+};
+
+// -- 1. getProfileData ---------------------------------------------------------
 
 export async function getProfileData(): Promise<Result<ProfileData>> {
   try {
     const { supabase, userId, workspaceId } = await getAuthContext();
 
-    const [profileRes, workspaceRes, settingsRes, liRes, emailRes, webhookRes] =
+    const [profileRes, workspaceRes, settingsRes, liRes, emailRes, webhookRes, blacklistRes] =
       await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single(),
         workspaceId
@@ -140,6 +150,9 @@ export async function getProfileData(): Promise<Result<ProfileData>> {
         workspaceId
           ? supabase.from("webhooks").select("*").eq("workspace_id", workspaceId).order("created_at")
           : Promise.resolve({ data: [], error: null }),
+        workspaceId
+          ? supabase.from("blacklist").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
     if (profileRes.error) return { success: false, error: profileRes.error.message };
@@ -147,12 +160,13 @@ export async function getProfileData(): Promise<Result<ProfileData>> {
     return {
       success: true,
       data: {
-        profile:         profileRes.data as ProfileRow,
-        workspace:       workspaceRes.data as WorkspaceRow | null,
-        settings:        settingsRes.data as WorkspaceSettingsRow | null,
+        profile:          profileRes.data as ProfileRow,
+        workspace:        workspaceRes.data as WorkspaceRow | null,
+        settings:         settingsRes.data as WorkspaceSettingsRow | null,
         linkedinAccounts: (liRes.data ?? []) as LinkedInAccountRow[],
         emailConnections: (emailRes.data ?? []) as EmailConnectionRow[],
         webhooks:         (webhookRes.data ?? []) as WebhookRow[],
+        blacklist:        (blacklistRes.data ?? []) as BlacklistEntryRow[],
       },
     };
   } catch (err) {
@@ -160,7 +174,7 @@ export async function getProfileData(): Promise<Result<ProfileData>> {
   }
 }
 
-// ── 2. updateProfile ──────────────────────────────────────────────────────────
+// -- 2. updateProfile ----------------------------------------------------------
 
 export async function updateProfile(data: {
   full_name: string;
@@ -189,7 +203,7 @@ export async function updateProfile(data: {
   }
 }
 
-// ── 3. updateWorkspace ────────────────────────────────────────────────────────
+// -- 3. updateWorkspace --------------------------------------------------------
 
 export async function updateWorkspace(data: {
   name: string;
@@ -215,7 +229,7 @@ export async function updateWorkspace(data: {
   }
 }
 
-// ── 4. upsertLinkedInAccount ──────────────────────────────────────────────────
+// -- 4. upsertLinkedInAccount --------------------------------------------------
 
 export async function upsertLinkedInAccount(data: {
   id?: string;
@@ -262,7 +276,7 @@ export async function upsertLinkedInAccount(data: {
   }
 }
 
-// ── 4b. updateLinkedInLimits ──────────────────────────────────────────────────
+// -- 4b. updateLinkedInLimits --------------------------------------------------
 
 export async function updateLinkedInLimits(data: {
   id: string;
@@ -291,7 +305,7 @@ export async function updateLinkedInLimits(data: {
   }
 }
 
-// ── 5. disconnectLinkedInAccount ──────────────────────────────────────────────
+// -- 5. disconnectLinkedInAccount ----------------------------------------------
 
 export async function disconnectLinkedInAccount(id: string): Promise<Result> {
   try {
@@ -311,7 +325,7 @@ export async function disconnectLinkedInAccount(id: string): Promise<Result> {
   }
 }
 
-// ── 6. upsertEmailConnection ──────────────────────────────────────────────────
+// -- 6. upsertEmailConnection --------------------------------------------------
 
 export async function upsertEmailConnection(data: {
   id?: string;
@@ -373,7 +387,7 @@ export async function upsertEmailConnection(data: {
   }
 }
 
-// ── 7. deleteEmailConnection ──────────────────────────────────────────────────
+// -- 7. deleteEmailConnection --------------------------------------------------
 
 export async function deleteEmailConnection(id: string): Promise<Result> {
   try {
@@ -393,7 +407,7 @@ export async function deleteEmailConnection(id: string): Promise<Result> {
   }
 }
 
-// ── 8. upsertWebhook ──────────────────────────────────────────────────────────
+// -- 8. upsertWebhook ----------------------------------------------------------
 
 export async function upsertWebhook(data: {
   id?: string;
@@ -438,7 +452,7 @@ export async function upsertWebhook(data: {
   }
 }
 
-// ── 9. deleteWebhook ──────────────────────────────────────────────────────────
+// -- 9. deleteWebhook ----------------------------------------------------------
 
 export async function deleteWebhook(id: string): Promise<Result> {
   try {
@@ -453,6 +467,227 @@ export async function deleteWebhook(id: string): Promise<Result> {
 
     if (error) return { success: false, error: error.message };
     return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 10. verifyLinkedInConnection ----------------------------------------------
+
+export type HeartbeatStatus = "active" | "inactive" | "not_found";
+
+export async function verifyLinkedInConnection(accountId: string): Promise<
+  Result<{ status: HeartbeatStatus; last_heartbeat_at: string | null }>
+> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { data, error } = await supabase
+      .from("ghost_engine_sessions")
+      .select("last_heartbeat_at")
+      .eq("workspace_id", workspaceId)
+      .eq("linkedin_account_id", accountId)
+      .order("last_heartbeat_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return { success: false, error: error.message };
+    if (!data) return { success: true, data: { status: "not_found", last_heartbeat_at: null } };
+
+    const lastHb = data.last_heartbeat_at as string | null;
+    const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const status: HeartbeatStatus = lastHb && lastHb > fiveMinsAgo ? "active" : "inactive";
+    return { success: true, data: { status, last_heartbeat_at: lastHb } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 11. updateWorkspaceSettings -----------------------------------------------
+
+export async function updateWorkspaceSettings(data: {
+  daily_connections_limit?: number;
+  daily_messages_limit?: number;
+  daily_visits_limit?: number;
+  ultra_safe_mode?: boolean;
+  pause_on_weekends?: boolean;
+  active_hours_start?: number;
+  active_hours_end?: number;
+  timezone?: string;
+  warmup_enabled?: boolean;
+}): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { error } = await supabase
+      .from("workspace_settings")
+      .upsert({ workspace_id: workspaceId, ...data }, { onConflict: "workspace_id" });
+
+    if (error) return { success: false, error: error.message };
+
+    // Notify extension via settings_events table (best-effort)
+    try {
+      await supabase
+        .from("settings_events")
+        .insert({
+          workspace_id: workspaceId,
+          event_type:   "SAVE_SETTINGS",
+          payload:      data,
+        });
+    } catch {
+      // intentionally ignored
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 12. getBlacklistEntries ---------------------------------------------------
+
+export async function getBlacklistEntries(): Promise<Result<BlacklistEntryRow[]>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { data, error } = await supabase
+      .from("blacklist")
+      .select("id, workspace_id, linkedin_url, email, reason, created_at")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: (data ?? []) as BlacklistEntryRow[] };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 13. addBlacklistEntry -----------------------------------------------------
+
+export async function addBlacklistEntry(entry: {
+  linkedin_url?: string;
+  email?: string;
+  reason?: string;
+}): Promise<Result<BlacklistEntryRow>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    if (!entry.linkedin_url && !entry.email) {
+      return { success: false, error: "Debe proveer URL de LinkedIn o email" };
+    }
+
+    const { data, error } = await supabase
+      .from("blacklist")
+      .insert({
+        workspace_id: workspaceId,
+        linkedin_url: entry.linkedin_url ?? null,
+        email:        entry.email ?? null,
+        reason:       entry.reason ?? null,
+      })
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data as BlacklistEntryRow };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 14. bulkAddBlacklistEntries -----------------------------------------------
+
+export async function bulkAddBlacklistEntries(
+  lines: string[]
+): Promise<Result<{ inserted: number; skipped: number }>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const rows: { workspace_id: string; linkedin_url: string | null; email: string | null }[] = [];
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      const isLinkedIn = line.includes("linkedin.com") || line.includes("/in/");
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(line);
+      if (isLinkedIn) rows.push({ workspace_id: workspaceId, linkedin_url: line, email: null });
+      else if (isEmail) rows.push({ workspace_id: workspaceId, linkedin_url: null, email: line });
+    }
+
+    if (rows.length === 0) return { success: true, data: { inserted: 0, skipped: lines.length } };
+
+    const { error, data } = await supabase
+      .from("blacklist")
+      .upsert(rows, { onConflict: "workspace_id,linkedin_url", ignoreDuplicates: true })
+      .select("id");
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: { inserted: (data ?? []).length, skipped: lines.length - (data ?? []).length } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 15. removeBlacklistEntry --------------------------------------------------
+
+export async function removeBlacklistEntry(id: string): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { error } = await supabase
+      .from("blacklist")
+      .delete()
+      .eq("id", id)
+      .eq("workspace_id", workspaceId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 16. testWebhookDelivery ---------------------------------------------------
+
+export async function testWebhookDelivery(
+  webhookId: string
+): Promise<Result<{ httpStatus: number; body: string }>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { data: wh, error } = await supabase
+      .from("webhooks")
+      .select("url, secret_token")
+      .eq("id", webhookId)
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    if (error || !wh) return { success: false, error: "Webhook no encontrado" };
+
+    const url = (wh as Record<string, unknown>).url as string;
+    const secret = (wh as Record<string, unknown>).secret_token as string | null;
+
+    const payload = {
+      event:        "test",
+      workspace_id: workspaceId,
+      timestamp:    new Date().toISOString(),
+      data:         { message: "NexusAI webhook test" },
+    };
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (secret) headers["X-NexusAI-Signature"] = secret;
+
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
+    const body = await res.text().catch(() => "");
+
+    return { success: true, data: { httpStatus: res.status, body: body.slice(0, 500) } };
   } catch (err) {
     return { success: false, error: String(err) };
   }

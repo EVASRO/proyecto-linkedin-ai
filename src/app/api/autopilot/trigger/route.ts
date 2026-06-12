@@ -7,13 +7,22 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const WEBHOOK_SECRET =
   process.env.AUTOPILOT_WEBHOOK_SECRET ?? "nexusai-autopilot-2024";
 
+interface AgentData {
+  name:              string | null;
+  system_prompt:     string | null;
+  tone:              string | null;
+  objective:         string | null;
+  value_proposition: string | null;
+  objections:        Array<{ objection?: string; response?: string }> | null;
+}
+
 export async function GET() {
   return NextResponse.json({ ok: true, service: "autopilot-trigger" });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // ── Auth ──────────────────────────────────────────────────────────────────
+    // -- Auth ------------------------------------------------------------------
     const authHeader = req.headers.get("authorization") ?? "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
     const isValid = token === WEBHOOK_SECRET || authHeader.includes(WEBHOOK_SECRET);
@@ -38,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient();
 
-    // ── 1. Load full context ──────────────────────────────────────────────────
+    // -- 1. Load full context --------------------------------------------------
 
     const { data: conv } = await supabase
       .from("conversations")
@@ -58,7 +67,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ skipped: true, reason: "autopilot_inactive" });
     }
 
-    // Last 20 messages ordered chronologically — exclude drafts/rejected
+    // -- 2. Load assigned agent ------------------------------------------------
+
+    let agentRow: AgentData | null = null;
+
+    if (conv.assigned_agent_id) {
+      const { data } = await supabase
+        .from("agents")
+        .select("name, system_prompt, tone, objective, value_proposition, objections")
+        .eq("id", conv.assigned_agent_id)
+        .single();
+      agentRow = data as AgentData | null;
+
+      if (!agentRow) {
+        console.warn("[Autopilot] Agente no encontrado, usando prompt genérico");
+      }
+    }
+
+    // -- 3. Load last N messages -----------------------------------------------
+
     const { data: messages } = await supabase
       .from("messages")
       .select("sender, message_text, timestamp")
@@ -70,65 +97,77 @@ export async function POST(req: NextRequest) {
     const lead     = conv.lead     as Record<string, unknown>;
     const campaign = conv.campaign as Record<string, unknown> | null;
     const wfJson   = (campaign?.workflow_json ?? {}) as Record<string, unknown>;
-    const firstName = (String(lead.full_name ?? "")).split(" ")[0] || "amigo/a";
 
-    // ── 2. Build system prompt ────────────────────────────────────────────────
+    // -- 4. Build system prompt from agent data --------------------------------
 
-    const systemPrompt = `Eres un asistente de ventas experto que responde mensajes de LinkedIn
-en nombre del usuario de la plataforma NexusAI.
+    const objectionsText = Array.isArray(agentRow?.objections)
+      ? (agentRow!.objections as Array<{ objection?: string; response?: string }>)
+          .filter((o) => o.objection)
+          .map((o, i) => `${i + 1}. Objeción: "${o.objection ?? ""}" → Respuesta: "${o.response ?? ""}"`)
+          .join("\n")
+      : "";
 
-CONTEXTO DEL LEAD:
-- Nombre: ${lead.full_name ?? "Desconocido"}
-- Cargo: ${lead.headline ?? "No disponible"}
-- Empresa: ${lead.company ?? "No disponible"}
-- Ubicación: ${lead.location ?? "No disponible"}
-- Etapa CRM: ${lead.crm_column ?? "extraido"}
+    const systemPrompt = [
+      `Eres ${agentRow?.name ?? "un asistente de ventas B2B"}.`,
+      agentRow?.system_prompt
+        ? `Tu personalidad y estilo: ${agentRow.system_prompt}`
+        : "",
+      agentRow?.value_proposition
+        ? `Información sobre el producto/empresa que representas: ${agentRow.value_proposition}`
+        : "",
+      agentRow?.tone
+        ? `Estilo de respuesta: ${agentRow.tone}.`
+        : "Estilo de respuesta: profesional, directo y cercano.",
+      objectionsText
+        ? `Cómo manejar objeciones frecuentes:\n${objectionsText}`
+        : "",
+      agentRow?.objective
+        ? `Tu objetivo principal: ${agentRow.objective}`
+        : `Tu objetivo: ${String(wfJson.goal ?? "agendar una reunión o llamada de demo.")}.`,
+      "",
+      "REGLAS ESTRICTAS:",
+      "- Responde siempre en el mismo idioma que usa el prospecto.",
+      "- Máximo 3 oraciones por respuesta. Sé conciso.",
+      "- Nunca menciones que eres una IA o un bot.",
+      "- No uses emojis a menos que el prospecto los use primero.",
+      "- Si el prospecto pide hablar con una persona real, di que lo conectarás pronto.",
+      "- Si el prospecto dice que no le interesa, agradece su tiempo y cierra la conversación con clase.",
+      "- Responde ÚNICAMENTE con el texto del mensaje, sin comillas ni explicaciones adicionales.",
+    ].filter(Boolean).join("\n");
 
-CONTEXTO DE LA CAMPAÑA:
-- Nombre: ${campaign?.name ?? "Sin nombre"}
-- Objetivo: ${wfJson.goal ?? "Agendar una reunión de 30 minutos"}
+    // -- 5. Build user prompt with conversation history -----------------------
 
-INSTRUCCIONES CRÍTICAS:
-1. Responde SIEMPRE en el idioma en que te escribe el prospect
-2. Sé conciso, natural y conversacional — máximo 3-4 oraciones
-3. Si mencionan interés → busca concretar una reunión
-4. Si tienen dudas → responde brevemente y redirige a reunión
-5. Si no hay interés → responde con amabilidad, deja la puerta abierta
-6. NO uses emojis excesivos, NO seas vendedor agresivo
-7. NUNCA menciones que eres una IA
-8. Personaliza usando el nombre del lead: ${firstName}
+    const lastMessage = String(record.message_text ?? messages?.at(-1)?.message_text ?? "");
 
-Responde ÚNICAMENTE con el texto del mensaje, sin comillas ni explicaciones adicionales.`;
+    const conversationHistory = (messages ?? [])
+      .slice(-8)
+      .map((m) => `${m.sender === "prospect" ? "PROSPECTO" : "TÚ"}: ${m.message_text}`)
+      .join("\n");
 
-    // ── 3. Build Anthropic message history ───────────────────────────────────
+    const userPrompt = [
+      `Datos del prospecto:`,
+      `- Nombre: ${lead.full_name ?? "Desconocido"}`,
+      `- Empresa: ${lead.company ?? "—"}`,
+      `- Cargo: ${String(lead.headline ?? lead.job_title ?? "—")}`,
+      ``,
+      `Historial reciente de la conversación:`,
+      conversationHistory,
+      ``,
+      `El prospecto acaba de escribir:`,
+      `"${lastMessage}"`,
+      ``,
+      `Responde como ${agentRow?.name ?? "el asistente"} siguiendo tus instrucciones.`,
+    ].join("\n");
 
-    const rawMessages: Anthropic.MessageParam[] = (messages ?? []).map((m) => ({
-      role: (m.sender === "user" || m.sender === "ai") ? "assistant" : "user",
-      content: String(m.message_text ?? ""),
-    }));
+    // -- 6. Build Anthropic message list (alternating roles) -------------------
 
-    // Merge consecutive same-role messages (Anthropic requires alternating)
-    const anthropicMessages: Anthropic.MessageParam[] = [];
-    for (const m of rawMessages) {
-      const last = anthropicMessages[anthropicMessages.length - 1];
-      if (last && last.role === m.role) {
-        last.content = `${last.content}\n${m.content}`;
-      } else {
-        anthropicMessages.push({ ...m });
-      }
-    }
+    // We use the full conversation history in the userPrompt already;
+    // pass a single user turn to avoid duplication and role-alternation issues.
+    const anthropicMessages: Anthropic.MessageParam[] = [
+      { role: "user", content: userPrompt },
+    ];
 
-    // Must start with user role
-    if (anthropicMessages.length === 0 || anthropicMessages[0].role !== "user") {
-      anthropicMessages.unshift({ role: "user", content: `Hola, soy ${firstName}.` });
-    }
-
-    // Skip if the last message is already ours
-    if (anthropicMessages.at(-1)?.role === "assistant") {
-      return NextResponse.json({ skipped: true, reason: "last_message_is_ours" });
-    }
-
-    // ── 4. Call Claude Sonnet ─────────────────────────────────────────────────
+    // -- 7. Call Claude Sonnet -------------------------------------------------
 
     const aiResponse = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
@@ -146,12 +185,12 @@ Responde ÚNICAMENTE con el texto del mensaje, sin comillas ni explicaciones adi
       return NextResponse.json({ error: "Empty response from Claude" }, { status: 500 });
     }
 
-    // ── 5. Determine send mode ────────────────────────────────────────────────
+    // -- 8. Determine send mode ------------------------------------------------
 
     const autopilotMode = (conv.autopilot_mode as string) ?? "review";
     const autoSend = autopilotMode === "auto";
 
-    // ── 6. Save draft message ─────────────────────────────────────────────────
+    // -- 9. Save draft message -------------------------------------------------
 
     const { data: draftMsg } = await supabase
       .from("messages")
@@ -166,6 +205,7 @@ Responde ÚNICAMENTE con el texto del mensaje, sin comillas ni explicaciones adi
         timestamp:       new Date().toISOString(),
         metadata: {
           model:         "claude-sonnet-4-6",
+          agent_id:      conv.assigned_agent_id ?? null,
           input_tokens:  aiResponse.usage.input_tokens,
           output_tokens: aiResponse.usage.output_tokens,
           auto_send:     autoSend,
@@ -174,7 +214,7 @@ Responde ÚNICAMENTE con el texto del mensaje, sin comillas ni explicaciones adi
       .select()
       .single();
 
-    // ── 7. If auto mode, queue for the extension to send ─────────────────────
+    // -- 10. If auto mode, queue for the extension to send --------------------
 
     if (autoSend && draftMsg) {
       await supabase.from("engine_queue").insert({

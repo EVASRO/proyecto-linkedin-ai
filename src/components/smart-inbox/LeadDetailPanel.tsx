@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { InboxLead, Message, PipelineStage } from "./types";
 
-// ── Pipeline stages ───────────────────────────────────────────────────────────
+// -- Pipeline stages -----------------------------------------------------------
 
 const STAGES: { id: PipelineStage; label: string; color: string }[] = [
   { id: "leads_entrantes", label: "Lead Entrante",   color: "bg-blue-100 text-blue-700 border-blue-200"   },
@@ -30,7 +30,7 @@ function initials(name: string): string {
   return name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 }
 
-// ── Section wrapper ───────────────────────────────────────────────────────────
+// -- Section wrapper -----------------------------------------------------------
 
 function Section({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
@@ -51,7 +51,7 @@ function Section({ title, icon: Icon, children }: { title: string; icon: React.E
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// -- Main component ------------------------------------------------------------
 
 interface LeadDetailPanelProps {
   lead: InboxLead;

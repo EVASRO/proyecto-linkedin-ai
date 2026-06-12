@@ -1,4 +1,4 @@
-// ── Campaign Hierarchy ────────────────────────────────────────────────────────
+// -- Campaign Hierarchy --------------------------------------------------------
 
 export type CampaignType   = "linkedin" | "sales_navigator" | "email";
 export type CampaignStatus = "draft" | "active" | "paused" | "completed" | "archived";
@@ -28,40 +28,70 @@ export type WizardData = {
   estimatedLeads: number;
 };
 
-// ── Flow Node System ──────────────────────────────────────────────────────────
+// -- Flow Node Types -----------------------------------------------------------
 
-export type CampaignNodeType =
+export type NodeType =
   | "start"
   | "connect"
   | "message"
+  | "delay"
+  | "condition"
+  | "email"
+  | "end"
+  // legacy / extended
   | "email_node"
   | "wait"
-  | "condition"
   | "autopilot"
   | "visit"
   | "like"
-  | "end";
+  // new
+  | "withdraw"
+  | "find_email"
+  | "find_phone"
+  | "connect_email";
 
-export type NodeData = Record<string, unknown> & {
-  nodeType: CampaignNodeType;
+/** @deprecated Use NodeType */
+export type CampaignNodeType = NodeType;
+
+export type ConditionKind = "conexion_aceptada" | "respondio" | "no_respondio";
+export type DelayUnit     = "dias" | "horas";
+export type AutopilotStyle = "professional" | "friendly" | "direct";
+
+export type NodeData = {
+  nodeType: NodeType;
   label: string;
-  // Connect node
+  // connect
   addNote?: boolean;
+  connectionNote?: string;        // primary note field
+  messageA?: string;              // legacy / A/B variant A
+  messageB?: string;              // A/B variant B
   useABTest?: boolean;
-  messageA?: string;
-  messageB?: string;
-  // Message / Email node
-  subject?: string;
+  abNoteMode?: "note_vs_note" | "note_vs_no_note";
+  // message
   bodyA?: string;
   bodyB?: string;
-  // Wait node
+  // delay / wait
   days?: number;
-  // Condition node
-  conditionType?: "accepted_connection" | "replied" | "no_response";
+  delayUnit?: DelayUnit;
+  // condition
+  conditionType?: ConditionKind | "accepted_connection" | "replied" | "no_response";
   waitDays?: number;
+  // email
+  subject?: string;
+  // autopilot
+  autopilotEnabled?: boolean;
+  autopilotStyle?: string;
+  autopilotMaxTurns?: number;
+  autopilotCalendar?: string;
+  autopilotObjective?: string;
+  // AB variant badge
+  abVariant?: "A" | "B";
+  // arbitrary extra keys from legacy data
+  [key: string]: unknown;
 };
 
-// Using a plain shape avoids circular import issues with @xyflow/react generics
+// -- React Flow node/edge shapes (avoids circular imports with @xyflow/react) -
+
 export type FlowNode = {
   id: string;
   type?: string;
@@ -87,7 +117,38 @@ export type FlowConfig = {
   edges: FlowEdge[];
 };
 
-// ── Segment ───────────────────────────────────────────────────────────────────
+// -- A/B Test ------------------------------------------------------------------
+
+export type ABVariant = {
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  splitPercent: number; // 0-100
+};
+
+// -- Workflow JSON (persisted to Supabase) -------------------------------------
+
+export type WorkflowJSON = {
+  version: "2.0";
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  ab_enabled: boolean;
+  variant_a: ABVariant;
+  variant_b: ABVariant;
+  updated_at: string;
+  segments?: unknown[];
+  [key: string]: unknown;
+};
+
+// -- PropertyPanel -------------------------------------------------------------
+
+export type PropertyPanelProps = {
+  node: FlowNode;
+  onUpdate: (id: string, data: Partial<NodeData>) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+};
+
+// -- Segment -------------------------------------------------------------------
 
 export type SegmentStatus = "active" | "paused" | "closed" | "completed" | "draft";
 
@@ -114,22 +175,7 @@ export type Segment = {
   createdAt: string;
 };
 
-// ── Autopilot Config ──────────────────────────────────────────────────────────
-
-export type AutopilotStyle = "professional" | "friendly" | "direct";
-
-export type AutopilotConfig = {
-  enabled: boolean;
-  style: AutopilotStyle;
-  maxTurns: number;
-  calendarUrl: string;
-  workHoursStart: number; // 0-23
-  workHoursEnd: number;
-  workDays: number[]; // 0=Sun … 6=Sat
-  objective: string;
-};
-
-// ── Templates ─────────────────────────────────────────────────────────────────
+// -- Templates -----------------------------------------------------------------
 
 export type Template = {
   id: string;

@@ -13,6 +13,12 @@ export type TeamMemberRow = {
   role: string | null;
   job_title: string | null;
   avatar_gradient: number | null;
+  metrics?: {
+    leadsAssigned: number;
+    conversations: number;
+    meetings: number;
+    responseRate: number;
+  };
 };
 
 export type InvitationRow = {
@@ -70,10 +76,73 @@ export async function getTeamData(): Promise<Result<{
         .eq("status", "pending"),
     ]);
 
+    const memberIds = (membersRes.data ?? []).map((m) => m.id);
+
+    type MetricEntry = { leadsAssigned: number; conversations: number; meetings: number };
+    const metricsByUser: Record<string, MetricEntry> = {};
+
+    if (memberIds.length > 0) {
+      const [leadsRes, convsRes, meetingsRes] = await Promise.all([
+        supabase
+          .from("leads")
+          .select("assigned_to")
+          .eq("workspace_id", workspaceId)
+          .in("assigned_to", memberIds),
+        supabase
+          .from("conversations")
+          .select("id")
+          .eq("workspace_id", workspaceId)
+          .neq("status", "archived"),
+        supabase
+          .from("leads")
+          .select("assigned_to")
+          .eq("workspace_id", workspaceId)
+          .eq("crm_column", "reunion_agendada")
+          .in("assigned_to", memberIds),
+      ]);
+
+      for (const lead of leadsRes.data ?? []) {
+        if (!lead.assigned_to) continue;
+        if (!metricsByUser[lead.assigned_to])
+          metricsByUser[lead.assigned_to] = { leadsAssigned: 0, conversations: 0, meetings: 0 };
+        metricsByUser[lead.assigned_to].leadsAssigned++;
+      }
+
+      for (const lead of meetingsRes.data ?? []) {
+        if (!lead.assigned_to) continue;
+        if (!metricsByUser[lead.assigned_to])
+          metricsByUser[lead.assigned_to] = { leadsAssigned: 0, conversations: 0, meetings: 0 };
+        metricsByUser[lead.assigned_to].meetings++;
+      }
+
+      const totalConvs = convsRes.data?.length ?? 0;
+      const perMember  = memberIds.length > 0 ? Math.floor(totalConvs / memberIds.length) : 0;
+      for (const id of memberIds) {
+        if (!metricsByUser[id])
+          metricsByUser[id] = { leadsAssigned: 0, conversations: 0, meetings: 0 };
+        metricsByUser[id].conversations = perMember;
+      }
+    }
+
+    const membersWithMetrics = (membersRes.data ?? []).map((m) => {
+      const mx = metricsByUser[m.id];
+      return {
+        ...m,
+        metrics: {
+          leadsAssigned: mx?.leadsAssigned ?? 0,
+          conversations: mx?.conversations ?? 0,
+          meetings:      mx?.meetings      ?? 0,
+          responseRate:  mx?.leadsAssigned
+            ? Math.round(((mx?.conversations ?? 0) / mx.leadsAssigned) * 100)
+            : 0,
+        },
+      };
+    });
+
     return {
       success: true,
       data: {
-        members:     (membersRes.data     ?? []) as TeamMemberRow[],
+        members:     membersWithMetrics as TeamMemberRow[],
         invitations: (invitationsRes.data ?? []) as InvitationRow[],
       },
     };

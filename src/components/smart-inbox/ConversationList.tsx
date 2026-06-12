@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Archive, Bot, Check, Globe, Link2, MoreVertical, User } from "lucide-react";
+import { Archive, Bot, Check, MoreVertical, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { Conversation, ConvStatus } from "./types";
 import { archiveConversation, markConversationRead } from "@/app/dashboard/smart-inbox/actions";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);
@@ -39,7 +39,7 @@ const STATUS_CONFIG: Record<ConvStatus, { label: string; dot: string }> = {
   archived:    { label: "Archivado",   dot: "bg-zinc-400"   },
 };
 
-// ── Row menu ──────────────────────────────────────────────────────────────────
+// -- Row menu ------------------------------------------------------------------
 
 interface RowMenuProps {
   conv: Conversation;
@@ -122,7 +122,7 @@ function RowMenu({ conv, onArchived }: RowMenuProps) {
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// -- Component -----------------------------------------------------------------
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -143,10 +143,9 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
           <p className="px-4 py-8 text-center text-xs text-zinc-400">Sin conversaciones</p>
         )}
         {localConvs.map((conv) => {
-          const lastMsg    = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
-          const selected   = conv.id === selectedId;
-          const status     = STATUS_CONFIG[conv.status] ?? STATUS_CONFIG.active;
-          const SourceIcon = conv.lead.source === "linkedin" ? Link2 : Globe;
+          const lastMsg  = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
+          const selected = conv.id === selectedId;
+          const status   = STATUS_CONFIG[conv.status] ?? STATUS_CONFIG.active;
 
           return (
             <div
@@ -182,8 +181,12 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
-                  <SourceIcon className="h-2.5 w-2.5 flex-shrink-0 text-zinc-400" />
+                <div className="flex items-center gap-1.5">
+                  {conv.source === "salesnav" ? (
+                    <span className="flex-shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[8px] font-bold text-orange-600">SN</span>
+                  ) : (
+                    <span className="flex-shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[8px] font-bold text-blue-600">in</span>
+                  )}
                   <p className="truncate text-[10px] text-zinc-400">{conv.lead.company}</p>
                 </div>
 

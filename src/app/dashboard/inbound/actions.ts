@@ -15,7 +15,7 @@ async function getAuthContext() {
   return { supabase, workspaceId: profile?.workspace_id ?? "" };
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 export type InboundPost = {
   id: string;
@@ -37,7 +37,7 @@ export type InboundLead = {
   created_at: string;
 };
 
-// ── getInboundData ────────────────────────────────────────────────────────────
+// -- getInboundData ------------------------------------------------------------
 
 export async function getInboundData(): Promise<{
   success: boolean;
@@ -75,7 +75,7 @@ export async function getInboundData(): Promise<{
   }
 }
 
-// ── addPostToMonitor ──────────────────────────────────────────────────────────
+// -- addPostToMonitor ----------------------------------------------------------
 
 export async function addPostToMonitor(
   postUrl: string,
@@ -97,7 +97,7 @@ export async function addPostToMonitor(
   }
 }
 
-// ── togglePostStatus ──────────────────────────────────────────────────────────
+// -- togglePostStatus ----------------------------------------------------------
 
 export async function togglePostStatus(
   postId: string,
@@ -117,7 +117,7 @@ export async function togglePostStatus(
   }
 }
 
-// ── removePost ────────────────────────────────────────────────────────────────
+// -- removePost ----------------------------------------------------------------
 
 export async function removePost(
   postId: string
@@ -135,7 +135,7 @@ export async function removePost(
   }
 }
 
-// ── saveInboundDraft ──────────────────────────────────────────────────────────
+// -- saveInboundDraft ----------------------------------------------------------
 
 export async function saveInboundDraft(draft: {
   topic: string;
@@ -159,7 +159,7 @@ export async function saveInboundDraft(draft: {
   }
 }
 
-// ── getInboundDrafts ──────────────────────────────────────────────────────────
+// -- getInboundDrafts ----------------------------------------------------------
 
 export async function getInboundDrafts(): Promise<{
   success: boolean;
@@ -182,7 +182,7 @@ export async function getInboundDrafts(): Promise<{
   }
 }
 
-// ── generateContent ───────────────────────────────────────────────────────────
+// -- generateContent -----------------------------------------------------------
 
 export async function generateContent(params: {
   topic: string;
@@ -231,6 +231,39 @@ Solo devuelve el contenido listo para publicar, sin explicaciones.`;
       .trim();
 
     return { success: true, data: { content } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- publishLinkedInPost -------------------------------------------------------
+
+export async function publishLinkedInPost(content: string): Promise<{
+  success: boolean;
+  taskId?: string;
+  error?: string;
+}> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { data, error } = await supabase
+      .from("engine_queue")
+      .insert({
+        workspace_id: workspaceId,
+        task_type:    "post_linkedin",
+        action_type:  "post_linkedin",
+        status:       "pending",
+        priority:     2,
+        scheduled_at: new Date().toISOString(),
+        payload: {
+          content,
+          post_type: "feed",
+        },
+      })
+      .select("id")
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, taskId: data.id };
   } catch (err) {
     return { success: false, error: String(err) };
   }

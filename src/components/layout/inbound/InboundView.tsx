@@ -5,15 +5,15 @@ import { useRouter } from "next/navigation";
 import {
   ArrowUpRight, Check, ChevronRight, ClipboardCopy, ExternalLink,
   Eye, FileText, History, Layers, Link2, Loader2, Megaphone,
-  Pause, Play, Plus, RefreshCw, Sparkles, Trash2, X,
+  Pause, Play, Plus, RefreshCw, Send, Sparkles, Trash2, X,
 } from "lucide-react";
 import {
   addPostToMonitor, generateContent, getInboundData,
-  getInboundDrafts, removePost, saveInboundDraft, togglePostStatus,
+  getInboundDrafts, publishLinkedInPost, removePost, saveInboundDraft, togglePostStatus,
   type InboundLead, type InboundPost,
 } from "@/app/dashboard/inbound/actions";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 type Tab = "monitor" | "generador";
 
@@ -28,7 +28,7 @@ type DraftItem = {
   createdAt: string;
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 const LS_DRAFTS_KEY = "nexusai_inbound_drafts";
 
@@ -91,7 +91,7 @@ function initials(name: string) {
   return name.split(" ").filter(Boolean).map(n => n[0]).join("").slice(0, 2).toUpperCase();
 }
 
-// ── Add-post modal ────────────────────────────────────────────────────────────
+// -- Add-post modal ------------------------------------------------------------
 
 function AddPostModal({ onClose, onAdded }: { onClose: () => void; onAdded: (p: InboundPost) => void }) {
   const [url, setUrl]   = useState("");
@@ -186,7 +186,7 @@ function AddPostModal({ onClose, onAdded }: { onClose: () => void; onAdded: (p: 
   );
 }
 
-// ── Monitor tab ───────────────────────────────────────────────────────────────
+// -- Monitor tab ---------------------------------------------------------------
 
 function MonitorTab({ posts, leads, onPostsChange }: {
   posts: InboundPost[];
@@ -393,7 +393,7 @@ function MonitorTab({ posts, leads, onPostsChange }: {
   );
 }
 
-// ── Content generator tab ─────────────────────────────────────────────────────
+// -- Content generator tab -----------------------------------------------------
 
 function GeneradorTab() {
   const [topic,    setTopic]    = useState("");
@@ -405,7 +405,9 @@ function GeneradorTab() {
   const [loading,  setLoading]  = useState(false);
   const [copied,   setCopied]   = useState(false);
   const [drafts,   setDrafts]   = useState<DraftItem[]>([]);
-  const [draftSaved, setDraftSaved] = useState(false);
+  const [draftSaved,     setDraftSaved]     = useState(false);
+  const [publishing,     setPublishing]     = useState(false);
+  const [publishStatus,  setPublishStatus]  = useState<"idle" | "queued" | "error">("idle");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -482,6 +484,16 @@ function GeneradorTab() {
     }
     setDraftSaved(true);
     setTimeout(() => setDraftSaved(false), 2000);
+  }
+
+  async function handlePublish() {
+    if (!content.trim()) return;
+    setPublishing(true);
+    setPublishStatus("idle");
+    const res = await publishLinkedInPost(content);
+    setPublishing(false);
+    setPublishStatus(res.success ? "queued" : "error");
+    if (res.success) setTimeout(() => setPublishStatus("idle"), 5000);
   }
 
   function loadFromDraft(d: DraftItem) {
@@ -645,6 +657,27 @@ function GeneradorTab() {
                 >
                   {draftSaved ? <><Check className="h-3 w-3" /> Guardado</> : "Guardar borrador"}
                 </button>
+                <button
+                  onClick={handlePublish}
+                  disabled={!content.trim() || publishing}
+                  title="La extensión de Chrome publicará este post en tu cuenta de LinkedIn"
+                  className={[
+                    "ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all",
+                    publishStatus === "queued"
+                      ? "bg-green-50 border border-green-300 text-green-700"
+                      : publishStatus === "error"
+                        ? "bg-red-50 border border-red-300 text-red-600"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40",
+                  ].join(" ")}
+                >
+                  {publishing
+                    ? <><Loader2 className="h-3 w-3 animate-spin" /> Enviando…</>
+                    : publishStatus === "queued"
+                      ? <><Check className="h-3 w-3" /> En cola para publicar</>
+                      : publishStatus === "error"
+                        ? "Error — reintentar"
+                        : <><Send className="h-3 w-3" /> Publicar ahora</>}
+                </button>
               </div>
             </>
           ) : (
@@ -687,7 +720,7 @@ function GeneradorTab() {
   );
 }
 
-// ── Main view ─────────────────────────────────────────────────────────────────
+// -- Main view -----------------------------------------------------------------
 
 interface InboundViewProps {
   initialPosts: InboundPost[];

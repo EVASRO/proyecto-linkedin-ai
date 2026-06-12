@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useEffect, useTransition, useMemo } from "react";
-import type { Conversation, Message, PipelineStage } from "./types";
+import type { Conversation, Message, MessageStatus, PipelineStage } from "./types";
 import { ConversationList } from "./ConversationList";
 import { ChatView }         from "./ChatView";
 import { LeadDetailPanel }  from "./LeadDetailPanel";
-import { Bot, ChevronDown, MessageSquare, Search, X } from "lucide-react";
+import { Bot, ChevronDown, Inbox, MessageSquare, RefreshCw, Search, X } from "lucide-react";
 import { createClient }     from "@/lib/supabase/browser";
 import {
   sendInboxMessage,
   generateAISuggestion,
+  getConversationsWithMessages,
   toggleAutopilot as toggleAutopilotAction,
   markConversationRead,
   setAutopilotMode as setAutopilotModeAction,
@@ -25,7 +26,7 @@ interface InboxLayoutProps {
   workspaceId: string;
 }
 
-// ── Agent selector dropdown ───────────────────────────────────────────────────
+// -- Agent selector dropdown ---------------------------------------------------
 
 function AgentSelector({ agents, onSelect, onClose }: {
   agents: AgentRow[];
@@ -74,6 +75,9 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
   const [agentSelectorId, setAgentSelectorId] = useState<string | null>(null);
   const [filter, setFilter]               = useState<InboxFilter>("all");
   const [searchQuery, setSearchQuery]     = useState("");
+  const [syncing, setSyncing]             = useState(false);
+  const [lastSync, setLastSync]           = useState<Date | null>(null);
+  const [engineStatus, setEngineStatus]   = useState<'idle' | 'checking' | 'unknown'>('unknown');
 
   // Load active agents once
   useEffect(() => {
@@ -84,7 +88,28 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     });
   }, []);
 
-  // ── Filter + search ─────────────────────────────────────────────────────────
+  // -- Engine status polling ---------------------------------------------------
+  useEffect(() => {
+    if (!workspaceId) return;
+    const supabase = createClient();
+
+    async function checkEngineStatus() {
+      const { data } = await supabase
+        .from('engine_queue')
+        .select('status, created_at')
+        .eq('workspace_id', workspaceId)
+        .eq('task_type', 'check_inbox')
+        .in('status', ['pending', 'processing'])
+        .limit(1);
+      setEngineStatus(data?.length ? 'checking' : 'idle');
+    }
+
+    checkEngineStatus();
+    const interval = setInterval(checkEngineStatus, 30000);
+    return () => clearInterval(interval);
+  }, [workspaceId]);
+
+  // -- Filter + search ---------------------------------------------------------
   const filteredConversations = useMemo(() => {
     let result = conversations;
     if (filter === "unread")    result = result.filter((c) => c.unreadCount > 0);
@@ -106,7 +131,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
 
   const unreadTotal = conversations.filter((c) => c.unreadCount > 0).length;
 
-  // ── Supabase Realtime ────────────────────────────────────────────────────────
+  // -- Supabase Realtime --------------------------------------------------------
   useEffect(() => {
     if (!workspaceId) return;
     const supabase = createClient();
@@ -233,7 +258,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
-  // ── Select + mark read ───────────────────────────────────────────────────────
+  // -- Select + mark read -------------------------------------------------------
   function selectConversation(id: string) {
     setSelectedId(id);
     setAgentSelectorId(null);
@@ -249,7 +274,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     });
   }
 
-  // ── Autopilot: toggle + show agent picker ────────────────────────────────────
+  // -- Autopilot: toggle + show agent picker ------------------------------------
   function toggleAutopilot(id: string, active: boolean) {
     setConversations((prev) =>
       prev.map((c) =>
@@ -273,7 +298,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     }
   }
 
-  // ── Assign agent to conversation ─────────────────────────────────────────────
+  // -- Assign agent to conversation ---------------------------------------------
   function handleAssignAgent(agentId: string) {
     const conv = conversations.find((c) => c.id === agentSelectorId);
     if (!conv || !agentSelectorId) return;
@@ -297,7 +322,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     });
   }
 
-  // ── Send message ─────────────────────────────────────────────────────────────
+  // -- Send message -------------------------------------------------------------
   function sendMessage(convId: string, text: string) {
     const conv = conversations.find((c) => c.id === convId);
     if (!conv) return;
@@ -339,11 +364,27 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
               : c
           )
         );
+      } else if (!result.success) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === tempId
+                      ? { ...m, status: "failed" as MessageStatus }
+                      : m
+                  ),
+                }
+              : c
+          )
+        );
+        console.warn("[NexusAI Inbox] sendMessage failed:", result.error);
       }
     });
   }
 
-  // ── AI suggestion for ChatView ───────────────────────────────────────────────
+  // -- AI suggestion for ChatView -----------------------------------------------
   async function requestAISuggestion(convId: string): Promise<string> {
     const conv = conversations.find((c) => c.id === convId);
     if (!conv) return "";
@@ -355,7 +396,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     return result.success ? (result.data?.suggestion ?? "") : "";
   }
 
-  // ── Autopilot mode ───────────────────────────────────────────────────────────
+  // -- Autopilot mode -----------------------------------------------------------
   function changeAutopilotMode(convId: string, mode: "auto" | "review") {
     setConversations((prev) =>
       prev.map((c) => c.id === convId ? { ...c, autopilotMode: mode } : c)
@@ -365,7 +406,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     });
   }
 
-  // ── Draft approval: update message status locally ────────────────────────────
+  // -- Draft approval: update message status locally ----------------------------
   function handleDraftStatusChange(
     convId: string,
     msgId: string,
@@ -388,7 +429,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     );
   }
 
-  // ── Other local mutations ────────────────────────────────────────────────────
+  // -- Other local mutations ----------------------------------------------------
   function changeLeadStage(leadId: string, stage: PipelineStage) {
     setConversations((prev) =>
       prev.map((c) => c.lead.id === leadId ? { ...c, lead: { ...c.lead, pipeline: stage } } : c)
@@ -403,12 +444,27 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     );
   }
 
-  // ── Assigned agent badge for a conversation ──────────────────────────────────
+  // -- Assigned agent badge for a conversation ----------------------------------
   function getAssignedAgent(conv: Conversation) {
     const extended = conv as Conversation & { assignedAgentName?: string; assignedAgentEmoji?: string };
     return extended.assignedAgentName
       ? { name: extended.assignedAgentName, emoji: extended.assignedAgentEmoji ?? "🤖" }
       : null;
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      window.postMessage({ type: 'NEXUSAI_FORCE_INBOX_CHECK' }, '*');
+      await new Promise(r => setTimeout(r, 4000));
+      const result = await getConversationsWithMessages();
+      if (result.success && result.data) {
+        setConversations(result.data.conversations);
+      }
+      setLastSync(new Date());
+    } finally {
+      setSyncing(false);
+    }
   }
 
   const INBOX_FILTERS: { key: InboxFilter; label: string }[] = [
@@ -425,12 +481,38 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
         {/* Header */}
         <div className="flex-shrink-0 border-b border-zinc-100 p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-zinc-900">Smart Inbox</h2>
-            {unreadTotal > 0 && (
-              <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                {unreadTotal} nuevos
-              </span>
-            )}
+            <div>
+              <h2 className="text-sm font-bold text-zinc-900">Smart Inbox</h2>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${
+                  engineStatus === 'checking' ? 'bg-green-400 animate-pulse' :
+                  engineStatus === 'idle'     ? 'bg-zinc-300' : 'bg-zinc-200'
+                }`} />
+                <span className="text-[9px] text-zinc-400">
+                  {engineStatus === 'checking' ? 'Escaneando LinkedIn...' :
+                   engineStatus === 'idle'     ? 'En espera · sync cada 30min' :
+                   'Conectando...'}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {unreadTotal > 0 && (
+                <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {unreadTotal} nuevos
+                </span>
+              )}
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                title="Sincronizar mensajes de LinkedIn ahora"
+                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1
+                           text-[10px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50
+                           transition-colors"
+              >
+                <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin text-indigo-500' : 'text-zinc-400'}`} />
+                {syncing ? 'Sincronizando...' : lastSync ? `Hace ${Math.round((Date.now() - lastSync.getTime()) / 60000)}min` : 'Sincronizar'}
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -466,11 +548,37 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
           </div>
         </div>
 
-        <ConversationList
-          conversations={filteredConversations}
-          selectedId={selectedId}
-          onSelect={selectConversation}
-        />
+        {filteredConversations.length === 0 && !searchQuery && filter === "all" ? (
+          <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
+              <Inbox className="h-7 w-7 text-indigo-400" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-zinc-800">
+              Tu inbox está vacío
+            </p>
+            <p className="mt-1.5 text-xs text-zinc-400 max-w-[200px] leading-relaxed">
+              Las conversaciones aparecen aquí cuando tus leads respondan a las conexiones enviadas.
+            </p>
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="mt-4 flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2
+                         text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Buscando mensajes...' : 'Buscar mensajes ahora'}
+            </button>
+            <p className="mt-3 text-[10px] text-zinc-300">
+              Sincronización automática cada 30 minutos
+            </p>
+          </div>
+        ) : (
+          <ConversationList
+            conversations={filteredConversations}
+            selectedId={selectedId}
+            onSelect={selectConversation}
+          />
+        )}
       </div>
 
       {selected ? (

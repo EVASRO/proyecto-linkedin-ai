@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { CrmLead, Column, TagColor } from "./types";
 
-// ── Constantes de diseño ──────────────────────────────────────────────────────
+// -- Constantes de diseño ------------------------------------------------------
 
 const TAG_CLS: Record<TagColor, string> = {
   blue:   "bg-blue-50   text-blue-700   border border-blue-100",
@@ -65,7 +65,7 @@ function timeAgo(iso: string): string {
   return "ahora";
 }
 
-// ── Tipos de columnas ─────────────────────────────────────────────────────────
+// -- Tipos de columnas ---------------------------------------------------------
 
 type SortField = "created_at" | "value" | "score" | "days_in_stage";
 
@@ -93,7 +93,7 @@ const COLS: ColDef[] = [
   { key: "actions",     label: "",                    width: "w-10"          },
 ];
 
-// ── Props ─────────────────────────────────────────────────────────────────────
+// -- Props ---------------------------------------------------------------------
 
 interface LeadsListViewProps {
   leads:        CrmLead[];
@@ -104,7 +104,7 @@ interface LeadsListViewProps {
   onSort?:      (field: SortField) => void;
 }
 
-// ── Componente ────────────────────────────────────────────────────────────────
+// -- Componente ----------------------------------------------------------------
 
 export function LeadsListView({
   leads, columns, onLeadClick, sortBy, sortDir, onSort,

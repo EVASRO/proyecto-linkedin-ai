@@ -12,7 +12,7 @@ import type { Column, ColumnColor, CrmLead } from "./types";
 import { LeadCard } from "./LeadCard";
 import { moveLead } from "@/app/dashboard/crm/actions";
 
-// ── Color system ──────────────────────────────────────────────────────────────
+// -- Color system --------------------------------------------------------------
 
 const CC: Record<ColumnColor, { header: string; ring: string; count: string }> = {
   blue:   { header: "bg-blue-500",   ring: "ring-blue-300",   count: "bg-blue-100 text-blue-700"    },
@@ -29,7 +29,7 @@ const CC: Record<ColumnColor, { header: string; ring: string; count: string }> =
 
 const ALL_COLORS = Object.keys(CC) as ColumnColor[];
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 type MenuMode = "main" | "rename" | "color";
 
@@ -43,7 +43,7 @@ interface BoardProps {
   onLeadArchive?: (leadId: string) => void;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// -- Component -----------------------------------------------------------------
 
 export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadClick, onLeadDelete, onLeadArchive }: BoardProps) {
   const [openMenu, setOpenMenu] = useState<{ id: string; mode: MenuMode } | null>(null);
@@ -128,7 +128,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
           return (
             <div key={col.id} className="flex w-[260px] flex-shrink-0 flex-col"
                  style={{ height: 'calc(100vh - 180px)' }}>
-              {/* ── Column header ── */}
+              {/* -- Column header -- */}
               <div className={`relative rounded-t-xl ${c.header} px-3 py-2.5`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-[11px] font-bold uppercase tracking-widest text-white">
@@ -150,7 +150,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
                   {fmtVal(colValue(colKey(col)))} en pipeline
                 </p>
 
-                {/* ── Dropdown ── */}
+                {/* -- Dropdown -- */}
                 {isOpen && (
                   <>
                     {/* Invisible overlay to close on outside click */}
@@ -239,7 +239,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
                 )}
               </div>
 
-              {/* ── Drop zone ── */}
+              {/* -- Drop zone -- */}
               <Droppable droppableId={colKey(col)}>
                 {(provided, snapshot) => (
                   <div
@@ -290,7 +290,7 @@ export function Board({ leads, columns, onLeadsChange, onColumnsChange, onLeadCl
           );
         })}
 
-        {/* ── Add Stage ── */}
+        {/* -- Add Stage -- */}
         <div className="w-48 flex-shrink-0">
           {addingStage ? (
             <div className="rounded-xl border-2 border-dashed border-zinc-300 bg-white p-3 shadow-sm">

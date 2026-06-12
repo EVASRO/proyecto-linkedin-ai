@@ -1,14 +1,15 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
-// ── Shared result type ────────────────────────────────────────────────────────
+// -- Shared result type --------------------------------------------------------
 
 type Result<T = undefined> = T extends undefined
   ? { success: boolean; error?: string }
   : { success: boolean; error?: string; data?: T };
 
-// ── Exported types ────────────────────────────────────────────────────────────
+// -- Exported types ------------------------------------------------------------
 
 export type CampaignRow = {
   id: string;
@@ -21,10 +22,12 @@ export type CampaignRow = {
   leads_total: number;
   leads_queued: number;
   linkedin_account_id: string | null;
+  priority: number;
+  deleted_at: string | null;
   created_at: string;
 };
 
-// ── Auth context helper ───────────────────────────────────────────────────────
+// -- Auth context helper -------------------------------------------------------
 
 async function getAuthContext() {
   const supabase = await createClient();
@@ -53,7 +56,7 @@ async function getAuthContext() {
   return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
 }
 
-// ── 1. getCampaignsData ───────────────────────────────────────────────────────
+// -- 1. getCampaignsData -------------------------------------------------------
 
 export async function getCampaignsData(): Promise<Result<{
   campaigns: CampaignRow[];
@@ -101,7 +104,7 @@ export async function getCampaignsData(): Promise<Result<{
   }
 }
 
-// ── 2. createCampaign ─────────────────────────────────────────────────────────
+// -- 2. createCampaign ---------------------------------------------------------
 
 export async function createCampaign(data: {
   name: string;
@@ -139,7 +142,7 @@ export async function createCampaign(data: {
   }
 }
 
-// ── 3. updateCampaignWorkflow ─────────────────────────────────────────────────
+// -- 3. updateCampaignWorkflow -------------------------------------------------
 
 export async function updateCampaignWorkflow(
   id: string,
@@ -187,20 +190,79 @@ export async function updateCampaignWorkflow(
       .eq("workspace_id", workspaceId);
 
     if (error) return { success: false, error: error.message };
+
+    // -- Sync A/B columns when the FlowBuilder includes AB config --------------
+    if (typeof workflowData.ab_enabled !== "undefined") {
+      const abEnabled = workflowData.ab_enabled === true;
+      const varA = (workflowData.variant_a ?? {}) as Record<string, unknown>;
+      const varB = (workflowData.variant_b ?? {}) as Record<string, unknown>;
+
+      const extractFromNodes = (
+        nodes: unknown[],
+        edges: unknown[]
+      ): { connection_note: string; follow_up_message: string } => {
+        const nodeMap = new Map(
+          nodes.map((n) => [(n as Record<string, unknown>).id as string, n])
+        );
+        const next = new Map<string, string>();
+        for (const e of edges as Array<Record<string, unknown>>) {
+          if (!next.has(e.source as string)) next.set(e.source as string, e.target as string);
+        }
+        const start = nodes.find((n) => {
+          const d = (n as Record<string, unknown>);
+          return (d.data as Record<string, unknown>)?.nodeType === "start" || d.type === "start";
+        }) as Record<string, unknown> | undefined;
+
+        let connNote = "";
+        let followUp = "";
+        let cur = start ? next.get(start.id as string) : undefined;
+        const visited = new Set<string>();
+
+        while (cur && !visited.has(cur)) {
+          visited.add(cur);
+          const node = nodeMap.get(cur) as Record<string, unknown> | undefined;
+          if (!node) break;
+          const data = (node.data ?? {}) as Record<string, unknown>;
+          const nodeType = (data.nodeType ?? node.type) as string;
+          if (nodeType === "connect") connNote = String(data.connectionNote ?? data.noteA ?? "");
+          if (nodeType === "message" && !followUp) followUp = String(data.bodyA ?? data.body ?? "");
+          cur = next.get(cur);
+        }
+        return { connection_note: connNote, follow_up_message: followUp };
+      };
+
+      const varANodes = Array.isArray(varA.nodes) ? varA.nodes : (merged.nodes as unknown[] ?? []);
+      const varAEdges = Array.isArray(varA.edges) ? varA.edges : (merged.edges as unknown[] ?? []);
+      const varBNodes = Array.isArray(varB.nodes) ? varB.nodes : (merged.nodes as unknown[] ?? []);
+      const varBEdges = Array.isArray(varB.edges) ? varB.edges : (merged.edges as unknown[] ?? []);
+
+      await supabase
+        .from("campaigns")
+        .update({
+          ab_test_enabled: abEnabled,
+          ab_variant_a:    extractFromNodes(varANodes, varAEdges),
+          ab_variant_b:    extractFromNodes(varBNodes, varBEdges),
+        })
+        .eq("id", id)
+        .eq("workspace_id", workspaceId)
+        .then(() => null, () => null);
+    }
+
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
   }
 }
 
-// ── 4. updateCampaignStatus ───────────────────────────────────────────────────
+// -- 4. updateCampaignStatus ---------------------------------------------------
 
 export async function updateCampaignStatus(
   id: string,
   status: "draft" | "active" | "paused" | "completed"
-): Promise<Result> {
+): Promise<Result<{ affectedTasks: number }>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
+
     const { error } = await supabase
       .from("campaigns")
       .update({ status })
@@ -208,40 +270,131 @@ export async function updateCampaignStatus(
       .eq("workspace_id", workspaceId);
 
     if (error) return { success: false, error: error.message };
-    return { success: true };
+
+    let affectedTasks = 0;
+
+    if (status === "paused") {
+      // Pause pending/scheduled tasks — leave running tasks untouched
+      const { data } = await supabase
+        .from("engine_queue")
+        .update({ status: "paused" })
+        .eq("campaign_id", id)
+        .in("status", ["pending", "scheduled"])
+        .select("id");
+      affectedTasks = data?.length ?? 0;
+    } else if (status === "active") {
+      // Resume previously paused tasks
+      const { data } = await supabase
+        .from("engine_queue")
+        .update({ status: "pending" })
+        .eq("campaign_id", id)
+        .eq("status", "paused")
+        .select("id");
+      affectedTasks = data?.length ?? 0;
+    } else if (status === "completed") {
+      // Cancel everything not already running
+      const { data } = await supabase
+        .from("engine_queue")
+        .update({ status: "cancelled" })
+        .eq("campaign_id", id)
+        .in("status", ["pending", "scheduled", "paused"])
+        .select("id");
+      affectedTasks = data?.length ?? 0;
+    }
+
+    revalidatePath("/dashboard/campanas");
+    revalidatePath("/dashboard");
+    return { success: true, data: { affectedTasks } };
   } catch (err) {
     return { success: false, error: String(err) };
   }
 }
 
-// ── 5. archiveCampaign ───────────────────────────────────────────────────────
+// -- 5. archiveCampaign (soft delete) -----------------------------------------
 
-export async function archiveCampaign(id: string): Promise<Result> {
+export async function archiveCampaign(id: string): Promise<Result<{ cancelledTasks: number }>> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
+
     const { error } = await supabase
       .from("campaigns")
-      .update({ status: "archived" })
+      .update({ deleted_at: new Date().toISOString(), status: "archived" })
       .eq("id", id)
       .eq("workspace_id", workspaceId);
+
     if (error) return { success: false, error: error.message };
+
+    // Cancel all non-running tasks
+    const { data: cancelled } = await supabase
+      .from("engine_queue")
+      .update({ status: "cancelled" })
+      .eq("campaign_id", id)
+      .in("status", ["pending", "scheduled", "paused"])
+      .select("id");
+
+    revalidatePath("/dashboard/campanas");
+    revalidatePath("/dashboard");
+    return { success: true, data: { cancelledTasks: cancelled?.length ?? 0 } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- 6. permanentlyDeleteCampaign ----------------------------------------------
+
+export async function permanentlyDeleteCampaign(id: string): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    // Only allow deletion of campaigns archived ≥30 days ago
+    const { data: campaign } = await supabase
+      .from("campaigns")
+      .select("deleted_at, status")
+      .eq("id", id)
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    if (!campaign?.deleted_at || campaign.status !== "archived") {
+      return { success: false, error: "Solo se pueden eliminar campañas archivadas" };
+    }
+    const daysSinceArchived = (Date.now() - new Date(campaign.deleted_at).getTime()) / 86400000;
+    if (daysSinceArchived < 30) {
+      return { success: false, error: "La campaña debe estar archivada al menos 30 días" };
+    }
+
+    await supabase.from("engine_queue").delete().eq("campaign_id", id);
+    const { error } = await supabase.from("campaigns").delete().eq("id", id).eq("workspace_id", workspaceId);
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath("/dashboard/campanas");
+    revalidatePath("/dashboard");
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
   }
 }
 
-// ── 6. deleteCampaign ─────────────────────────────────────────────────────────
+// -- 7 (legacy). deleteCampaign → now delegates to archiveCampaign ------------
 
 export async function deleteCampaign(id: string): Promise<Result> {
+  return archiveCampaign(id);
+}
+
+// -- updateCampaignPriority ----------------------------------------------------
+
+export async function updateCampaignPriority(
+  id: string,
+  priority: number
+): Promise<Result> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
+    const clampedPriority = Math.min(10, Math.max(1, Math.round(priority)));
     const { error } = await supabase
       .from("campaigns")
-      .delete()
+      .update({ priority: clampedPriority })
       .eq("id", id)
       .eq("workspace_id", workspaceId);
-
     if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err) {
@@ -249,7 +402,7 @@ export async function deleteCampaign(id: string): Promise<Result> {
   }
 }
 
-// ── 6. launchCampaign ────────────────────────────────────────────────────────
+// -- 6. launchCampaign --------------------------------------------------------
 
 export async function launchCampaign(campaignId: string): Promise<Result<{ queued: number }>> {
   try {
@@ -317,7 +470,7 @@ export async function launchCampaign(campaignId: string): Promise<Result<{ queue
   }
 }
 
-// ── 7. duplicateCampaign ──────────────────────────────────────────────────────
+// -- 7. duplicateCampaign ------------------------------------------------------
 
 export async function duplicateCampaign(id: string): Promise<Result<CampaignRow>> {
   try {
@@ -354,7 +507,7 @@ export async function duplicateCampaign(id: string): Promise<Result<CampaignRow>
   }
 }
 
-// ── 8. getLeadCountsByCrmColumn ───────────────────────────────────────────────
+// -- 8. getLeadCountsByCrmColumn -----------------------------------------------
 
 export type LeadCountsByCrm = {
   extraido:           number;
@@ -398,7 +551,7 @@ export async function getLeadCountsByCrmColumn(
   }
 }
 
-// ── 9. getActiveCampaignStats ─────────────────────────────────────────────────
+// -- 9. getActiveCampaignStats -------------------------------------------------
 
 export type CampaignStats = {
   id: string;
@@ -499,7 +652,7 @@ export async function getDashboardUrl(): Promise<string> {
   return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 }
 
-// ── getSequenceAnalytics ──────────────────────────────────────────────────────
+// -- getSequenceAnalytics ------------------------------------------------------
 
 const SEQUENCE_STAGES = [
   { step: 0, key: 'extraido',          label: 'Extraído'          },
@@ -610,7 +763,7 @@ export async function getSequenceAnalytics(campaignId: string): Promise<{
   }
 }
 
-// ── saveCampaignAbTest ────────────────────────────────────────────────────────
+// -- saveCampaignAbTest --------------------------------------------------------
 
 export async function saveCampaignAbTest(
   campaignId: string,
@@ -631,7 +784,7 @@ export async function saveCampaignAbTest(
   }
 }
 
-// ── importLeadsFromCsv ────────────────────────────────────────────────────────
+// -- importLeadsFromCsv --------------------------------------------------------
 
 export async function importLeadsFromCsv(
   rows: Array<Record<string, string>>,
@@ -689,7 +842,6 @@ export async function importLeadsFromCsv(
           score:        5,
           custom_tags:  [] as string[],
           created_at:   new Date().toISOString(),
-          updated_at:   new Date().toISOString(),
         };
       });
 

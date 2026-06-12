@@ -51,6 +51,41 @@
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  function personalizeMessage(template, lead) {
+    if (!template || !lead) return template || '';
+
+    const fullName  = (lead.full_name || lead.name || '').trim();
+    const nameParts = fullName.split(/\s+/);
+    const firstName = lead.first_name || nameParts[0] || '';
+    const lastName  = lead.last_name  || nameParts.slice(1).join(' ') || '';
+
+    const vars = {
+      '{{nombre}}':          firstName,
+      '{{apellido}}':        lastName,
+      '{{nombre_completo}}': fullName,
+      '{{empresa}}':         lead.company   || '',
+      '{{cargo}}':           lead.job_title || '',
+      '{{ubicacion}}':       lead.location  || '',
+      '{{first_name}}':      firstName,
+      '{{last_name}}':       lastName,
+      '{{full_name}}':       fullName,
+      '{{company}}':         lead.company   || '',
+      '{{job_title}}':       lead.job_title || '',
+      '{{location}}':        lead.location  || '',
+      '{nombre}':            firstName,
+      '{empresa}':           lead.company   || '',
+      '{cargo}':             lead.job_title || '',
+    };
+
+    let result = template;
+    for (const [variable, value] of Object.entries(vars)) {
+      result = result.replaceAll(variable, value);
+    }
+    result = result.replace(/\{\{[^}]+\}\}/g, '').replace(/\{[^}]+\}/g, '');
+    console.log(`[NexusAI] personalizeMessage: "${template.slice(0, 40)}..." → "${result.slice(0, 40)}..."`);
+    return result.trim();
+  }
+
   function simulateClick(el) {
     if (!el) return false;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -77,6 +112,64 @@
     el.dispatchEvent(new MouseEvent('click',          { ...opts }));
     el.click();
     return true;
+  }
+
+  function isConnectModalOpen() {
+    const dialogs = Array.from(document.querySelectorAll(
+      '[role="dialog"], [role="alertdialog"], ' +
+      '.artdeco-modal, .send-invite, [class*="send-invite"], ' +
+      '[class*="connect-modal"], [class*="invitation"]'
+    )).filter(el => el.offsetParent);
+
+    return dialogs.some(el => {
+      const txt = (el.innerText || el.textContent || '').toLowerCase();
+      return txt.includes('enviar sin nota')    || txt.includes('send without') ||
+             txt.includes('añadir una nota')    || txt.includes('add a note') ||
+             txt.includes('conectar con')       || txt.includes('connect with') ||
+             txt.includes('invitar a conectar') || txt.includes('invite to connect') ||
+             txt.includes('enviar invitación')  || txt.includes('send invitation') ||
+             txt.includes('invitar');
+    });
+  }
+
+  async function forceClick(el) {
+    if (!el) return false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 300));
+
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top  + rect.height / 2;
+    const opts = {
+      bubbles: true, cancelable: true, view: window,
+      clientX: x, clientY: y,
+      screenX: x + (window.screenX || 0),
+      screenY: y + (window.screenY || 0),
+      pointerId: 1, pointerType: 'mouse', isPrimary: true,
+    };
+
+    // Intento 1: simulateClick estándar
+    simulateClick(el);
+    await new Promise(r => setTimeout(r, 500));
+
+    const modalAfter1 = isConnectModalOpen();
+    if (modalAfter1) return true;
+
+    // Intento 2: focus + Enter
+    el.focus();
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', keyCode: 13, bubbles: true }));
+    await new Promise(r => setTimeout(r, 500));
+
+    const modalAfter2 = isConnectModalOpen();
+    if (modalAfter2) return true;
+
+    // Intento 3: click nativo via el.click() con trusted flag workaround
+    el.dispatchEvent(new MouseEvent('click', { ...opts, bubbles: true }));
+    el.click();
+    await new Promise(r => setTimeout(r, 500));
+
+    return isConnectModalOpen();
   }
 
   function typeIntoField(el, text) {
@@ -109,157 +202,443 @@
 
   function isFirstDegreeConnection() {
     const platform = getPlatform();
+
     if (platform === 'salesnav') {
-      const degreeSelectors = [
-        '.profile-topcard-person-entity__degree-distance',
+      // PASO 1: Selectores específicos del topcard de SalesNav
+      // Buscar SOLO en el área del topcard, no en toda la página
+      const topcardSelectors = [
         '[data-anonymize="person-degree"]',
-        '.dist-value',
+        '.profile-topcard-person-entity__degree-distance',
         '.profile-topcard__distance',
+        '[class*="degree-distance"]',
+        '[class*="topcard"] [class*="degree"]',
       ];
-      for (const sel of degreeSelectors) {
+
+      for (const sel of topcardSelectors) {
         const el = document.querySelector(sel);
-        if (el) {
-          const text = el.textContent?.trim() ?? '';
-          const is1st = text.includes('1') && !text.includes('12') && !text.includes('1,');
-          console.log(`[NexusAI] SalesNav degree: "${text}" → is1st=${is1st}`);
-          return is1st;
+        if (!el) continue;
+        const text = (el.textContent || el.innerText || '').trim();
+        if (!text) continue;
+        // Solo 1er grado: "1st", "1er", "1°", "1º" — NO .startsWith('1') (falso positivo)
+        const is1st = /^\s*[·•]?\s*1\s*(st|er|°|º)\b/i.test(text) ||
+                      /\b1\s*(st|er|°|º)\b/i.test(text);
+        console.log(`[NexusAI] SalesNav degree badge "${sel}": "${text}" → is1st=${is1st}`);
+        return is1st;
+      }
+
+      // PASO 2: Fallback ESTRICTO — buscar SOLO en el topcard hero,
+      // NO en toda la página (evita falsos positivos de contactos en común)
+      const heroSelectors = [
+        '.profile-topcard-person-entity__name',
+        '.profile-topcard__person-name',
+        '.profile-topcard',
+        '[class*="profile-topcard-person-entity"]',
+      ];
+      let heroEl = null;
+      for (const sel of heroSelectors) {
+        heroEl = document.querySelector(sel);
+        if (heroEl) break;
+      }
+
+      if (heroEl) {
+        // Buscar dentro del hero SOLAMENTE span/div de máx 6 chars que sean exactamente "1st"/"1er"/"1°"
+        const candidates = Array.from(heroEl.querySelectorAll('span, div, abbr'))
+          .map(el => (el.textContent || el.innerText || '').trim())
+          .filter(t => t.length <= 6);
+        const has1st = candidates.some(t => /^1\s*(st|er|°|º)$/i.test(t));
+        if (has1st) {
+          console.log('[NexusAI] SalesNav hero fallback: 1st degree confirmed');
+          return true;
         }
       }
+
+      // Sin evidencia clara de 1er grado → asumir NO conectado (fail-safe)
+      console.log('[NexusAI] SalesNav: no 1st degree badge found → assuming NOT connected');
       return false;
-    } else {
-      const hasMessage = Array.from(document.querySelectorAll('button')).some(b => {
-        const t = (b.innerText || '').trim().toLowerCase();
-        return t === 'mensaje' || t === 'message';
-      });
-      const hasConnect = Array.from(document.querySelectorAll('button')).some(b => {
-        const t = (b.innerText || '').trim().toLowerCase();
-        return t === 'conectar' || t === 'connect';
-      });
-      return hasMessage && !hasConnect;
     }
+
+    // LinkedIn estándar (sin cambios)
+    const degreeSelectors = [
+      '.dist-value',
+      '[data-anonymize="person-degree"]',
+      '.pv-text-details__connection-info .t-14',
+      'span.pv-member-badge__text',
+    ];
+    for (const sel of degreeSelectors) {
+      for (const el of Array.from(document.querySelectorAll(sel))) {
+        const text = (el.innerText || el.textContent || '').trim();
+        if (/[·•]\s*1(st|er|\.°|°|º|\s*er\s*grado)/i.test(text)) {
+          console.log(`[NexusAI] LI degree badge: "${text}" → 1st degree`);
+          return true;
+        }
+      }
+    }
+    console.log('[NexusAI] LI: no degree badge found → assuming NOT 1st degree');
+    return false;
   }
 
   function isPendingConnection() {
-    return Array.from(document.querySelectorAll('button, span')).some(el => {
-      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-      return t.includes('pendiente') || t.includes('pending') ||
-             t.includes('retirar') || t.includes('withdraw');
+    // Solo buscar en BOTONES de acción, no en spans/texto general
+    const actionBtns = Array.from(document.querySelectorAll('button,[role="button"]'))
+      .filter(el => el.offsetParent);
+    return actionBtns.some(el => {
+      const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
+      const label = (el.getAttribute('aria-label') || '').toLowerCase();
+      return t === 'pendiente'    || t === 'pending'  ||
+             t.includes('retirar invitación') || t.includes('withdraw') ||
+             label.includes('retirar')        || label.includes('withdraw') ||
+             label.includes('pendiente')      || label.includes('pending');
     });
+  }
+
+  // ── Shadow DOM helpers ───────────────────────────────────────────────────
+
+  // Busca elementos en todo el DOM incluyendo shadow roots
+  function deepQueryAll(selector, root = document) {
+    const results = [];
+    try {
+      results.push(...Array.from(root.querySelectorAll(selector)));
+    } catch (_) {}
+    const allElements = Array.from(root.querySelectorAll('*'));
+    for (const el of allElements) {
+      if (el.shadowRoot) {
+        results.push(...deepQueryAll(selector, el.shadowRoot));
+      }
+    }
+    return results;
+  }
+
+  // Busca UN elemento en todo el DOM incluyendo shadow roots
+  function deepQuery(selector, root = document) {
+    return deepQueryAll(selector, root)[0] || null;
   }
 
   // ── Helpers de menú overflow ──────────────────────────────────────────────
 
   async function clickMoreButton() {
-    const candidates = Array.from(document.querySelectorAll(
-      'button, [role="button"], div[class*="overflow"]'
-    )).filter(el => {
-      if (!el.offsetParent) return false;
-      const label = (el.getAttribute('aria-label') || '').toLowerCase();
-      const text  = (el.innerText || el.textContent || '').trim().toLowerCase();
-      const cls   = (el.className || '').toLowerCase();
-      return label.includes('más acciones') || label.includes('more actions') ||
-             label.includes('opciones adicionales') || label.includes('overflow') ||
-             text === '...' || text === '•••' || text === 'más' || text === 'more' ||
-             cls.includes('overflow') || cls.includes('dropdown__trigger');
+    // PASO 0: Hover sobre el área de acciones — en SalesNav el botón "..." solo
+    // aparece cuando hay hover sobre la zona de acciones del contacto
+    const actionBarSelectors = [
+      '[data-x--lead-actions-bar]',
+      '[class*="lead-actions-bar"]',
+      '[class*="action-bar"]',
+      '.profile-topcard__actions',
+    ];
+    for (const sel of actionBarSelectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        el.dispatchEvent(new MouseEvent('mouseover',  { bubbles: true, cancelable: true }));
+        el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+        break;
+      }
+    }
+    // Hover también en botones visibles cercanos (Guardar / Mensaje)
+    const visibleButtons = Array.from(document.querySelectorAll('button')).filter(btn => {
+      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+      const txt   = (btn.innerText || '').toLowerCase().trim();
+      return label.includes('guardar') || label.includes('mensaje') ||
+             txt === 'guardar' || txt === 'mensaje' || txt === 'guardado';
     });
-    if (!candidates.length) {
-      console.warn('[NexusAI] clickMoreButton: ningún botón "..." encontrado');
+    if (visibleButtons.length > 0) {
+      const last = visibleButtons[visibleButtons.length - 1];
+      last.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      last.parentElement?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    }
+    await sleep(400);
+
+    // PASO 1: Buscar el botón overflow
+    let btn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
+
+    if (!btn) {
+      btn = Array.from(document.querySelectorAll('button,[role="button"]'))
+        .find(el => {
+          const label = (el.getAttribute('aria-label') || '').toLowerCase();
+          const cls   = (el.className || '').toLowerCase();
+          return label.includes('exceso de acciones') ||
+                 label.includes('más acciones') ||
+                 label.includes('more actions') ||
+                 label.includes('overflow') ||
+                 cls.includes('overflow-menu--trigger') ||
+                 cls.includes('overflow__trigger') ||
+                 cls.includes('artdeco-dropdown__trigger') ||
+                 (el.getAttribute('aria-haspopup') === 'true' &&
+                  el.getAttribute('aria-expanded') !== null &&
+                  (el.innerText || el.textContent || '').trim() === '');
+        });
+    }
+
+    // Segundo intento con hover más agresivo si aún no aparece
+    if (!btn) {
+      document.body.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, clientX: 400, clientY: 450,
+      }));
+      await sleep(600);
+      btn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]') ||
+        Array.from(document.querySelectorAll('button')).find(el =>
+          (el.getAttribute('aria-label') || '').toLowerCase().includes('exceso de acciones')
+        ) || null;
+    }
+
+    if (!btn) {
+      const allBtns = Array.from(document.querySelectorAll('button,[role="button"]'))
+        .filter(b => b.offsetParent || b.getBoundingClientRect().width > 0);
+      console.warn('[NexusAI] clickMoreButton: no encontrado tras hover. Botones disponibles:',
+        allBtns.map(b => ({
+          label: b.getAttribute('aria-label') || '',
+          text:  (b.innerText || b.textContent || '').trim().slice(0, 30),
+          cls:   b.className.slice(0, 50),
+          data:  b.getAttributeNames().filter(a => a.startsWith('data-')).join(','),
+        }))
+      );
       return false;
     }
-    console.log('[NexusAI] clickMoreButton: encontrado', candidates[0].outerHTML.slice(0, 100));
-    simulateClick(candidates[0]);
-    await sleep(900);
-    return true;
+
+    console.log('[NexusAI] clickMoreButton: encontrado →',
+      btn.getAttribute('aria-label') || btn.className.slice(0, 60));
+    const rect = btn.getBoundingClientRect();
+    console.log(`[NexusAI] clickMoreButton: botón en pos (${Math.round(rect.left)}, ${Math.round(rect.top)}) del viewport`);
+
+    btn.scrollIntoView({ block: 'center' });
+    await sleep(400);
+    btn.focus();
+    btn.click();
+    await sleep(1500);
+
+    // Verificar que abrió: aria-expanded cambia a "true"
+    if (btn.getAttribute('aria-expanded') === 'true') {
+      console.log('[NexusAI] clickMoreButton: dropdown abierto (aria-expanded=true)');
+      return true;
+    }
+
+    // Verificar por presencia de items en el DOM
+    const menuItems = document.querySelectorAll(
+      '.eah-menu-content__list-item, .eah-menu-item__action, ' +
+      '[role="menuitem"], .artdeco-dropdown__item'
+    );
+    if (menuItems.length > 0) {
+      console.log(`[NexusAI] clickMoreButton: ${menuItems.length} menu items visibles`);
+      return true;
+    }
+
+    // Segundo intento si no abrió
+    console.warn('[NexusAI] clickMoreButton: primer click no abrió — reintentando');
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }));
+    await sleep(100);
+    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, composed: true }));
+    await sleep(100);
+    btn.click();
+    await sleep(1500);
+
+    const opened = btn.getAttribute('aria-expanded') === 'true' ||
+      document.querySelectorAll('.eah-menu-content__list-item, .eah-menu-item__action').length > 0;
+
+    console.log(`[NexusAI] clickMoreButton: resultado final opened=${opened}`);
+    return opened;
+  }
+
+  function getDropdownContainer() {
+    // Intento 1: aria-controls del botón overflow específico
+    const overflowBtn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
+    if (overflowBtn) {
+      const controlsId = overflowBtn.getAttribute('aria-controls');
+      if (controlsId) {
+        const byId = document.getElementById(controlsId);
+        if (byId) {
+          const itemCount = byId.querySelectorAll('li, a, button').length;
+          console.log(`[NexusAI] getDropdownContainer: ✅ aria-controls #${controlsId} (${itemCount} items)`);
+          return byId;
+        }
+      }
+    }
+
+    // Intento 2: Buscar cualquier menú dropdown visible que acabe de aparecer
+    const visibleMenuSelectors = [
+      '.eah-dropdown-menu',
+      '.eah-menu-content',
+      '[role="menu"]',
+      '[role="listbox"]',
+      '.artdeco-dropdown__content-inner',
+      '[class*="dropdown-content"]',
+      '[class*="dropdown__content"]',
+      '[class*="overflow-menu"]',
+    ];
+    for (const sel of visibleMenuSelectors) {
+      const candidates = Array.from(document.querySelectorAll(sel));
+      const visible = candidates.find(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.height > 0 && rect.width > 0 && el.offsetParent !== null;
+      });
+      if (visible) {
+        const itemCount = visible.querySelectorAll('li, a, button, [role="menuitem"]').length;
+        console.log(`[NexusAI] getDropdownContainer: ✅ fallback "${sel}" (${itemCount} items)`);
+        return visible;
+      }
+    }
+
+    // Intento 3: Buscar por posición — any UL/DIV que apareció cerca del botón overflow
+    const allMenuLists = Array.from(document.querySelectorAll('ul, div[role="presentation"]'))
+      .filter(el => {
+        const rect = el.getBoundingClientRect();
+        if (rect.height < 30 || rect.width < 80) return false;
+        const children = el.querySelectorAll('li, button, a');
+        return children.length >= 2 && children.length <= 15;
+      });
+    if (allMenuLists.length > 0) {
+      const candidate = allMenuLists[allMenuLists.length - 1];
+      console.log(`[NexusAI] getDropdownContainer: ✅ DOM fallback ul/div con ${candidate.children.length} hijos`);
+      return candidate;
+    }
+
+    console.warn('[NexusAI] getDropdownContainer: botón overflow no encontrado');
+    return null;
   }
 
   function findMenuItemByText(...keywords) {
-    const selectors = [
-      '[role="menuitem"]', '[role="option"]',
-      '.artdeco-dropdown__item', 'li[class*="artdeco-dropdown"]',
-      '[data-control-name]', 'li[class*="dropdown"]',
+    // Buscar primero en el container del dropdown activo (evita falsos positivos de nav global)
+    const container = getDropdownContainer();
+    const searchRoot = container || document;
+
+    const dropdownSelectors = [
+      '.eah-menu-item__action',
+      'li.eah-menu-content__list-item a',
+      'li.eah-menu-content__list-item button',
+      'li.eah-menu-content__list-item [role="menuitem"]',
+      '[role="menuitem"]',
+      '[role="option"]',
+      '.artdeco-dropdown__item',
+      'li[class*="artdeco-dropdown"]',
+      '[data-control-name]',
+      'li[class*="dropdown"]',
       'div[class*="dropdown-option"]',
     ];
-    for (const sel of selectors) {
-      const items = Array.from(document.querySelectorAll(sel));
+
+    for (const sel of dropdownSelectors) {
+      const items = Array.from(searchRoot.querySelectorAll(sel));
       const found = items.find(el => {
+        if (!el.offsetParent && el.getBoundingClientRect().height === 0) return false;
         const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-        return keywords.some(kw => t.includes(kw.toLowerCase()));
+        return keywords.some(kw => t === kw.toLowerCase() || t.startsWith(kw.toLowerCase()));
       });
       if (found) {
-        console.log(`[NexusAI] findMenuItemByText("${keywords[0]}"): found via ${sel}`);
+        console.log(`[NexusAI] findMenuItemByText("${keywords[0]}"): encontrado via "${sel}" → "${(found.innerText||'').trim().slice(0,40)}"`);
         return found;
       }
     }
-    const allItems = Array.from(document.querySelectorAll(
-      '[role="menuitem"], [role="option"], .artdeco-dropdown__item'
-    )).filter(el => el.offsetParent);
-    if (allItems.length) {
-      console.warn(`[NexusAI] findMenuItemByText("${keywords[0]}"): NOT FOUND. Items disponibles:`,
-        allItems.map(el => (el.innerText || '').trim()).filter(Boolean)
+
+    if (container) {
+      const allItems = Array.from(container.querySelectorAll(
+        '.eah-menu-item__action, li, button, a, [role="menuitem"]'
+      ));
+      const visibleItems = allItems.filter(el =>
+        el.offsetParent !== null || el.getBoundingClientRect().height > 0
       );
+
+      // Intentar match antes de rendirse — el contact overflow puede no usar .eah-menu-item__action
+      const searchText = keywords[0].toLowerCase();
+      const fallbackMatch = visibleItems.find(el => {
+        const txt = (el.innerText || el.textContent || '').toLowerCase().trim();
+        return keywords.some(kw => txt === kw.toLowerCase() || txt.startsWith(kw.toLowerCase()));
+      });
+      if (fallbackMatch) {
+        const innerClickable = fallbackMatch.querySelector('a, button, [role="menuitem"]');
+        const target = innerClickable || fallbackMatch;
+        console.log(`[NexusAI] findMenuItemByText FALLBACK: "${keywords[0]}" → "${target.innerText?.trim()}"`);
+        return target;
+      }
+
+      const visibleTexts = visibleItems
+        .map(el => (el.innerText || el.textContent || '').trim())
+        .filter(t => t.length > 0 && t.length < 60);
+      console.warn(`[NexusAI] findMenuItemByText("${keywords[0]}"): NO en dropdown (${visibleTexts.length} items):`, visibleTexts);
+      return null;
     }
+
+    // Nuclear: sin container, escanear elementos de menú excluyendo nav global
+    const NAV_BLACKLIST = ['inicio', 'cuentas', 'posibles clientes', 'mensajes', 'buscar',
+      'filtros', 'búsquedas guardadas', 'perfiles ideales', 'recomendaciones'];
+
+    const allVisible = Array.from(document.querySelectorAll(
+      '[role="menuitem"], [role="option"], .artdeco-dropdown__item, button[type="button"]'
+    )).filter(el => {
+      if (!el.offsetParent && el.getBoundingClientRect().height === 0) return false;
+      const txt = (el.innerText || el.textContent || '').toLowerCase().trim();
+      return !NAV_BLACKLIST.some(b => txt === b);
+    });
+
+    const nuclear = allVisible.find(el => {
+      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+      return keywords.some(kw => t === kw.toLowerCase());
+    });
+
+    if (nuclear) {
+      console.log(`[NexusAI] findMenuItemByText NUCLEAR: "${(nuclear.innerText||'').trim().slice(0,40)}"`);
+      return nuclear;
+    }
+
+    const visibleTexts = allVisible
+      .map(el => (el.innerText || '').trim())
+      .filter(t => t.length > 0 && t.length < 30)
+      .filter((t, i, arr) => arr.indexOf(t) === i)
+      .slice(0, 20);
+    console.warn(`[NexusAI] findMenuItemByText("${keywords[0]}"): NO encontrado. Textos visibles:`, visibleTexts);
     return null;
   }
 
   // ── Extraer perfil LinkedIn estándar ─────────────────────────────────────
 
   function extractLinkedInProfile() {
-    let name = getText([
-      'h1.text-heading-xlarge',
-      '.pv-text-details__left-panel h1',
-      'h1[data-generated-suggestion-target]',
-      'h1',
-    ]);
+    // name: h1 en la página (siempre es el nombre del perfil)
+    let name = null;
+    const h1s = Array.from(document.querySelectorAll('h1')).filter(h => h.offsetParent);
+    if (h1s.length) name = h1s[0].innerText?.trim();
     if (!name) {
       const m = document.title.replace(/^\(\d+\)\s*/, '').match(/^(.+?)\s*[|\-–]/);
       if (m) name = m[1].trim();
     }
 
-    const headline = getText([
-      '.pv-text-details__left-panel .text-body-medium.break-words',
-      'div.text-body-medium.break-words',
-      '.ph5 .mt2 div:first-child',
-      '.text-body-medium',
-    ]);
+    // headline: primer div/span con texto debajo del h1, no en nav
+    let headline = null;
+    const mainContent = document.querySelector('main') || document.body;
+    const allTexts = Array.from(mainContent.querySelectorAll('div,span'))
+      .filter(el => {
+        if (!el.offsetParent) return false;
+        const t = (el.innerText || '').trim();
+        return t.length > 10 && t.length < 200 && !t.includes('\n');
+      });
+    headline = allTexts.find(el => {
+      const t = el.innerText?.trim() || '';
+      return t !== name && t.length > 5 && el.closest('nav') === null;
+    })?.innerText?.trim() || '';
 
-    const company = getText([
-      '.pv-text-details__right-panel .inline-show-more-text',
-      '.pv-top-card--list li:nth-child(2)',
-      'button[aria-label*="empresa"]',
-      '.pv-text-details__right-panel span',
-    ]);
+    // location: texto que menciona ciudad/país (heurística)
+    const location = allTexts.find(el => {
+      const t = el.innerText?.trim() || '';
+      return /,\s*\w+/.test(t) && t.length < 80 && t !== name && t !== headline;
+    })?.innerText?.trim() || '';
 
-    const location = getText([
-      '.pv-text-details__left-panel .text-body-small.inline.t-black--light.break-words',
-      '.pv-top-card--list-bullet li span',
-    ]);
+    // connections: buscar texto con número + "contactos"
+    const connEl = Array.from(document.querySelectorAll('span,a'))
+      .find(el => /[\d,]+\s*(contacto|connection|follower)/i.test(el.innerText || ''));
+    const connections = connEl?.innerText?.trim() || '';
 
-    const about = getText([
-      '.pv-shared-text-with-see-more span[aria-hidden="true"]',
-      '#about ~ div div div span[aria-hidden="true"]',
-    ]);
-
-    const connections = getText([
-      '.pv-top-card--list-bullet li span.t-bold',
-      '[data-field="connections_count"]',
-    ]);
-
-    const expItems = getAll('#experience ~ div .pvs-list__paged-list-item').slice(0, 3);
-    const experience = expItems.map((el) => {
-      const title   = (el.querySelector('.t-bold span[aria-hidden="true"]') || el.querySelector('.t-bold'))?.innerText?.trim();
-      const company = (el.querySelectorAll('.t-14.t-normal span[aria-hidden="true"]')[0])?.innerText?.trim();
-      const dates   = (el.querySelectorAll('.t-14.t-normal span[aria-hidden="true"]')[1])?.innerText?.trim();
-      return [title, company, dates].filter(Boolean).join(' · ');
-    }).filter(Boolean);
+    // about: sección con id="about" o aria-label="Acerca de"
+    const aboutSection =
+      document.querySelector('#about')?.closest('section') ||
+      document.querySelector('[aria-label*="Acerca"], [aria-label*="About"]');
+    const about = aboutSection
+      ? Array.from(aboutSection.querySelectorAll('span'))
+          .find(s => s.offsetParent && (s.innerText||'').length > 30)
+          ?.innerText?.trim() || ''
+      : '';
 
     return {
       name:        name       || 'No encontrado',
       headline:    headline   || '',
-      company:     company    || '',
+      company:     '',
       location:    location   || '',
       about:       about      || '',
       connections: connections || '',
-      experience,
+      experience:  [],
       url:         window.location.href,
       source:      'linkedin',
       extractedAt: new Date().toISOString(),
@@ -270,26 +649,28 @@
 
   function extractSalesNavProfile() {
     const name = getText([
-      '.profile-topcard-person-entity__name',
       '[data-anonymize="person-name"]',
+      '.profile-topcard-person-entity__name',
       'h1',
     ]);
-
     const headline = getText([
+      '[data-anonymize="headline"]',
       '.profile-topcard__summary-position .profile-topcard__job-title',
       '.profile-topcard__summary-position',
-      '[data-anonymize="headline"]',
     ]);
-
     const company = getText([
-      '.profile-topcard__current-positions .profile-topcard__company-name',
       '[data-anonymize="company-name"]',
+      '.profile-topcard__current-positions .profile-topcard__company-name',
+    ]);
+    const location = getText([
+      '[data-anonymize="location"]',
+      '.profile-topcard__location',
     ]);
 
-    const location = getText([
-      '.profile-topcard__location',
-      '[data-anonymize="location"]',
-    ]);
+    // Número de conexiones en SalesNav
+    const connEl = Array.from(document.querySelectorAll('span,div'))
+      .find(el => /[\d,]+\s*(contacto|connection)/i.test(el.innerText || ''));
+    const connections = connEl?.innerText?.trim() || '';
 
     return {
       name:        name     || 'No encontrado',
@@ -297,7 +678,7 @@
       company:     company  || '',
       location:    location || '',
       about:       '',
-      connections: '',
+      connections,
       experience:  [],
       url:         window.location.href,
       source:      'sales_navigator',
@@ -552,54 +933,396 @@
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'view_profile', success: true } });
   }
 
+  function isSalesNavDialogOpen() {
+    if (document.querySelector('.connect-cta-form__send')) return true;
+    if (document.querySelector('[data-test-modal-container][aria-hidden="false"]')) return true;
+    const dialog = document.querySelector('[data-test-modal][role="dialog"]');
+    if (dialog && dialog.getBoundingClientRect().height > 0) return true;
+    return false;
+  }
+
   // ── ACCIÓN 2: CONNECT ─────────────────────────────────────────────────────
 
-  async function executeConnect(taskId, note, leadId, campaignId) {
+  async function detectConnectionState() {
+    const platform = getPlatform();
+    await sleep(1000);
+
+    if (platform === 'salesnav') {
+      // PASO 1: Badge de grado (el más fiable — no requiere abrir dropdown)
+      if (isFirstDegreeConnection()) {
+        console.log('[NexusAI] detectConnectionState: 1st degree badge → connected');
+        return 'connected';
+      }
+
+      // PASO 2: Abrir overflow y leer items DIRECTAMENTE del container
+      let menuOpened = false;
+      try { menuOpened = await clickMoreButton(); } catch(_) {}
+
+      if (menuOpened) {
+        await sleep(700);
+
+        const container = getDropdownContainer();
+
+        if (!container) {
+          console.warn('[NexusAI] detectConnectionState: no se encontró dropdown container → SAFE DEFAULT none');
+          const btn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
+          if (btn) btn.click();
+          return 'none';
+        }
+
+        const menuItems = Array.from(container.querySelectorAll(
+          'li, a, button, .eah-menu-item__action, [role="menuitem"]'
+        )).filter(el =>
+          el.offsetParent !== null || el.getBoundingClientRect().height > 0
+        );
+        const menuTexts = menuItems
+          .map(el => (el.innerText || el.textContent || '').trim())
+          .filter(t => t.length > 0);
+
+        const containerRect = container.getBoundingClientRect();
+        console.log(
+          `[NexusAI] detectConnectionState: container en (${Math.round(containerRect.left)},${Math.round(containerRect.top)}), ` +
+          `items: ${menuTexts.length}:`, menuTexts
+        );
+
+        const hasWithdraw = menuTexts.some(t => {
+          const lower = t.toLowerCase();
+          return lower.includes('retirar') ||
+                 lower.includes('withdraw') ||
+                 lower.includes('cancelar invitación') ||
+                 lower.includes('pendiente');
+        });
+        const hasConnect = menuTexts.some(t => {
+          const lower = t.toLowerCase().trim();
+          return (lower === 'conectar' || lower === 'connect') && !lower.includes('pendiente');
+        });
+
+        // Cerrar dropdown ANTES de retornar
+        const overflowBtn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
+        if (overflowBtn && overflowBtn.getAttribute('aria-expanded') === 'true') {
+          overflowBtn.click();
+          await sleep(400);
+        }
+
+        if (hasWithdraw) {
+          console.log('[NexusAI] detectConnectionState: "Retirar" encontrado → pending');
+          return 'pending';
+        }
+        if (hasConnect) {
+          console.log('[NexusAI] detectConnectionState: "Conectar" encontrado → none');
+          return 'none';
+        }
+
+        // Dropdown correcto sin Conectar ni Retirar: verificar topcard
+        const topcardConnectBtn = Array.from(document.querySelectorAll(
+          '[class*="lead-actions"] button, [data-x--lead-actions-bar] button, .profile-topcard__actions button'
+        )).find(btn => {
+          const txt = (btn.innerText || btn.textContent || '').toLowerCase().trim();
+          return txt === 'conectar' || txt === 'connect';
+        });
+        if (topcardConnectBtn) {
+          console.log('[NexusAI] detectConnectionState: "Conectar" en topcard → none');
+          return 'none';
+        }
+
+        // "Añadir nota" en el dropdown → el lead ya está conectado (solo aparece para 1er grado)
+        const hasAddNote = menuTexts.some(t => {
+          const lower = t.toLowerCase();
+          return lower.includes('añadir nota') || lower.includes('add note') ||
+                 lower.includes('add a note')  || lower.includes('add note (optional)');
+        });
+        if (hasAddNote) {
+          console.log('[NexusAI] detectConnectionState: "Añadir nota" encontrado → connected (ya conectado)');
+          return 'connected';
+        }
+
+        console.warn('[NexusAI] detectConnectionState: dropdown correcto sin Conectar/Retirar/AñadirNota → SAFE DEFAULT none');
+        return 'none';
+      }
+
+      // No se pudo abrir dropdown → safe default
+      console.warn('[NexusAI] detectConnectionState: no se pudo abrir dropdown → none');
+      return 'none';
+    }
+
+    // LinkedIn estándar
+    if (isFirstDegreeConnection()) return 'connected';
+    if (isPendingConnection())      return 'pending';
+    return 'none';
+  }
+
+  async function executeConnect(taskId, note, leadId, campaignId, lead) {
     const platform = getPlatform();
     console.log(`[NexusAI] executeConnect platform=${platform} leadId=${leadId}`);
+    note = personalizeMessage(note, lead);
     await sleep(2500 + Math.random() * 1500);
 
-    if (isFirstDegreeConnection()) {
-      console.log('[NexusAI] Already 1st degree');
+    // ── Detectar OUT_OF_NETWORK (perfil bloqueado) ────────────────────────────
+    const isOutOfNetwork = window.location.href.includes('OUT_OF_NETWORK');
+    if (isOutOfNetwork) {
+      console.log('[NexusAI] SalesNav: perfil OUT_OF_NETWORK detectado → búsqueda extendida de botón Conectar');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await sleep(1500);
+    }
+
+    // ── SMART STATE DETECTION ─────────────────────────────────────────────────
+    const connectionState = await detectConnectionState();
+    console.log(`[NexusAI] ConnectionState: ${connectionState} | platform=${platform}`);
+
+    if (connectionState === 'connected') {
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'connect', success: false, reason: 'already_connected',
-        lead_id: leadId, campaign_id: campaignId,
+        action:     'connect',
+        success:    true,
+        reason:     'already_connected',
+        crm_target: 'conexion_aceptada',
+        lead_id:    leadId,
+        campaign_id: campaignId,
       }});
     }
 
-    if (isPendingConnection()) {
-      console.log('[NexusAI] Connection pending');
+    if (connectionState === 'pending') {
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'connect', success: false, reason: 'already_pending',
-        lead_id: leadId, campaign_id: campaignId,
+        action:     'connect',
+        success:    true,
+        reason:     'already_pending',
+        crm_target: 'conexion_enviada',
+        lead_id:    leadId,
+        campaign_id: campaignId,
       }});
     }
+
+    // connectionState === 'none' → proceder a conectar
 
     if (platform === 'salesnav') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      await sleep(1000);
+      await sleep(800);
 
-      const opened = await clickMoreButton();
-      if (!opened) {
+      // ── HELPER: botón "Conectar" directo en topcard (no en dropdown) ────────
+      function findDirectConnectBtn() {
+        const connectSelectors = [
+          '[data-x--lead-actions-bar] button',
+          '[class*="lead-actions-bar"] button',
+          '[class*="profile-topcard__actions"] button',
+          '.profile-topcard__actions button',
+          // Para OUT_OF_NETWORK:
+          '[class*="locked-profile"] button',
+          '[class*="out-of-network"] button',
+          '.profile-topcard-actions button',
+          '[data-x--lead-cta-top-card] button',
+          // Cualquier botón prominente en el header del perfil
+          'header button',
+          'section button',
+        ];
+        for (const sel of connectSelectors) {
+          const found = Array.from(document.querySelectorAll(sel)).find(btn => {
+            if (!btn.offsetParent && btn.getBoundingClientRect().width === 0) return false;
+            const txt   = (btn.innerText || btn.textContent || '').toLowerCase().trim();
+            const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+            return txt === 'conectar' || txt === 'connect' ||
+                   label.includes('conectar') || label.includes('connect to');
+          });
+          if (found) return found;
+        }
+        return null;
+      }
+
+      // ── PASO 1: Intentar botón directo en topcard (sin abrir dropdown) ──────
+      let directBtn = findDirectConnectBtn();
+      if (directBtn) {
+        console.log('[NexusAI] SalesNav: ✅ botón "Conectar" directo en topcard → clickeando');
+        directBtn.focus();
+        directBtn.click();
+      } else {
+        // ── PASO 2: Abrir overflow dropdown para buscar "Conectar" ──────────
+        let opened = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          opened = await clickMoreButton();
+          if (opened) break;
+          console.warn(`[NexusAI] SalesNav: reintentando dropdown (${attempt + 1}/3)`);
+          await sleep(1000);
+        }
+
+        if (opened) {
+          let connectItem = null;
+          for (let attempt = 0; attempt < 4; attempt++) {
+            connectItem = findMenuItemByText('conectar', 'connect', 'invitar', 'invite');
+            if (connectItem) break;
+            console.warn(`[NexusAI] SalesNav: esperando "Conectar" en dropdown (${attempt + 1}/4)`);
+            await sleep(600);
+          }
+
+          if (!connectItem) {
+            // "Conectar" no está en el dropdown — cerrar y buscar botón directo
+            const overflowBtn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
+            if (overflowBtn) { overflowBtn.click(); await sleep(500); }
+
+            directBtn = findDirectConnectBtn();
+            if (directBtn) {
+              console.log('[NexusAI] SalesNav: "Conectar" directo encontrado tras cerrar dropdown');
+              directBtn.focus();
+              directBtn.click();
+            } else if (isOutOfNetwork) {
+              console.log('[NexusAI] SalesNav OUT_OF_NETWORK: esperando 2s adicionales y buscando con scroll...');
+              window.scrollTo({ top: 200, behavior: 'smooth' });
+              await sleep(2000);
+              directBtn = findDirectConnectBtn();
+              if (directBtn) {
+                console.log('[NexusAI] SalesNav OUT_OF_NETWORK: ✅ botón Conectar encontrado tras scroll');
+                directBtn.focus();
+                directBtn.click();
+                // Continuar al PASO 3 normalmente — no hacer return aquí
+              } else {
+                // Para OUT_OF_NETWORK sin botón: marcar como scheduled para reintentar en 24h
+                console.warn('[NexusAI] SalesNav OUT_OF_NETWORK: sin botón Conectar visible → rescheduled');
+                return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+                  action: 'connect', success: false,
+                  reason: 'out_of_network_locked',
+                  lead_id: leadId, campaign_id: campaignId,
+                }});
+              }
+            } else {
+              console.warn('[NexusAI] SalesNav: "Conectar" no encontrado ni en dropdown ni en topcard');
+              return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+                action: 'connect', success: false, reason: 'connect_item_not_found',
+                lead_id: leadId, campaign_id: campaignId,
+              }});
+            }
+          } else {
+            console.log('[NexusAI] SalesNav: "Conectar" en dropdown → clickeando');
+            console.log('[NexusAI] SalesNav: simulateClick en connectItem:', connectItem.tagName, connectItem.className?.slice(0, 50));
+            simulateClick(connectItem);
+            await sleep(300);
+            connectItem.focus();
+            connectItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+            connectItem.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+          }
+        } else {
+          console.warn('[NexusAI] SalesNav: no se pudo abrir dropdown → more_button_not_found');
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: false, reason: 'more_button_not_found',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+      }
+
+      // ── PASO 3: Esperar dialog de invitación (máx 3 segundos) ───────────────
+      let dialogFound = false;
+      for (let i = 0; i < 6; i++) {
+        await sleep(500);
+        if (isSalesNavDialogOpen()) { dialogFound = true; break; }
+      }
+
+      if (!dialogFound) {
+        // Sin dialog → verificar si conexión se envió automáticamente
+        await sleep(1000);
+        const verifyOpened = await clickMoreButton();
+        if (verifyOpened) {
+          await sleep(600);
+          const verifyContainer = getDropdownContainer();
+          if (verifyContainer) {
+            const texts = Array.from(verifyContainer.querySelectorAll('li, a, button'))
+              .map(el => (el.innerText || '').trim().toLowerCase());
+            const isPendingNow = texts.some(t => t.includes('pendiente') || t.includes('retirar'));
+            const connectGone  = !texts.some(t => t.trim() === 'conectar' || t.trim() === 'connect');
+            const btn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
+            if (btn) btn.click();
+            if (isPendingNow || connectGone) {
+              console.log('[NexusAI] SalesNav: ✅ conexión enviada sin dialog');
+              return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+                action: 'connect', success: true, reason: 'sent',
+                lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
+              }});
+            }
+          }
+        }
+        console.warn('[NexusAI] SalesNav: dialog no apareció, conexión no confirmada');
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-          action: 'connect', success: false, reason: 'more_button_not_found',
+          action: 'connect', success: false, reason: 'modal_not_opened',
           lead_id: leadId, campaign_id: campaignId,
         }});
       }
 
-      const connectItem = findMenuItemByText('conectar', 'connect', 'invitar', 'invite');
-      if (!connectItem) {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      // ── PASO 4: Enviar invitación via dialog ─────────────────────────────────
+      console.log('[NexusAI] SalesNav: dialog detectado → buscando .connect-cta-form__send');
+      const sendBtn = document.querySelector('.connect-cta-form__send');
+      if (!sendBtn) {
+        console.warn('[NexusAI] SalesNav: .connect-cta-form__send no encontrado en dialog');
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-          action: 'connect', success: false, reason: 'connect_item_not_found',
+          action: 'connect', success: false, reason: 'dialog_send_button_not_found',
           lead_id: leadId, campaign_id: campaignId,
         }});
       }
-      simulateClick(connectItem);
+
+      // ── Escribir nota si está configurada (A/B: Variante A con nota) ────────
+      if (note && note.trim()) {
+        const noteBtn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
+          const t = (el.innerText || el.textContent || '').toLowerCase();
+          return t.includes('nota') || t.includes('note') || t.includes('agregar') ||
+                 t.includes('add a') || t.includes('añadir') || t.includes('optional');
+        });
+        if (noteBtn) {
+          simulateClick(noteBtn);
+          await sleep(700);
+        }
+        const noteField = document.querySelector(
+          'textarea#custom-message, textarea[name="message"], ' +
+          'textarea[placeholder*="nota"], textarea[placeholder*="note"], ' +
+          '.connect-cta-form textarea, [data-test-modal] textarea'
+        );
+        if (noteField) {
+          noteField.focus();
+          noteField.value = '';
+          document.execCommand('insertText', false, note.trim().slice(0, 300));
+          noteField.dispatchEvent(new Event('input',  { bubbles: true }));
+          noteField.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(400);
+          console.log('[NexusAI] SalesNav: ✅ nota escrita en dialog:', note.trim().slice(0, 40) + '...');
+        } else {
+          console.warn('[NexusAI] SalesNav: ⚠️ textarea de nota no encontrado — enviando sin nota');
+        }
+      }
+
+      sendBtn.click();
+      await sleep(2000);
+
+      if (!isSalesNavDialogOpen()) {
+        console.log('[NexusAI] SalesNav: ✅ conexión enviada (dialog cerrado)');
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: true, reason: 'sent',
+          lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
+        }});
+      }
+
+      // Reintento único
+      const sendBtn2 = document.querySelector('.connect-cta-form__send');
+      if (sendBtn2) {
+        sendBtn2.click();
+        await sleep(2000);
+        if (!isSalesNavDialogOpen()) {
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: true, reason: 'sent',
+            lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
+          }});
+        }
+      }
+
+      const limitHit = document.body.innerText.toLowerCase().match(/límite|limit|weekly invitation/);
+      if (limitHit) {
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: false, reason: 'daily_limit_reached',
+          lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'dialog_send_failed',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
 
     } else {
+      // LinkedIn estándar
       window.scrollTo({ top: 200, behavior: 'smooth' });
       await sleep(1200);
+      console.log('[NexusAI] LI connect: buscando botón Conectar directo...');
 
       let connectBtn = null;
       for (let i = 0; i < 4; i++) {
@@ -611,31 +1334,61 @@
           const label = (el.getAttribute('aria-label') || '').toLowerCase();
           return t === 'conectar' || t === 'connect' ||
                  (label.includes('conectar') && !label.includes('seguir') && !label.includes('mensaje')) ||
-                 (label.includes('connect')  && !label.includes('follow') && !label.includes('message'));
+                 (label.includes('connect')  && !label.includes('follow') && !label.includes('message')) ||
+                 (label.includes('invitar a conectar')) || (label.includes('invite') && label.includes('connect'));
         });
-        if (connectBtn) break;
+        if (connectBtn) {
+          console.log(`[NexusAI] LI connect: botón directo encontrado intento ${i+1}`);
+          break;
+        }
+        if (i === 0) {
+          const allBtns = Array.from(document.querySelectorAll('button')).filter(b => b.offsetParent);
+          console.log('[NexusAI] LI connect: botones visibles:', allBtns.map(b => (b.innerText||b.getAttribute('aria-label')||'').trim()).filter(Boolean));
+        }
         await sleep(800);
       }
 
       if (!connectBtn) {
+        console.log('[NexusAI] LI connect: no directo, intentando dropdown "..."');
         const opened = await clickMoreButton();
         if (!opened) {
+          console.warn('[NexusAI] LI connect: FALLO — no se encontró botón "..."');
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'button_not_found',
             lead_id: leadId, campaign_id: campaignId,
           }});
         }
-        const item = findMenuItemByText('conectar', 'connect');
+        await sleep(500);
+        const item = findMenuItemByText('conectar', 'connect', 'invitar', 'invite');
         if (!item) {
           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          console.warn('[NexusAI] LI connect: FALLO — "Conectar" no encontrado en dropdown');
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'button_not_found',
             lead_id: leadId, campaign_id: campaignId,
           }});
         }
-        simulateClick(item);
+        console.log('[NexusAI] LI connect: encontrado en dropdown, clickeando...');
+        const modalOpened = await forceClick(item);
+        if (!modalOpened) {
+          console.warn('[NexusAI] forceClick: modal no abrió tras 3 intentos');
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: false, reason: 'modal_not_opened',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        console.log('[NexusAI] connect: modal abierto correctamente');
       } else {
-        simulateClick(connectBtn);
+        console.log('[NexusAI] LI connect: clickeando botón directo');
+        const modalOpened = await forceClick(connectBtn);
+        if (!modalOpened) {
+          console.warn('[NexusAI] forceClick: modal no abrió tras 3 intentos');
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: false, reason: 'modal_not_opened',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        console.log('[NexusAI] connect: modal abierto correctamente');
       }
     }
 
@@ -666,22 +1419,27 @@
     }
 
     let sendBtn = null;
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       sendBtn = Array.from(document.querySelectorAll(
-        'button, [role="button"], [data-test-modal] button'
+        'button, [role="button"]'
       )).find(el => {
+        if (!el.offsetParent || el.disabled) return false;
         const t = (el.innerText || el.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
-        return t === 'enviar' || t === 'send' ||
+        return t === 'enviar'            || t === 'send'               ||
                t.includes('enviar sin') || t.includes('send without') ||
-               t.includes('enviar invit') || t.includes('send invit') ||
-               t.includes('enviar ahora') || t.includes('send now');
+               t.includes('enviar invit')|| t.includes('send invit')  ||
+               t.includes('enviar ahora')|| t.includes('send now')    ||
+               t === 'conectar'         || t === 'connect';
       });
-      if (sendBtn) break;
-      await sleep(600);
+      if (sendBtn) {
+        console.log(`[NexusAI] sendBtn encontrado intento ${i+1}: "${(sendBtn.innerText||'').trim()}"`);
+        break;
+      }
+      await sleep(500);
     }
 
     if (!sendBtn) {
-      const modal = document.querySelector('.artdeco-modal,[role="dialog"],.send-invite');
+      const modal = document.querySelector('[role="dialog"],.artdeco-modal,.send-invite');
       console.warn('[NexusAI] Send btn not found. Modal:',
         modal ? modal.innerHTML.slice(0, 800) : 'NO MODAL');
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
@@ -690,7 +1448,8 @@
       }});
     }
 
-    simulateClick(sendBtn);
+    sendBtn.focus();
+    sendBtn.click();
     await sleep(2000);
 
     const modalOpen = !!document.querySelector(
@@ -716,20 +1475,29 @@
 
   // ── ACCIÓN 3: SEND MESSAGE ────────────────────────────────────────────────
 
-  async function executeMessage(taskId, text, leadId, campaignId) {
+  async function executeMessage(taskId, text, leadId, campaignId, lead) {
     const platform = getPlatform();
     console.log(`[NexusAI] executeMessage platform=${platform} leadId=${leadId}`);
+    text = personalizeMessage(text, lead);
     await sleep(2000 + Math.random() * 1500);
     window.scrollTo({ top: 200, behavior: 'smooth' });
     await sleep(1000);
 
-    const msgBtn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
-      const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
-      const label = (el.getAttribute('aria-label') || '').toLowerCase();
-      return t === 'mensaje' || t === 'message' ||
-             label.includes('mensaje') || label.includes('message') ||
-             label.includes('inmail');
-    });
+    let msgBtn = null;
+    for (let i = 0; i < 3; i++) {
+      msgBtn = Array.from(document.querySelectorAll('button,[role="button"],a'))
+        .filter(el => el.offsetParent)
+        .find(el => {
+          const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
+          const label = (el.getAttribute('aria-label') || '').toLowerCase();
+          return t === 'mensaje'     || t === 'message'  ||
+                 t === 'inmail'      || t.includes('enviar mensaje') ||
+                 label.includes('mensaje') || label.includes('message') ||
+                 label.includes('inmail');
+        });
+      if (msgBtn) break;
+      await sleep(800);
+    }
 
     if (!msgBtn) {
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
@@ -738,8 +1506,9 @@
       }});
     }
 
-    simulateClick(msgBtn);
-    await sleep(2200);
+    msgBtn.focus();
+    msgBtn.click();
+    await sleep(2500);
 
     let inputEl = null;
 
@@ -790,27 +1559,27 @@
     }
     await sleep(800 + Math.random() * 400);
 
+    // Send button — buscar por texto (funciona en ambas plataformas sin importar clases)
     let sendBtn = null;
-    if (platform === 'salesnav') {
-      sendBtn =
-        document.querySelector('button[data-test-inmail-compose-send-btn]') ||
-        document.querySelector('.inmail-compose-form button[type="submit"]') ||
-        document.querySelector('[data-test-compose-send-btn]') ||
-        Array.from(document.querySelectorAll('button')).find(b => {
-          const t = (b.innerText || '').trim().toLowerCase();
-          return (t === 'enviar' || t === 'send') && b.offsetParent;
+    for (let i = 0; i < 5; i++) {
+      sendBtn = Array.from(document.querySelectorAll('button,[role="button"]'))
+        .filter(el => el.offsetParent && !el.disabled)
+        .find(el => {
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          return t === 'enviar' || t === 'send';
         });
-    } else {
-      sendBtn =
-        document.querySelector('.msg-form__send-button:not([disabled])') ||
-        document.querySelector('button.msg-form__send-button') ||
-        document.querySelector('button[type="submit"][class*="send"]');
+      if (sendBtn) break;
+      await sleep(500);
     }
 
     if (sendBtn && !sendBtn.disabled) {
-      simulateClick(sendBtn);
+      sendBtn.focus();
+      sendBtn.click();
     } else {
-      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ctrlKey: false }));
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', keyCode: 13, bubbles: true,
+        metaKey: platform === 'salesnav',
+      }));
     }
 
     await sleep(1000);
@@ -877,7 +1646,8 @@
       }});
     }
 
-    simulateClick(followBtn);
+    followBtn.focus();
+    followBtn.click();
     await sleep(800);
     console.log('[NexusAI] follow done');
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
@@ -1119,11 +1889,15 @@
     await sleep(1000);
 
     const convSelectors = [
+      // SalesNav Ember.js — selectores reales
+      '[data-view-name*="conversation"]',
+      '[data-x--conversation-list-item]',
       '.conversation-list-item',
-      '[data-test-list-item]',
-      '.inbox-list-item',
       '[class*="conversation-list__item"]',
+      '[class*="msg-list__item"]',
+      // Fallback genérico
       'li[class*="conversation"]',
+      'li[class*="thread"]',
     ];
 
     let convItems = [];
@@ -1137,11 +1911,15 @@
         document.body.innerHTML.slice(0, 400));
     }
 
-    const unreadConvs = convItems.filter(el =>
-      el.querySelector('[class*="unread-indicator"], [class*="badge"], .artdeco-notification-badge') ||
-      el.classList.toString().includes('unread') ||
-      el.querySelector('[aria-label*="unread"], [aria-label*="no leído"]')
-    );
+    const unreadConvs = convItems.filter(el => {
+      const cls = el.className || '';
+      const hasUnreadClass = cls.includes('unread') || cls.includes('is-new');
+      const hasUnreadBadge = !!el.querySelector(
+        '[class*="unread"], [class*="badge"], [class*="notification"], ' +
+        '[aria-label*="no leído"], [aria-label*="unread"], [aria-label*="new message"]'
+      );
+      return hasUnreadClass || hasUnreadBadge;
+    });
 
     const results = [];
     for (const conv of (unreadConvs.length ? unreadConvs : convItems).slice(0, 8)) {
@@ -1219,17 +1997,306 @@
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: { action: 'extract_profile', success: true, lead_id: leadId } });
   }
 
+  async function executePostLinkedIn(taskId, content) {
+    if (!content) {
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'post_linkedin', success: false, reason: 'empty_content' } });
+      return;
+    }
+
+    try {
+      // 1. Click "Comenzar una publicación"
+      const startSelectors = [
+        'button.share-box-feed-entry__trigger',
+        '[data-control-name="share.feedshare_native_share_button"]',
+        'button[class*="share-box"][class*="trigger"]',
+        '.share-box-feed-entry__top-bar button',
+      ];
+      let startBtn = null;
+      for (const sel of startSelectors) {
+        startBtn = document.querySelector(sel);
+        if (startBtn) break;
+      }
+      if (!startBtn) {
+        const btns = Array.from(document.querySelectorAll('button'));
+        startBtn = btns.find(b => {
+          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+          return txt.includes('publicación') || txt.includes('publicar') ||
+                 txt.includes('empezar') || txt.includes('start a post') ||
+                 txt.includes('create a post');
+        });
+      }
+      if (!startBtn) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'post_linkedin', success: false, reason: 'start_button_not_found' } });
+        return;
+      }
+      simulateClick(startBtn);
+      await sleep(2500);
+
+      // 2. Esperar el editor
+      const editorSelectors = [
+        '.ql-editor[contenteditable="true"]',
+        '.share-creation-state__text-editor .ql-editor',
+        '[data-placeholder][contenteditable="true"]',
+        '.mentions-texteditor__contenteditable',
+        '[contenteditable="true"][class*="editor"]',
+      ];
+      let editor = null;
+      for (let i = 0; i < 10; i++) {
+        for (const sel of editorSelectors) {
+          editor = document.querySelector(sel);
+          if (editor && editor.offsetParent) break;
+        }
+        if (editor && editor.offsetParent) break;
+        await sleep(500);
+      }
+      if (!editor) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'post_linkedin', success: false, reason: 'editor_not_found' } });
+        return;
+      }
+
+      // 3. Escribir el contenido
+      editor.focus();
+      editor.click();
+      await sleep(300);
+      document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i]) document.execCommand('insertText', false, lines[i]);
+        if (i < lines.length - 1) document.execCommand('insertParagraph', false, null);
+      }
+      editor.dispatchEvent(new Event('input',  { bubbles: true }));
+      editor.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(1500);
+
+      // 4. Click "Publicar"
+      const publishSelectors = [
+        'button.share-actions__primary-action',
+        'button[class*="share-actions__primary"]',
+        '.share-box__actions button.primary',
+        '.share-creation-state__footer button[class*="primary"]',
+      ];
+      let publishBtn = null;
+      for (const sel of publishSelectors) {
+        publishBtn = document.querySelector(sel);
+        if (publishBtn && publishBtn.offsetParent && !publishBtn.disabled) break;
+      }
+      if (!publishBtn) {
+        const modal = document.querySelector(
+          '.share-creation-state, .share-box, [class*="share-modal"], [role="dialog"]'
+        );
+        if (modal) {
+          const btns = Array.from(modal.querySelectorAll('button'));
+          publishBtn = btns.find(b => {
+            const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+            return (txt === 'publicar' || txt === 'post' || txt === 'siguiente' ||
+                    txt === 'publish') && !b.disabled;
+          });
+        }
+      }
+      if (!publishBtn) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'post_linkedin', success: false, reason: 'publish_button_not_found' } });
+        return;
+      }
+      simulateClick(publishBtn);
+      await sleep(3000);
+
+      // 5. Verificar que el modal se cerró
+      const modalStillOpen = document.querySelector(
+        '.share-creation-state, [class*="share-box"][class*="open"]'
+      );
+      const success = !modalStillOpen;
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'post_linkedin', success, reason: success ? 'published' : 'modal_still_open' } });
+
+    } catch (err) {
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'post_linkedin', success: false, reason: err.message ?? 'unknown_error' } });
+    }
+  }
+
+  async function executeWithdraw(taskId, leadId) {
+    try {
+      await sleep(1500);
+      const selectors = [
+        'button[aria-label*="Pending"]',
+        'button[aria-label*="Remove connection"]',
+        'button[aria-label*="Retirar"]',
+        'button[aria-label*="Withdraw"]',
+      ];
+      let btn = null;
+      for (const sel of selectors) {
+        btn = document.querySelector(sel);
+        if (btn) break;
+      }
+      if (!btn) {
+        const allBtns = Array.from(document.querySelectorAll('button'));
+        btn = allBtns.find(b => {
+          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+          return txt === 'pendiente' || txt === 'pending' || txt === 'retirar invitación' ||
+                 txt === 'withdraw' || txt === 'eliminar conexión' || txt === 'remove connection';
+        });
+      }
+      if (!btn) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'withdraw', success: false, reason: 'button_not_found', lead_id: leadId } });
+        return;
+      }
+      simulateClick(btn);
+      await sleep(1200);
+      // Confirm dialog if present
+      const confirmBtns = Array.from(document.querySelectorAll('button'));
+      const confirmBtn = confirmBtns.find(b => {
+        const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+        return txt === 'retirar' || txt === 'withdraw' || txt === 'confirmar' || txt === 'confirm';
+      });
+      if (confirmBtn) {
+        simulateClick(confirmBtn);
+        await sleep(1000);
+      }
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'withdraw', success: true, reason: 'withdrawn', lead_id: leadId } });
+    } catch (err) {
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'withdraw', success: false, reason: err.message ?? 'unknown_error', lead_id: leadId } });
+    }
+  }
+
+  async function executeFindEmail(taskId, leadId) {
+    try {
+      await sleep(2000);
+      // Open contact info overlay
+      const contactLink = document.querySelector('a[href*="overlay/contact-info"]') ||
+        Array.from(document.querySelectorAll('a, button')).find(el => {
+          const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+          return txt.includes('información de contacto') || txt.includes('contact info');
+        });
+      if (!contactLink) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'find_email', success: false, reason: 'contact_link_not_found', lead_id: leadId } });
+        return;
+      }
+      simulateClick(contactLink);
+      await sleep(1500);
+      // Extract email
+      const mailLinks = Array.from(document.querySelectorAll('a[href^="mailto:"]'));
+      const foundEmail = mailLinks.length > 0
+        ? mailLinks[0].href.replace('mailto:', '').split('?')[0].trim()
+        : null;
+      if (!foundEmail) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'find_email', success: false, reason: 'email_not_found', lead_id: leadId } });
+        return;
+      }
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'find_email', success: true, lead_id: leadId, data: { email: foundEmail } } });
+    } catch (err) {
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'find_email', success: false, reason: err.message ?? 'unknown_error', lead_id: leadId } });
+    }
+  }
+
+  async function executeFindPhone(taskId, leadId) {
+    try {
+      await sleep(2000);
+      const contactLink = document.querySelector('a[href*="overlay/contact-info"]') ||
+        Array.from(document.querySelectorAll('a, button')).find(el => {
+          const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+          return txt.includes('información de contacto') || txt.includes('contact info');
+        });
+      if (!contactLink) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'find_phone', success: false, reason: 'contact_link_not_found', lead_id: leadId } });
+        return;
+      }
+      simulateClick(contactLink);
+      await sleep(1500);
+      const telLinks = Array.from(document.querySelectorAll('a[href^="tel:"]'));
+      const foundPhone = telLinks.length > 0
+        ? telLinks[0].href.replace('tel:', '').trim()
+        : null;
+      if (!foundPhone) {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'find_phone', success: false, reason: 'phone_not_found', lead_id: leadId } });
+        return;
+      }
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'find_phone', success: true, lead_id: leadId, data: { phone: foundPhone } } });
+    } catch (err) {
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'find_phone', success: false, reason: err.message ?? 'unknown_error', lead_id: leadId } });
+    }
+  }
+
+  async function executeConnectEmail(taskId, leadId, addNote, note) {
+    try {
+      await sleep(2000);
+      const isInvitePage = window.location.href.includes('invite-by-email') ||
+                           window.location.href.includes('invite?');
+      const isProfilePage = window.location.pathname.startsWith('/in/');
+
+      if (isInvitePage) {
+        // Fill email if input is empty
+        const emailInput = document.querySelector('input[type="email"], input[name="email"]');
+        if (emailInput && !emailInput.value.trim()) {
+          const params = new URLSearchParams(window.location.search);
+          const emailVal = params.get('emailAddress') ?? '';
+          emailInput.focus();
+          document.execCommand('insertText', false, emailVal);
+          emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+          await sleep(800);
+        }
+        // Click connect/send button
+        const allBtns = Array.from(document.querySelectorAll('button'));
+        const connectBtn = allBtns.find(b => {
+          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+          return (txt === 'conectar' || txt === 'connect' || txt === 'enviar' || txt === 'send' ||
+                  txt.includes('enviar invitación') || txt.includes('send invitation')) && !b.disabled;
+        });
+        if (!connectBtn) {
+          safeSendMessage({ type: 'ACTION_DONE', taskId,
+            result: { action: 'connect_email', success: false, reason: 'connect_button_not_found', lead_id: leadId } });
+          return;
+        }
+        simulateClick(connectBtn);
+        await sleep(1500);
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'connect_email', success: true, reason: 'sent', lead_id: leadId } });
+      } else if (isProfilePage) {
+        // Fall back to normal connect flow on the profile
+        await executeConnect(taskId, note, leadId, null, null);
+      } else {
+        safeSendMessage({ type: 'ACTION_DONE', taskId,
+          result: { action: 'connect_email', success: false, reason: 'email_invite_not_supported', lead_id: leadId } });
+      }
+    } catch (err) {
+      safeSendMessage({ type: 'ACTION_DONE', taskId,
+        result: { action: 'connect_email', success: false, reason: err.message ?? 'unknown_error', lead_id: leadId } });
+    }
+  }
+
   // ── Escuchar tareas inyectadas por background via postMessage ────────────
 
   window.addEventListener('message', async (event) => {
     if (event.source !== window) return;
-    if (!event.data || event.data.type !== 'NEXUSAI_TASK') return;
+    if (!event.data) return;
+
+    if (event.data.type === 'NEXUSAI_FORCE_INBOX_CHECK') {
+      safeSendMessage({ type: 'FORCE_INBOX_CHECK' });
+      return;
+    }
+
+    if (event.data.type !== 'NEXUSAI_TASK') return;
 
     const { task, taskId, ...params } = event.data;
 
     switch (task) {
       case 'view_profile':     await executeViewProfile(taskId);                                                     break;
-      case 'connect':          await executeConnect(taskId, params.note, params.leadId, params.campaignId);         break;
+      case 'connect':          await executeConnect(taskId, params.note, params.leadId, params.campaignId, params.lead ?? null); break;
       case 'message':          await executeMessage(taskId, params.text, params.leadId, params.campaignId);         break;
       case 'count_leads':      await executeCountLeads(taskId, params.campaignId, params.segmentId);                break;
       case 'extract_profile':  await executeExtractProfile(taskId, params.leadId);                                  break;
@@ -1240,6 +2307,11 @@
       case 'disconnect':       await executeDisconnect(taskId, params.leadId, params.campaignId);                   break;
       case 'like':             await executeLikePost(taskId, params.leadId, params.campaignId);                     break;
       case 'comment':          await executeCommentPost(taskId, params.text ?? '', params.leadId, params.campaignId); break;
+      case 'post_linkedin':    await executePostLinkedIn(taskId, params.content ?? '');                              break;
+      case 'withdraw':         await executeWithdraw(taskId, params.leadId ?? null);                                 break;
+      case 'find_email':       await executeFindEmail(taskId, params.leadId ?? null);                                break;
+      case 'find_phone':       await executeFindPhone(taskId, params.leadId ?? null);                                break;
+      case 'connect_email':    await executeConnectEmail(taskId, params.leadId ?? null, params.addNote ?? false, params.note ?? ''); break;
     }
   });
 
@@ -1260,10 +2332,10 @@
                   await executeViewProfile(msg.taskId);
                   break;
                 case 'connect':
-                  await executeConnect(msg.taskId, msg.note ?? '', msg.leadId, msg.campaignId);
+                  await executeConnect(msg.taskId, msg.note ?? '', msg.leadId, msg.campaignId, msg.lead ?? null);
                   break;
                 case 'message':
-                  await executeMessage(msg.taskId, msg.text ?? '', msg.leadId, msg.campaignId);
+                  await executeMessage(msg.taskId, msg.text ?? '', msg.leadId, msg.campaignId, msg.lead ?? null);
                   break;
                 case 'extract_profile':
                   await executeExtractProfile(msg.taskId, msg.leadId);
@@ -1291,6 +2363,21 @@
                   break;
                 case 'comment':
                   await executeCommentPost(msg.taskId, msg.text ?? '', msg.leadId, msg.campaignId);
+                  break;
+                case 'post_linkedin':
+                  await executePostLinkedIn(msg.taskId, msg.content ?? '');
+                  break;
+                case 'withdraw':
+                  await executeWithdraw(msg.taskId, msg.leadId ?? null);
+                  break;
+                case 'find_email':
+                  await executeFindEmail(msg.taskId, msg.leadId ?? null);
+                  break;
+                case 'find_phone':
+                  await executeFindPhone(msg.taskId, msg.leadId ?? null);
+                  break;
+                case 'connect_email':
+                  await executeConnectEmail(msg.taskId, msg.leadId ?? null, msg.addNote ?? false, msg.note ?? '');
                   break;
                 default:
                   console.warn('[NexusAI] execute_task desconocido:', msg.task);

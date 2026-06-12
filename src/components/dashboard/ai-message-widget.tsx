@@ -61,7 +61,7 @@ export function AiMessageWidget() {
 
   return (
     <div className="rounded-2xl border border-border bg-surface shadow-[var(--card-shadow)] overflow-hidden">
-      {/* ── Header ── */}
+      {/* -- Header -- */}
       <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-emerald-50/80 to-green-50/60 px-6 py-4">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 shadow-md shadow-emerald-500/20">
           <Sparkles className="h-4 w-4 text-white" />
@@ -76,7 +76,7 @@ export function AiMessageWidget() {
         </div>
       </div>
 
-      {/* ── Body ── */}
+      {/* -- Body -- */}
       <div className="p-6 space-y-5">
         {/* Textarea */}
         <div className="space-y-2">

@@ -20,7 +20,7 @@ async function getAuthContext() {
   return { supabase, userId: user.id, workspaceId: profile?.workspace_id as string ?? "" };
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 export type WorkspaceSettingsData = {
   workspace_name:       string | null;
@@ -56,7 +56,7 @@ export type BlacklistEntry = {
   created_at:   string;
 };
 
-// ── getWorkspaceSettings ──────────────────────────────────────────────────────
+// -- getWorkspaceSettings ------------------------------------------------------
 
 export async function getWorkspaceSettings(): Promise<Result<WorkspaceSettingsData>> {
   try {
@@ -89,7 +89,7 @@ export async function getWorkspaceSettings(): Promise<Result<WorkspaceSettingsDa
   }
 }
 
-// ── saveWorkspaceSettings ─────────────────────────────────────────────────────
+// -- saveWorkspaceSettings -----------------------------------------------------
 
 export async function saveWorkspaceSettings(data: {
   workspace_name?:      string;
@@ -117,7 +117,7 @@ export async function saveWorkspaceSettings(data: {
   }
 }
 
-// ── getUserProfile ────────────────────────────────────────────────────────────
+// -- getUserProfile ------------------------------------------------------------
 
 export async function getUserProfile(): Promise<Result<UserProfileData>> {
   try {
@@ -142,7 +142,7 @@ export async function getUserProfile(): Promise<Result<UserProfileData>> {
   }
 }
 
-// ── saveUserProfile ───────────────────────────────────────────────────────────
+// -- saveUserProfile -----------------------------------------------------------
 
 export async function saveUserProfile(data: {
   full_name?: string;
@@ -163,7 +163,7 @@ export async function saveUserProfile(data: {
   }
 }
 
-// ── getLinkedInStatus ─────────────────────────────────────────────────────────
+// -- getLinkedInStatus ---------------------------------------------------------
 
 export async function getLinkedInStatus(): Promise<Result<LinkedInStatusData>> {
   try {
@@ -219,7 +219,7 @@ export async function getLinkedInStatus(): Promise<Result<LinkedInStatusData>> {
   }
 }
 
-// ── getBlacklist ──────────────────────────────────────────────────────────────
+// -- getBlacklist --------------------------------------------------------------
 
 export async function getBlacklist(): Promise<Result<BlacklistEntry[]>> {
   try {
@@ -239,7 +239,7 @@ export async function getBlacklist(): Promise<Result<BlacklistEntry[]>> {
   }
 }
 
-// ── addToBlacklist ────────────────────────────────────────────────────────────
+// -- addToBlacklist ------------------------------------------------------------
 
 export async function addToBlacklist(entry: {
   linkedin_url?: string;
@@ -272,7 +272,7 @@ export async function addToBlacklist(entry: {
   }
 }
 
-// ── removeFromBlacklist ───────────────────────────────────────────────────────
+// -- removeFromBlacklist -------------------------------------------------------
 
 export async function removeFromBlacklist(id: string): Promise<Result> {
   try {
@@ -292,7 +292,7 @@ export async function removeFromBlacklist(id: string): Promise<Result> {
   }
 }
 
-// ── testAutopilotWebhook ──────────────────────────────────────────────────────
+// -- testAutopilotWebhook ------------------------------------------------------
 
 export async function testAutopilotWebhook(): Promise<Result<{ draftText?: string; mode?: string }>> {
   try {

@@ -17,7 +17,7 @@ import { SequenceAnalytics } from "./SequenceAnalytics";
 import { AbTestEditor } from "./AbTestEditor";
 
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 function pct(a: number, b: number): string {
   if (!b) return "0%";
@@ -54,7 +54,7 @@ const SEG_STATUS: Record<SegmentStatus, { label: string; dot: string; text: stri
   draft:     { label: "Borrador",  dot: "bg-zinc-300",   text: "text-zinc-500"   },
 };
 
-// ── Metric chip ───────────────────────────────────────────────────────────────
+// -- Metric chip ---------------------------------------------------------------
 
 function Chip({ icon: Icon, label, value, sub, color = "text-zinc-700" }: {
   icon: React.ElementType; label: string; value: string | number;
@@ -73,7 +73,7 @@ function Chip({ icon: Icon, label, value, sub, color = "text-zinc-700" }: {
   );
 }
 
-// ── Progress bar ──────────────────────────────────────────────────────────────
+// -- Progress bar --------------------------------------------------------------
 
 function ProgressBar({ value, color = "bg-indigo-500" }: { value: number; color?: string }) {
   return (
@@ -83,7 +83,7 @@ function ProgressBar({ value, color = "bg-indigo-500" }: { value: number; color?
   );
 }
 
-// ── Pipeline Status ───────────────────────────────────────────────────────────
+// -- Pipeline Status -----------------------------------------------------------
 
 const PIPELINE_STAGES = [
   { key: "extraido"          as keyof LeadCountsByCrm, label: "Extraídos",   color: "bg-blue-400"   },
@@ -142,7 +142,7 @@ function PipelineStatus({ campaignId }: { campaignId: string }) {
   );
 }
 
-// ── Automation Sequence ───────────────────────────────────────────────────────
+// -- Automation Sequence -------------------------------------------------------
 
 type WfJson = Record<string, unknown>;
 
@@ -272,7 +272,7 @@ function AutomationSequence({ wf }: { wf: WfJson }) {
   );
 }
 
-// ── Segment Card ──────────────────────────────────────────────────────────────
+// -- Segment Card --------------------------------------------------------------
 
 function SegmentCard({
   segment,
@@ -497,7 +497,7 @@ function SegmentCard({
   );
 }
 
-// ── Saved automation type ─────────────────────────────────────────────────────
+// -- Saved automation type -----------------------------------------------------
 
 type SavedAutomation = {
   id: string;
@@ -509,7 +509,7 @@ type SavedAutomation = {
   created_at: string;
 };
 
-// ── Template Library ──────────────────────────────────────────────────────────
+// -- Template Library ----------------------------------------------------------
 
 type LibTab = "predefinidas" | "creadas" | "por_campana";
 
@@ -753,7 +753,7 @@ function TemplateLibrary({
   );
 }
 
-// ── Autopilot Status Banner ───────────────────────────────────────────────────
+// -- Autopilot Status Banner ---------------------------------------------------
 
 function AutopilotBanner({ segmentCount }: { segmentCount: number }) {
   const [active, setActive] = useState(false);
@@ -784,7 +784,7 @@ function AutopilotBanner({ segmentCount }: { segmentCount: number }) {
   );
 }
 
-// ── Ghost Engine Progress Panel ───────────────────────────────────────────────
+// -- Ghost Engine Progress Panel -----------------------------------------------
 
 function GhostEngineProgress({ campaignId: _ }: { campaignId: string }) {
   return (
@@ -795,7 +795,7 @@ function GhostEngineProgress({ campaignId: _ }: { campaignId: string }) {
   );
 }
 
-// ── Main Detail View ──────────────────────────────────────────────────────────
+// -- Main Detail View ----------------------------------------------------------
 
 interface CampaignDetailViewProps {
   campaign: Campaign;
@@ -867,7 +867,7 @@ export function CampaignDetailView({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      {/* ── Header ── */}
+      {/* -- Header -- */}
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-border bg-white px-5 py-3.5">
         <button
           onClick={onBack}
@@ -899,7 +899,7 @@ export function CampaignDetailView({
         )}
       </div>
 
-      {/* ── Toast ── */}
+      {/* -- Toast -- */}
       {toast && (
         <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs font-semibold text-amber-800">
           <span className="flex-1">{toast}</span>
@@ -907,7 +907,7 @@ export function CampaignDetailView({
         </div>
       )}
 
-      {/* ── Scrollable body ── */}
+      {/* -- Scrollable body -- */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
         {/* Status banner */}
         <CampaignStatusBanner

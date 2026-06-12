@@ -113,7 +113,7 @@ export function CampanasClient() {
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 max-w-7xl mx-auto">
       
-      {/* ── COLUMNA IZQUIERDA: CONFIGURACIÓN Y CONTROLES ── */}
+      {/* -- COLUMNA IZQUIERDA: CONFIGURACIÓN Y CONTROLES -- */}
       <div className="lg:col-span-5 space-y-6">
         <div className="rounded-2xl border border-border bg-surface shadow-[var(--card-shadow)] overflow-hidden transition-all duration-300 hover:shadow-md">
           
@@ -229,7 +229,7 @@ export function CampanasClient() {
         </div>
       </div>
 
-      {/* ── COLUMNA DERECHA: ESTADOS DE CARGA Y RESULTADOS ── */}
+      {/* -- COLUMNA DERECHA: ESTADOS DE CARGA Y RESULTADOS -- */}
       <div className="lg:col-span-7 space-y-6">
 
         {/* Estado Inicial (Idle) */}

@@ -54,7 +54,7 @@ async function getAuthContext() {
   return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
 }
 
-// ── Map DB row → AgentRow ─────────────────────────────────────────────────────
+// -- Map DB row → AgentRow -----------------------------------------------------
 
 function toAgentRow(a: Record<string, unknown>): AgentRow {
   return {
@@ -78,7 +78,7 @@ function toAgentRow(a: Record<string, unknown>): AgentRow {
   };
 }
 
-// ── getAgents ─────────────────────────────────────────────────────────────────
+// -- getAgents -----------------------------------------------------------------
 
 export async function getAgents(): Promise<Result<AgentRow[]>> {
   try {
@@ -96,7 +96,7 @@ export async function getAgents(): Promise<Result<AgentRow[]>> {
   }
 }
 
-// ── upsertAgent ───────────────────────────────────────────────────────────────
+// -- upsertAgent ---------------------------------------------------------------
 
 export async function upsertAgent(data: {
   id?: string;
@@ -154,7 +154,7 @@ export async function upsertAgent(data: {
   }
 }
 
-// ── toggleAgentStatus ─────────────────────────────────────────────────────────
+// -- toggleAgentStatus ---------------------------------------------------------
 
 export async function toggleAgentStatus(id: string, currentStatus: string): Promise<Result> {
   try {
@@ -173,7 +173,7 @@ export async function toggleAgentStatus(id: string, currentStatus: string): Prom
   }
 }
 
-// ── deleteAgent ───────────────────────────────────────────────────────────────
+// -- deleteAgent ---------------------------------------------------------------
 
 export async function deleteAgent(id: string): Promise<Result> {
   try {
@@ -191,7 +191,7 @@ export async function deleteAgent(id: string): Promise<Result> {
   }
 }
 
-// ── assignAgentToConversation ─────────────────────────────────────────────────
+// -- assignAgentToConversation -------------------------------------------------
 
 export async function assignAgentToConversation(
   agent_id: string,
@@ -216,7 +216,7 @@ export async function assignAgentToConversation(
   }
 }
 
-// ── Core autopilot logic (sin sesión, usa service role) ───────────────────────
+// -- Core autopilot logic (sin sesión, usa service role) -----------------------
 
 async function runAutopilotCore(
   supabase: SupabaseClient,
@@ -319,7 +319,7 @@ async function runAutopilotCore(
   return { processed };
 }
 
-// ── runAutopilotForWorkspace: llamable sin sesión (webhook/cron) ──────────────
+// -- runAutopilotForWorkspace: llamable sin sesión (webhook/cron) --------------
 
 export async function runAutopilotForWorkspace(
   workspaceId: string
@@ -332,7 +332,7 @@ export async function runAutopilotForWorkspace(
   }
 }
 
-// ── processAutopilotConversations ─────────────────────────────────────────────
+// -- processAutopilotConversations ---------------------------------------------
 
 export async function processAutopilotConversations(): Promise<Result<{ processed: number }>> {
   try {

@@ -14,7 +14,7 @@ async function getAuthContext() {
   return { supabase, workspaceId: profile?.workspace_id ?? "", userId: user.id };
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 export type WorkspaceSettingsRow = {
   workspace_id: string;
@@ -36,7 +36,7 @@ export type WebhookRow = {
   secret_token: string | null;
 };
 
-// ── getConfigData ─────────────────────────────────────────────────────────────
+// -- getConfigData -------------------------------------------------------------
 
 export async function getConfigData(): Promise<{
   success: boolean;
@@ -70,7 +70,7 @@ export async function getConfigData(): Promise<{
   }
 }
 
-// ── saveSettings ──────────────────────────────────────────────────────────────
+// -- saveSettings --------------------------------------------------------------
 
 export async function saveSettings(settings: {
   daily_connections_limit?: number;
@@ -95,7 +95,7 @@ export async function saveSettings(settings: {
   }
 }
 
-// ── upsertWebhook ─────────────────────────────────────────────────────────────
+// -- upsertWebhook -------------------------------------------------------------
 
 export async function upsertWebhook(webhook: {
   id?: string;
@@ -141,7 +141,7 @@ export async function upsertWebhook(webhook: {
   }
 }
 
-// ── deleteWebhook ─────────────────────────────────────────────────────────────
+// -- deleteWebhook -------------------------------------------------------------
 
 export async function deleteWebhook(id: string): Promise<{ success: boolean; error?: string }> {
   try {
@@ -159,7 +159,7 @@ export async function deleteWebhook(id: string): Promise<{ success: boolean; err
   }
 }
 
-// ── toggleWebhookActive ───────────────────────────────────────────────────────
+// -- toggleWebhookActive -------------------------------------------------------
 
 export async function toggleWebhookActive(
   id: string,

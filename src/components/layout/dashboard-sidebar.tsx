@@ -10,7 +10,7 @@ import { dashboardNavItems } from "@/lib/dashboard-nav";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/browser";
 
-// ── Inbox nav item with realtime unread badge ─────────────────────────────────
+// -- Inbox nav item with realtime unread badge ---------------------------------
 
 function InboxNavItem({
   href, label, icon: Icon, isActive, onClick,

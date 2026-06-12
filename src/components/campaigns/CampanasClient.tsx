@@ -20,7 +20,7 @@ import {
 } from "@/app/dashboard/campanas/actions";
 import type { CampaignRow } from "@/app/dashboard/campanas/actions";
 
-// ── Props ──────────────────────────────────────────────────────────────────────
+// -- Props ----------------------------------------------------------------------
 
 interface CampanasClientProps {
   initialData: {
@@ -29,7 +29,7 @@ interface CampanasClientProps {
   };
 }
 
-// ── Map DB row → UI Campaign ───────────────────────────────────────────────────
+// -- Map DB row → UI Campaign ---------------------------------------------------
 
 function mapRow(c: CampaignRow): Campaign {
   return {
@@ -93,12 +93,12 @@ function extractSegments(c: CampaignRow): Segment[] {
   return [];
 }
 
-// ── View state ─────────────────────────────────────────────────────────────────
+// -- View state -----------------------------------------------------------------
 
 type View = "list" | "detail" | "builder";
 type ActiveFlow = Campaign & { automationId: string; initialFlow?: FlowConfig; segments?: Segment[] };
 
-// ── Component ──────────────────────────────────────────────────────────────────
+// -- Component ------------------------------------------------------------------
 
 export default function CampanasClient({ initialData }: CampanasClientProps) {
   const router = useRouter();
@@ -122,7 +122,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     setTimeout(() => setToast(null), 4000);
   }
 
-  // ── Polling para campañas activas ─────────────────────────────────────────
+  // -- Polling para campañas activas -----------------------------------------
 
   useEffect(() => {
     const activeCampaigns = campaigns.filter((c) => c.status === "active");
@@ -202,7 +202,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaigns.filter((c) => c.status === "active").map((c) => c.id).join(",")]);
 
-  // ── Realtime — actualización inmediata al cambiar crm_column de un lead ──
+  // -- Realtime — actualización inmediata al cambiar crm_column de un lead --
 
   useEffect(() => {
     const activeCampaignIds = campaigns
@@ -245,13 +245,13 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaigns.filter((c) => c.status === "active").map((c) => c.id).join(",")]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // -- Helpers ---------------------------------------------------------------
 
   function segmentsFor(c: Campaign): Segment[] {
     return segments.filter((s) => s.campaignId === c.id);
   }
 
-  // ── openDetail: fetch fresh data from Supabase before navigating ──────────
+  // -- openDetail: fetch fresh data from Supabase before navigating ----------
 
   async function openDetail(c: Campaign) {
     // Fetch fresh data first so segments are never stale after a FlowBuilder save
@@ -323,7 +323,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     }).catch(() => {});
   }
 
-  // ── openFlow ──────────────────────────────────────────────────────────────
+  // -- openFlow --------------------------------------------------------------
 
   function openFlow(campaign: Campaign, segment: Segment) {
     // Always read from live rawRows (kept in sync with Supabase on every openDetail/save)
@@ -344,7 +344,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     setView("builder");
   }
 
-  // ── updateSegments → persist via updateCampaignWorkflow ──────────────────
+  // -- updateSegments → persist via updateCampaignWorkflow ------------------
 
   function updateSegments(campaignId: string, updater: (prev: Segment[]) => Segment[]) {
     setSegments((prev) => {
@@ -394,7 +394,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     ));
   }
 
-  // ── Wizard complete ───────────────────────────────────────────────────────
+  // -- Wizard complete -------------------------------------------------------
 
   async function handleWizardComplete(data: WizardData, template: Template | null) {
     setError("");
@@ -468,7 +468,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     setView("builder");
   }
 
-  // ── FlowBuilder save callback ─────────────────────────────────────────────
+  // -- FlowBuilder save callback ---------------------------------------------
 
   function handleFlowSave(campaignId: string, flowConfig: FlowConfig) {
     const segsForCampaign = segmentsFor({ id: campaignId } as Campaign);
@@ -481,7 +481,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     });
   }
 
-  // ── FlowBuilder launched callback ─────────────────────────────────────────
+  // -- FlowBuilder launched callback -----------------------------------------
 
   function handleLaunched(status: "active" | "draft", currentFlow?: FlowConfig) {
     if (!activeFlow) return;
@@ -559,7 +559,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     });
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // -- Render ----------------------------------------------------------------
 
   if (view === "builder" && activeFlow) {
     const segsForFlow = activeFlow.segments ?? segmentsFor(activeFlow);

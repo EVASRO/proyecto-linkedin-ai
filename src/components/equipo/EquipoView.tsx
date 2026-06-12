@@ -13,7 +13,7 @@ import {
 } from "@/app/dashboard/equipo/actions";
 import type { TeamMemberRow, InvitationRow } from "@/app/dashboard/equipo/actions";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 type MemberRole = "admin" | "vendedor" | "observador";
 
@@ -30,7 +30,7 @@ interface TeamMember {
   lastActiveAt: string;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 const AVATAR_GRADS = [
   "from-indigo-500 to-purple-600", "from-pink-500 to-rose-500",
@@ -49,7 +49,7 @@ function mapMember(m: TeamMemberRow, i: number): TeamMember {
     status:        "active",
     avatarGrad:    gradForIndex(m.avatar_gradient ?? i),
     online:        false,
-    metrics:       { leadsAssigned: 0, conversations: 0, meetings: 0, responseRate: 0 },
+    metrics:       m.metrics ?? { leadsAssigned: 0, conversations: 0, meetings: 0, responseRate: 0 },
     joinedAt:      "—",
     lastActiveAt:  "—",
   };
@@ -93,7 +93,7 @@ function MetricPill({ label, value, color }: { label: string; value: string | nu
   );
 }
 
-// ── Invite Modal ──────────────────────────────────────────────────────────────
+// -- Invite Modal --------------------------------------------------------------
 
 function InviteModal({ onClose, onInvite }: {
   onClose: () => void;
@@ -182,7 +182,7 @@ function InviteModal({ onClose, onInvite }: {
   );
 }
 
-// ── Member Row ────────────────────────────────────────────────────────────────
+// -- Member Row ----------------------------------------------------------------
 
 function MemberRow({ member, onRoleChange, onRemove, isCurrentUser }: {
   member: TeamMember;
@@ -289,14 +289,14 @@ function MemberRow({ member, onRoleChange, onRemove, isCurrentUser }: {
   );
 }
 
-// ── Props ─────────────────────────────────────────────────────────────────────
+// -- Props ---------------------------------------------------------------------
 
 interface EquipoViewProps {
   initialMembers:     TeamMemberRow[];
   initialInvitations: InvitationRow[];
 }
 
-// ── Main View ─────────────────────────────────────────────────────────────────
+// -- Main View -----------------------------------------------------------------
 
 export function EquipoView({ initialMembers, initialInvitations }: EquipoViewProps) {
   const router = useRouter();

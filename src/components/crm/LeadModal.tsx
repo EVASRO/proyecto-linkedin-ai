@@ -9,7 +9,7 @@ import {
 import type { CrmLead } from "./types";
 import { archiveLead, deleteLead, updateLead } from "@/app/dashboard/crm/actions";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 const AVATAR_PALETTE = [
   "bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500",
@@ -38,7 +38,7 @@ function relativeDate(iso: string): string {
   return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-// ── Status badge ──────────────────────────────────────────────────────────────
+// -- Status badge --------------------------------------------------------------
 
 const STATUS_OPTS = [
   { value: "nuevo",      label: "Nuevo",      cls: "bg-blue-50 text-blue-700 ring-blue-200"       },
@@ -48,7 +48,7 @@ const STATUS_OPTS = [
   { value: "cerrado",    label: "Cerrado",    cls: "bg-zinc-100 text-zinc-600 ring-zinc-200"      },
 ];
 
-// ── Mock timeline (in real app, fetch from activity_log) ─────────────────────
+// -- Mock timeline (in real app, fetch from activity_log) ---------------------
 
 type TimelineEvent = {
   id: string;
@@ -89,7 +89,7 @@ function buildTimeline(lead: CrmLead): TimelineEvent[] {
   return events.reverse();
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// -- Sub-components ------------------------------------------------------------
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
@@ -101,7 +101,7 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// -- Main component ------------------------------------------------------------
 
 interface LeadModalProps {
   lead: CrmLead;
@@ -233,7 +233,7 @@ export function LeadModal({ lead, onClose, onStageChange, onDeleted, onArchived 
         className="relative flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl"
         style={{ height: "calc(100vh - 64px)" }}
       >
-        {/* ── Header ── */}
+        {/* -- Header -- */}
         <div className="flex flex-shrink-0 items-center gap-3 border-b border-zinc-100 bg-white px-5 py-3.5">
           <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${avatarColor(lead.name)}`}>
             {initials(lead.name)}
@@ -318,7 +318,7 @@ export function LeadModal({ lead, onClose, onStageChange, onDeleted, onArchived 
           </button>
         </div>
 
-        {/* ── Confirm overlay ── */}
+        {/* -- Confirm overlay -- */}
         {confirmAction && (
           <div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
@@ -360,7 +360,7 @@ export function LeadModal({ lead, onClose, onStageChange, onDeleted, onArchived 
           </div>
         )}
 
-        {/* ── Body: 2-col layout ── */}
+        {/* -- Body: 2-col layout -- */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* Left column — info + notes + quick actions */}

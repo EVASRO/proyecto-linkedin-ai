@@ -9,9 +9,32 @@ import {
   TrendingUp, UserCheck, Users, Zap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { getGhostEngineStatus, type GhostEngineSession, type ActivityRow } from "@/app/dashboard/actions";
+import {
+  getGhostEngineStatus,
+  type GhostEngineSession,
+  type ActivityFeedRow,
+  type DashboardMetrics,
+  type FunnelStage,
+  type ActivityPoint,
+} from "@/app/dashboard/actions";
 
-// ── Quick links ───────────────────────────────────────────────────────────────
+// -- Number formatter ----------------------------------------------------------
+
+const fmt = new Intl.NumberFormat("es-PE");
+function fmtNum(n: number)    { return fmt.format(n); }
+function fmtPct(n: number)    { return `${n.toFixed(1)}%`; }
+
+// -- Time ago ------------------------------------------------------------------
+
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60)    return `Hace ${diff}s`;
+  if (diff < 3600)  return `Hace ${Math.floor(diff / 60)}min`;
+  if (diff < 86400) return `Hace ${Math.floor(diff / 3600)}h`;
+  return `Hace ${Math.floor(diff / 86400)}d`;
+}
+
+// -- Quick links ---------------------------------------------------------------
 
 const QUICK_LINKS_BASE = [
   { label: "Campañas",    href: "/dashboard/campanas",    icon: Megaphone, color: "text-amber-600",  bg: "bg-amber-50"  },
@@ -21,7 +44,28 @@ const QUICK_LINKS_BASE = [
   { label: "Agentes IA",  href: "/dashboard/agentes-ia",  icon: Bot,       color: "text-purple-600", bg: "bg-purple-50" },
 ];
 
-// ── KPI Card ──────────────────────────────────────────────────────────────────
+// -- Skeleton ------------------------------------------------------------------
+
+function Skeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded bg-zinc-200 ${className ?? ""}`} />;
+}
+
+function KpiSkeleton() {
+  return (
+    <div className="rounded-2xl border border-border bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <Skeleton className="h-3 w-28 mb-3" />
+          <Skeleton className="h-8 w-20 mb-1" />
+          <Skeleton className="h-2.5 w-24" />
+        </div>
+        <Skeleton className="h-10 w-10 rounded-xl flex-shrink-0" />
+      </div>
+    </div>
+  );
+}
+
+// -- KPI Card ------------------------------------------------------------------
 
 function KpiCard({ label, value, icon: Icon, color, bg, sublabel }: {
   label: string; value: string; icon: React.ElementType;
@@ -43,41 +87,235 @@ function KpiCard({ label, value, icon: Icon, color, bg, sublabel }: {
   );
 }
 
-// ── Ghost Engine Panel ────────────────────────────────────────────────────────
+// -- Activity Chart (pure SVG bar chart, no external lib needed) ---------------
 
-function GhostEnginePanel() {
-  const [session, setSession] = useState<GhostEngineSession>({
-    status: 'stopped',
-    connections_sent: 0,
-    messages_sent: 0,
-    actions_count: 0,
-    last_heartbeat_at: null,
-    metadata: {},
-  });
+function ActivityChart({ data }: { data: ActivityPoint[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="flex h-48 items-center justify-center text-xs text-zinc-400">
+        Sin datos de actividad aún
+      </div>
+    );
+  }
+
+  const maxVal = Math.max(...data.flatMap((d) => [d.connects, d.messages]), 1);
+  const barW   = 14;
+  const gap    = 6;
+  const groupW = barW * 2 + gap + 8;
+  const chartH = 160;
+  const padL   = 32;
+  const padB   = 28;
+  const totalW = padL + data.length * groupW;
+
+  // Show only every-other label on smaller sets
+  const labelEvery = data.length > 10 ? 2 : 1;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width={totalW} height={chartH + padB} className="min-w-full">
+        {/* Y-axis grid lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+          const y = chartH - pct * chartH;
+          const val = Math.round(pct * maxVal);
+          return (
+            <g key={pct}>
+              <line x1={padL} y1={y} x2={totalW} y2={y} stroke="#f0f0f0" strokeWidth={1} />
+              <text x={padL - 4} y={y + 4} textAnchor="end" fontSize={9} fill="#a1a1aa">{val}</text>
+            </g>
+          );
+        })}
+
+        {/* Bars */}
+        {data.map((d, i) => {
+          const x = padL + i * groupW;
+          const hC = (d.connects / maxVal) * chartH;
+          const hM = (d.messages / maxVal) * chartH;
+          return (
+            <g key={d.date}>
+              {/* Connects bar (indigo) */}
+              <rect
+                x={x}
+                y={chartH - hC}
+                width={barW}
+                height={hC}
+                rx={3}
+                fill="#6366f1"
+                opacity={0.85}
+              >
+                <title>{d.connects} conexiones</title>
+              </rect>
+              {/* Messages bar (emerald) */}
+              <rect
+                x={x + barW + gap}
+                y={chartH - hM}
+                width={barW}
+                height={hM}
+                rx={3}
+                fill="#10b981"
+                opacity={0.85}
+              >
+                <title>{d.messages} mensajes</title>
+              </rect>
+              {/* X label */}
+              {i % labelEvery === 0 && (
+                <text
+                  x={x + barW}
+                  y={chartH + padB - 4}
+                  textAnchor="middle"
+                  fontSize={9}
+                  fill="#a1a1aa"
+                >
+                  {d.date}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Legend */}
+      <div className="mt-2 flex items-center gap-4 text-[10px] text-zinc-500">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-indigo-500" />
+          Conexiones
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" />
+          Mensajes
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// -- Pipeline Funnel -----------------------------------------------------------
+
+const FUNNEL_COLORS: Record<string, string> = {
+  extraido:          "bg-zinc-400",
+  conexion_enviada:  "bg-blue-400",
+  conexion_aceptada: "bg-indigo-500",
+  en_conversacion:   "bg-violet-500",
+  reunion_agendada:  "bg-amber-500",
+  cliente:           "bg-emerald-500",
+};
+
+function PipelineFunnel({ stages }: { stages: FunnelStage[] }) {
+  const maxCount = Math.max(...stages.map((s) => s.count), 1);
+
+  return (
+    <div className="space-y-2">
+      {stages.map((stage, i) => {
+        const widthPct = maxCount > 0 ? (stage.count / maxCount) * 100 : 0;
+        const barColor = FUNNEL_COLORS[stage.key] ?? "bg-zinc-300";
+        const isLast   = i === stages.length - 1;
+
+        return (
+          <div key={stage.key}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-medium text-zinc-600">{stage.label}</span>
+              <div className="flex items-center gap-2">
+                {i > 0 && stage.convRate < 100 && (
+                  <span className="text-[10px] text-zinc-400">{fmtPct(stage.convRate)} conv.</span>
+                )}
+                <span className="text-xs font-bold tabular-nums text-zinc-900">{fmtNum(stage.count)}</span>
+              </div>
+            </div>
+            <div className="h-5 w-full rounded-full bg-zinc-100 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                style={{ width: `${Math.max(widthPct, stage.count > 0 ? 4 : 0)}%` }}
+              />
+            </div>
+            {!isLast && (
+              <div className="ml-auto mr-4 mt-0.5 h-3 w-px bg-zinc-200" />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// -- Activity Feed -------------------------------------------------------------
+
+const ACTIVITY_ICONS: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+  connect:             { icon: Link2,         color: "text-indigo-600", bg: "bg-indigo-50"  },
+  connection_request:  { icon: Link2,         color: "text-indigo-600", bg: "bg-indigo-50"  },
+  message:             { icon: MessageSquare, color: "text-amber-600",  bg: "bg-amber-50"   },
+  check_connection:    { icon: UserCheck,     color: "text-violet-600", bg: "bg-violet-50"  },
+  view_profile:        { icon: Eye,           color: "text-zinc-500",   bg: "bg-zinc-100"   },
+  like:                { icon: Heart,         color: "text-pink-500",   bg: "bg-pink-50"    },
+  message_sent:        { icon: MessageSquare, color: "text-indigo-600", bg: "bg-indigo-50"  },
+  connection_sent:     { icon: Link2,         color: "text-blue-600",   bg: "bg-blue-50"    },
+  connection_accepted: { icon: UserCheck,     color: "text-green-600",  bg: "bg-green-50"   },
+  meeting_booked:      { icon: CalendarCheck, color: "text-green-600",  bg: "bg-green-100"  },
+  ai_reply:            { icon: Bot,           color: "text-purple-600", bg: "bg-purple-50"  },
+  lead_created:        { icon: Users,         color: "text-sky-600",    bg: "bg-sky-50"     },
+  campaign_started:    { icon: Megaphone,     color: "text-amber-600",  bg: "bg-amber-50"   },
+};
+
+const FALLBACK_ICON = { icon: Zap, color: "text-zinc-400", bg: "bg-zinc-50" };
+
+function ActivityItem({ row }: { row: ActivityFeedRow }) {
+  const cfg  = ACTIVITY_ICONS[row.action_type] ?? FALLBACK_ICON;
+  const Icon = cfg.icon;
+  const desc = row.description ?? row.action_type.replace(/_/g, " ");
+  const who  = row.lead_name ? ` · ${row.lead_name}` : "";
+
+  return (
+    <div className="flex items-start gap-3 py-2.5 border-b border-zinc-50 last:border-0 px-5 hover:bg-zinc-50/60 transition-colors">
+      <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${cfg.bg}`}>
+        <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-zinc-700 leading-snug truncate">{desc}{who}</p>
+        <p className="text-[10px] text-zinc-400 mt-0.5">{timeAgo(row.created_at)}</p>
+      </div>
+    </div>
+  );
+}
+
+function ActivityFeed({ items }: { items: ActivityFeedRow[] }) {
+  if (items.length === 0) {
+    return (
+      <div className="px-5 py-10 text-center">
+        <Activity className="mx-auto mb-2 h-7 w-7 text-zinc-200" />
+        <p className="text-sm font-medium text-zinc-400">Sin actividad aún</p>
+        <p className="text-[11px] text-zinc-300 mt-1">Las acciones del Ghost Engine aparecerán aquí</p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      {items.map((item) => <ActivityItem key={item.id} row={item} />)}
+    </div>
+  );
+}
+
+// -- Ghost Engine Panel --------------------------------------------------------
+
+function GhostEnginePanel({ initial }: { initial: DashboardMetrics["engine"] }) {
+  const [session, setSession] = useState<GhostEngineSession>(initial);
 
   useEffect(() => {
-    getGhostEngineStatus().then((res) => {
-      if (res.success && res.data) setSession(res.data);
-    });
-
     const supabase = createClient();
     const channel = supabase
-      .channel('ghost-engine-status')
+      .channel("ghost-engine-status")
       .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'ghost_engine_sessions' },
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ghost_engine_sessions" },
         (payload) => {
           const row = payload.new as Record<string, unknown>;
           if (!row) return;
           const lastBeat = row.last_heartbeat_at
             ? new Date(row.last_heartbeat_at as string).getTime()
             : 0;
-          const stale = Date.now() - lastBeat > 2 * 60 * 1000;
+          const stale = Date.now() - lastBeat > 2 * 60_000;
           setSession({
-            status:            stale ? 'stopped' : ((row.status as GhostEngineSession['status']) ?? 'stopped'),
-            connections_sent:  (row.connections_sent as number) ?? 0,
-            messages_sent:     (row.messages_sent    as number) ?? 0,
-            actions_count:     (row.actions_count    as number) ?? 0,
+            status:            stale ? "stopped" : ((row.status as GhostEngineSession["status"]) ?? "stopped"),
+            connections_sent:  (row.connections_sent as number)  ?? 0,
+            messages_sent:     (row.messages_sent    as number)  ?? 0,
+            actions_count:     (row.actions_count    as number)  ?? 0,
             last_heartbeat_at: (row.last_heartbeat_at as string) ?? null,
             metadata:          (row.metadata as Record<string, unknown>) ?? {},
           });
@@ -97,51 +335,48 @@ function GhostEnginePanel() {
     };
   }, []);
 
-  const isRunning = session.status === 'running';
+  const isRunning = session.status === "running";
   const meta = session.metadata as {
     connections_today?: number;
     messages_today?: number;
     likes_today?: number;
-    next_task_at?: number;
   };
 
   return (
     <div className={`rounded-2xl border-2 p-5 transition-all duration-500 ${
-      isRunning ? 'border-emerald-200 bg-emerald-50/40' : 'border-zinc-200 bg-zinc-50/60'
+      isRunning ? "border-emerald-200 bg-emerald-50/40" : "border-zinc-200 bg-zinc-50/60"
     }`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-            isRunning ? 'bg-emerald-100' : 'bg-zinc-100'
+            isRunning ? "bg-emerald-100" : "bg-zinc-100"
           }`}>
-            <Zap className={`h-5 w-5 ${isRunning ? 'text-emerald-600' : 'text-zinc-300'}`} />
+            <Zap className={`h-5 w-5 ${isRunning ? "text-emerald-600" : "text-zinc-300"}`} />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <p className="text-sm font-bold text-zinc-900">Ghost Engine</p>
               <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                isRunning ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-200 text-zinc-500'
+                isRunning ? "bg-emerald-100 text-emerald-700" : "bg-zinc-200 text-zinc-500"
               }`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${
-                  isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
+                  isRunning ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
                 }`} />
-                {isRunning ? 'Motor activo' : 'Motor no conectado'}
+                {isRunning ? "Motor activo" : "Motor no conectado"}
               </span>
             </div>
             <p className="mt-0.5 text-[12px] text-zinc-400">
               {isRunning
-                ? `${meta.connections_today ?? session.connections_sent} conexiones · ${meta.messages_today ?? session.messages_sent} mensajes hoy`
-                : 'Activa el Ghost Engine en la extensión de Chrome'}
+                ? `${fmtNum(meta.connections_today ?? session.connections_sent)} conexiones · ${fmtNum(meta.messages_today ?? session.messages_sent)} mensajes hoy`
+                : "Activa el Ghost Engine en la extensión de Chrome"}
             </p>
           </div>
         </div>
         {isRunning && (
           <div className="flex flex-col items-end gap-1">
-            <span className="rounded-xl bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-700">
-              En línea
-            </span>
+            <span className="rounded-xl bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-700">En línea</span>
             {session.last_heartbeat_at && (
-              <span className="text-[10px] text-zinc-400">
+              <span className="text-[10px] text-zinc-400" suppressHydrationWarning>
                 Última señal: {timeAgo(session.last_heartbeat_at)}
               </span>
             )}
@@ -152,15 +387,15 @@ function GhostEnginePanel() {
       {isRunning && (
         <div className="mt-4 grid grid-cols-3 gap-3 border-t border-emerald-100 pt-4">
           <div className="text-center">
-            <p className="text-lg font-black text-zinc-900">{meta.connections_today ?? session.connections_sent}</p>
+            <p className="text-lg font-black text-zinc-900">{fmtNum(meta.connections_today ?? session.connections_sent)}</p>
             <p className="text-[10px] text-zinc-500">Conexiones hoy</p>
           </div>
           <div className="text-center">
-            <p className="text-lg font-black text-zinc-900">{meta.messages_today ?? session.messages_sent}</p>
+            <p className="text-lg font-black text-zinc-900">{fmtNum(meta.messages_today ?? session.messages_sent)}</p>
             <p className="text-[10px] text-zinc-500">Mensajes hoy</p>
           </div>
           <div className="text-center">
-            <p className="text-lg font-black text-zinc-900">{meta.likes_today ?? 0}</p>
+            <p className="text-lg font-black text-zinc-900">{fmtNum(meta.likes_today ?? 0)}</p>
             <p className="text-[10px] text-zinc-500">Likes hoy</p>
           </div>
         </div>
@@ -169,109 +404,56 @@ function GhostEnginePanel() {
   );
 }
 
-// ── Activity Feed ─────────────────────────────────────────────────────────────
-
-const ACTIVITY_ICONS: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
-  connect:             { icon: Link2,        color: "text-indigo-600", bg: "bg-indigo-50"  },
-  message:             { icon: MessageSquare,color: "text-amber-600",  bg: "bg-amber-50"   },
-  check_connection:    { icon: UserCheck,    color: "text-violet-600", bg: "bg-violet-50"  },
-  view_profile:        { icon: Eye,          color: "text-zinc-500",   bg: "bg-zinc-100"   },
-  like:                { icon: Heart,        color: "text-pink-500",   bg: "bg-pink-50"    },
-  message_sent:        { icon: MessageSquare,color: "text-indigo-600", bg: "bg-indigo-50"  },
-  connection_sent:     { icon: Link2,        color: "text-blue-600",   bg: "bg-blue-50"    },
-  connection_accepted: { icon: UserCheck,    color: "text-green-600",  bg: "bg-green-50"   },
-  meeting_booked:      { icon: CalendarCheck,color: "text-green-600",  bg: "bg-green-100"  },
-  ai_reply:            { icon: Bot,          color: "text-purple-600", bg: "bg-purple-50"  },
-  lead_created:        { icon: Users,        color: "text-sky-600",    bg: "bg-sky-50"     },
-  campaign_started:    { icon: Megaphone,    color: "text-amber-600",  bg: "bg-amber-50"   },
-};
-
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)    return `Hace ${diff}s`;
-  if (diff < 3600)  return `Hace ${Math.floor(diff / 60)}min`;
-  if (diff < 86400) return `Hace ${Math.floor(diff / 3600)}h`;
-  return `Hace ${Math.floor(diff / 86400)}d`;
-}
-
-function ActivityItem({ row }: { row: ActivityRow }) {
-  const cfg = ACTIVITY_ICONS[row.action_type] ?? { icon: Zap, color: "text-zinc-400", bg: "bg-zinc-50" };
-  const Icon = cfg.icon;
-  return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-zinc-50 last:border-0 px-5 hover:bg-zinc-50/60 transition-colors">
-      <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${cfg.bg}`}>
-        <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-zinc-700 leading-snug truncate">
-          {row.description ?? row.action_type.replace(/_/g, " ")}
-        </p>
-        <p className="text-[10px] text-zinc-400 mt-0.5">{timeAgo(row.created_at)}</p>
-      </div>
-    </div>
-  );
-}
-
-function ActivityFeed({ items }: { items: ActivityRow[] }) {
-  if (items.length === 0) {
-    return (
-      <div className="px-5 py-10 text-center">
-        <Activity className="mx-auto mb-2 h-7 w-7 text-zinc-200" />
-        <p className="text-sm font-medium text-zinc-400">Sin actividad aún</p>
-        <p className="text-[11px] text-zinc-300 mt-1">Las acciones del Ghost Engine aparecerán aquí</p>
-      </div>
-    );
-  }
-  return (
-    <div>
-      {items.map((item) => <ActivityItem key={item.id} row={item} />)}
-    </div>
-  );
-}
-
-// ── Props ─────────────────────────────────────────────────────────────────────
-
-interface DashboardData {
-  leadsCount: number;
-  campaignsCount: number;
-  activeLeads: number;
-  connEstasSemana: number;
-  tasaAceptacion: number;
-  enConversacion: number;
-  recentActivity: ActivityRow[];
-  recentCampaigns: { name: string; status: string; total_leads: number; type: string }[];
-  engineSession: Record<string, unknown> | null;
-}
+// -- Props ---------------------------------------------------------------------
 
 interface DashboardViewProps {
-  initialData: DashboardData | null;
+  metrics: DashboardMetrics | null;
 }
 
-// ── Main View ─────────────────────────────────────────────────────────────────
+// -- Main View -----------------------------------------------------------------
 
-export function DashboardView({ initialData }: DashboardViewProps) {
-  const [data] = useState<DashboardData>(
-    initialData ?? {
-      leadsCount: 0, campaignsCount: 0, activeLeads: 0,
-      connEstasSemana: 0, tasaAceptacion: 0, enConversacion: 0,
-      recentActivity: [], recentCampaigns: [], engineSession: null,
-    }
-  );
-
-  const now = new Date();
+export function DashboardView({ metrics }: DashboardViewProps) {
+  const now  = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "Buenos días" : hour < 19 ? "Buenas tardes" : "Buenas noches";
 
-  const activeCampaignCount = data.recentCampaigns.filter((c) => c.status === "active").length;
+  const activeCampaignCount = metrics?.recentCampaigns.filter((c) => c.status === "active" || c.status === "running").length ?? 0;
 
   const QUICK_LINKS = QUICK_LINKS_BASE.map((link) => ({
     ...link,
     desc: link.label === "Campañas"    ? `${activeCampaignCount} activas`
-        : link.label === "CRM"         ? `${data.leadsCount} leads`
-        : link.label === "Smart Inbox" ? `${data.activeLeads} conversaciones activas`
+        : link.label === "CRM"         ? `${fmtNum(metrics?.leadsCount ?? 0)} leads`
+        : link.label === "Smart Inbox" ? `${fmtNum(metrics?.kpis.inConversation ?? 0)} activas`
         : link.label === "Agentes IA"  ? "Ver agentes"
         : "Ver KPIs",
   }));
+
+  // Skeleton while no data
+  if (!metrics) {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-white px-6 py-4">
+          <div>
+            <Skeleton className="h-5 w-36 mb-1" />
+            <Skeleton className="h-3 w-48" />
+          </div>
+          <Skeleton className="h-9 w-36 rounded-xl" />
+        </div>
+        <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-6 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[...Array(4)].map((_, i) => <KpiSkeleton key={i} />)}
+          </div>
+          <Skeleton className="h-32 w-full rounded-2xl" />
+          <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+            <Skeleton className="h-72 rounded-2xl" />
+            <Skeleton className="h-72 rounded-2xl" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { kpis, activityChart, funnel, feed, engine, recentCampaigns } = metrics;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
@@ -292,44 +474,69 @@ export function DashboardView({ initialData }: DashboardViewProps) {
         </Link>
       </div>
 
-      {/* Content */}
+      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-6 space-y-6">
 
-        {/* KPIs */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {/* -- KPI Cards ------------------------------------------------------- */}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
-            label="Leads en CRM" icon={Users} color="text-blue-600" bg="bg-blue-50"
-            value={String(data.leadsCount)} sublabel="En pipeline CRM"
+            label="Conexiones enviadas hoy"
+            icon={Link2}
+            color="text-indigo-600"
+            bg="bg-indigo-50"
+            value={fmtNum(kpis.connectsToday)}
+            sublabel="Hoy vía Ghost Engine"
           />
           <KpiCard
-            label="Campañas creadas" icon={Megaphone} color="text-amber-600" bg="bg-amber-50"
-            value={String(data.campaignsCount)} sublabel={`${activeCampaignCount} activas`}
+            label="Tasa de aceptación"
+            icon={UserCheck}
+            color="text-green-600"
+            bg="bg-green-50"
+            value={fmtPct(kpis.acceptanceRate)}
+            sublabel="Del total de solicitudes enviadas"
           />
           <KpiCard
-            label="Leads activos" icon={TrendingUp} color="text-green-600" bg="bg-green-50"
-            value={String(data.activeLeads)} sublabel="Contactados o respondieron"
+            label="Mensajes enviados hoy"
+            icon={MessageSquare}
+            color="text-amber-600"
+            bg="bg-amber-50"
+            value={fmtNum(kpis.messagesToday)}
+            sublabel="Hoy vía Ghost Engine"
           />
           <KpiCard
-            label="Reuniones agendadas" icon={CalendarCheck} color="text-orange-600" bg="bg-orange-50"
-            value="—" sublabel="Ver en analítica"
-          />
-          <KpiCard
-            label="Conexiones esta semana" icon={Link2} color="text-indigo-600" bg="bg-indigo-50"
-            value={String(data.connEstasSemana)} sublabel={`${data.tasaAceptacion}% tasa de aceptación`}
-          />
-          <KpiCard
-            label="En conversación" icon={MessageSquare} color="text-amber-600" bg="bg-amber-50"
-            value={String(data.enConversacion)} sublabel="Esperando respuesta"
+            label="En conversación"
+            icon={TrendingUp}
+            color="text-violet-600"
+            bg="bg-violet-50"
+            value={fmtNum(kpis.inConversation)}
+            sublabel="Leads respondiendo actualmente"
           />
         </div>
 
-        {/* Ghost Engine */}
-        <GhostEnginePanel />
+        {/* -- Ghost Engine ---------------------------------------------------- */}
+        <GhostEnginePanel initial={engine} />
 
-        {/* Two-col layout */}
+        {/* -- Activity Chart -------------------------------------------------- */}
+        <div className="rounded-2xl border border-border bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-bold text-zinc-900">Actividad — últimos 14 días</h2>
+              <p className="text-[11px] text-zinc-400 mt-0.5">Conexiones y mensajes enviados por Ghost Engine</p>
+            </div>
+            <Link
+              href="/dashboard/analytics"
+              className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"
+            >
+              Ver analítica completa <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <ActivityChart data={activityChart} />
+        </div>
+
+        {/* -- Two-column layout ----------------------------------------------- */}
         <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
 
-          {/* Activity feed */}
+          {/* Left: Activity feed */}
           <div className="rounded-2xl border border-border bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-zinc-50 px-5 py-4">
               <div className="flex items-center gap-2">
@@ -340,11 +547,24 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                 Ver todo <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
-            <ActivityFeed items={data.recentActivity} />
+            <ActivityFeed items={feed} />
           </div>
 
           {/* Right column */}
           <div className="space-y-6">
+
+            {/* Pipeline funnel */}
+            <div className="rounded-2xl border border-border bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-zinc-50 px-5 py-4">
+                <h2 className="text-sm font-bold text-zinc-900">Pipeline de leads</h2>
+                <Link href="/dashboard/crm" className="text-xs font-medium text-indigo-600 hover:underline">
+                  Ver CRM
+                </Link>
+              </div>
+              <div className="px-5 py-4">
+                <PipelineFunnel stages={funnel} />
+              </div>
+            </div>
 
             {/* Quick access */}
             <div className="rounded-2xl border border-border bg-white shadow-sm">
@@ -375,33 +595,37 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             {/* Recent campaigns */}
             <div className="rounded-2xl border border-border bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-zinc-50 px-5 py-4">
-                <h2 className="text-sm font-bold text-zinc-900">Campañas</h2>
+                <h2 className="text-sm font-bold text-zinc-900">Campañas recientes</h2>
                 <Link href="/dashboard/campanas" className="text-xs font-medium text-indigo-600 hover:underline">
                   Ver todas
                 </Link>
               </div>
               <div className="divide-y divide-zinc-50">
-                {data.recentCampaigns.length === 0 ? (
+                {recentCampaigns.length === 0 ? (
                   <div className="px-5 py-6 text-center text-[12px] text-zinc-400">
                     Sin campañas aún —{" "}
                     <Link href="/dashboard/campanas" className="text-indigo-500 hover:underline">crear primera</Link>
                   </div>
                 ) : (
-                  data.recentCampaigns.map((camp) => (
+                  recentCampaigns.map((camp) => (
                     <div key={camp.name} className="px-5 py-3.5">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-semibold text-zinc-800 truncate max-w-[160px]">{camp.name}</p>
                         <span className={[
                           "rounded-full px-2 py-0.5 text-[9px] font-bold",
-                          camp.status === "active" ? "bg-green-100 text-green-700"
-                            : camp.status === "draft" ? "bg-zinc-100 text-zinc-500"
-                            : "bg-amber-100 text-amber-700",
+                          camp.status === "active"  ? "bg-green-100 text-green-700"
+                          : camp.status === "paused" ? "bg-amber-100 text-amber-700"
+                          : camp.status === "done"   ? "bg-blue-100 text-blue-700"
+                          : "bg-zinc-100 text-zinc-500",
                         ].join(" ")}>
-                          {camp.status === "active" ? "Activa" : camp.status === "draft" ? "Borrador" : "Pausada"}
+                          {camp.status === "active"  ? "Activa"
+                          : camp.status === "paused" ? "Pausada"
+                          : camp.status === "done"   ? "Completada"
+                          : "Borrador"}
                         </span>
                       </div>
                       <p className="mt-1 text-[11px] text-zinc-400">
-                        {camp.total_leads ?? 0} leads · <span className="capitalize">{camp.type ?? "linkedin"}</span>
+                        {fmtNum(camp.total_leads ?? 0)} leads · <span className="capitalize">{camp.type ?? "linkedin"}</span>
                       </p>
                     </div>
                   ))

@@ -110,7 +110,7 @@ export function SegmentImport({ segmentId, campaignId, onImportComplete, onClose
 
   return (
     <div className="space-y-4">
-      {/* ── STEP: upload ── */}
+      {/* -- STEP: upload -- */}
       {step === 'upload' && (
         <>
           <div
@@ -159,7 +159,7 @@ export function SegmentImport({ segmentId, campaignId, onImportComplete, onClose
         </>
       )}
 
-      {/* ── STEP: preview ── */}
+      {/* -- STEP: preview -- */}
       {step === 'preview' && (
         <>
           <div className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
@@ -237,7 +237,7 @@ export function SegmentImport({ segmentId, campaignId, onImportComplete, onClose
         </>
       )}
 
-      {/* ── STEP: result ── */}
+      {/* -- STEP: result -- */}
       {step === 'result' && result && (
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-3 py-4">

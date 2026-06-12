@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Archive, ClipboardCopy, Clock, Eye, MessageSquare, Trash2, X, Zap } from "lucide-react";
 import type { CrmLead } from "./types";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 const AVATAR_PALETTE = [
   "bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500",
@@ -40,7 +40,7 @@ function fmtValue(v: number): string {
   return `$${v}`;
 }
 
-// ── Status badge ──────────────────────────────────────────────────────────────
+// -- Status badge --------------------------------------------------------------
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   nuevo:      { label: "Nuevo",      cls: "bg-blue-50   text-blue-700   ring-blue-200"   },
@@ -50,7 +50,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   cerrado:    { label: "Cerrado",    cls: "bg-zinc-100  text-zinc-600   ring-zinc-200"   },
 };
 
-// ── Priority dot ──────────────────────────────────────────────────────────────
+// -- Priority dot --------------------------------------------------------------
 
 type Priority = "alta" | "media" | "baja";
 
@@ -60,7 +60,7 @@ function priorityDot(score?: number): { p: Priority; cls: string } {
   return                            { p: "alta",  cls: "bg-red-400"   };
 }
 
-// ── Delete confirm inline ─────────────────────────────────────────────────────
+// -- Delete confirm inline -----------------------------------------------------
 
 function DeleteConfirm({ name, onConfirm, onCancel }: {
   name: string; onConfirm: () => void; onCancel: () => void;
@@ -83,7 +83,7 @@ function DeleteConfirm({ name, onConfirm, onCancel }: {
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// -- Component -----------------------------------------------------------------
 
 interface LeadCardProps {
   lead: CrmLead;

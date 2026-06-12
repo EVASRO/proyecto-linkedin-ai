@@ -7,7 +7,7 @@ import {
   TrendingDown, TrendingUp, UserCheck, Users, Zap,
 } from "lucide-react";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 type DateRange = "7d" | "30d" | "3m" | "6m";
 type FilterCampaign = "all" | string;
@@ -42,7 +42,7 @@ const FUNNEL_COLORS = [
   "from-green-500 to-emerald-400",
 ];
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// -- Sub-components ------------------------------------------------------------
 
 function KpiCard({ label, value, icon: Icon, color, bg, sublabel }: {
   label: string; value: string;
@@ -80,7 +80,7 @@ function EmptyState() {
   );
 }
 
-// ── MAIN VIEW ─────────────────────────────────────────────────────────────────
+// -- MAIN VIEW -----------------------------------------------------------------
 
 export function AnalyticsView({ data }: { data?: AnalyticsData }) {
   const [dateRange, setDateRange]     = useState<DateRange>("30d");

@@ -8,8 +8,6 @@ import {
   Megaphone,
   PenLine,
   Settings,
-  SlidersHorizontal,
-  UserCircle,
   Users,
 } from "lucide-react";
 
@@ -80,23 +78,9 @@ export const dashboardNavItems: DashboardNavItem[] = [
   },
   {
     label: "Configuración",
-    href: "/dashboard/configuracion",
-    icon: Settings,
-    description: "Límites, seguridad y webhooks",
-    section: "account",
-  },
-  {
-    label: "Ajustes",
     href: "/dashboard/settings",
-    icon: SlidersHorizontal,
-    description: "Perfil, workspace, LinkedIn y email",
-    section: "account",
-  },
-  {
-    label: "Mi Perfil",
-    href: "/dashboard/perfil",
-    icon: UserCircle,
-    description: "Cuenta, seguridad y conexiones",
+    icon: Settings,
+    description: "Cuenta, workspace, LinkedIn, email y webhooks",
     section: "account",
   },
 ];

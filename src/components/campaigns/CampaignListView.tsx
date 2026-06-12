@@ -4,14 +4,14 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertOctagon, Archive, Check, Clock, Link2, Loader2, Mail, MoreVertical,
-  Pause, Play, Plus, Sparkles, Trash2, X,
+  Pause, Play, Plus, Sparkles, X,
 } from "lucide-react";
 import type { Campaign, CampaignStatus, CampaignType } from "./types";
 import {
-  deleteCampaign, archiveCampaign, updateCampaignStatus, launchCampaign,
+  archiveCampaign, updateCampaignStatus, launchCampaign,
 } from "@/app/dashboard/campanas/actions";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 const TYPE_META: Record<CampaignType, { icon: React.ElementType; color: string; bg: string; label: string }> = {
   linkedin:        { icon: Link2,    color: "text-blue-700",   bg: "bg-blue-50",   label: "LinkedIn"        },
@@ -31,7 +31,7 @@ function fmtDate(d: string): string {
   return new Date(d).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-// ── ConfirmModal ──────────────────────────────────────────────────────────────
+// -- ConfirmModal --------------------------------------------------------------
 
 interface ConfirmModalProps {
   title: string;
@@ -75,17 +75,16 @@ function ConfirmModal({ title, body, confirmLabel, confirmCls, loading, onConfir
   );
 }
 
-// ── Campaign Card ─────────────────────────────────────────────────────────────
+// -- Campaign Card -------------------------------------------------------------
 
 interface CampaignCardProps {
   campaign: Campaign;
   onOpen: (c: Campaign) => void;
-  onDelete: (id: string, name: string) => void;
   onArchive: (id: string, name: string) => void;
   onToggleStatus: (id: string, current: CampaignStatus) => void;
 }
 
-function CampaignCard({ campaign, onOpen, onDelete, onArchive, onToggleStatus }: CampaignCardProps) {
+function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const type     = TYPE_META[campaign.type] ?? TYPE_META["linkedin"];
@@ -162,17 +161,10 @@ function CampaignCard({ campaign, onOpen, onDelete, onArchive, onToggleStatus }:
                 <div className="my-1 h-px bg-zinc-100" />
                 <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onArchive(campaign.id, campaign.name); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-amber-50"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-amber-600 hover:bg-amber-50"
                 >
-                  <Archive className="h-3.5 w-3.5 text-zinc-400" />
+                  <Archive className="h-3.5 w-3.5" />
                   Archivar
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(campaign.id, campaign.name); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Eliminar
                 </button>
               </div>
             )}
@@ -208,7 +200,7 @@ function CampaignCard({ campaign, onOpen, onDelete, onArchive, onToggleStatus }:
   );
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
+// -- Toast ---------------------------------------------------------------------
 
 type ToastState = { type: "success" | "error"; msg: string } | null;
 
@@ -226,7 +218,7 @@ function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void 
   );
 }
 
-// ── MAIN LIST VIEW ────────────────────────────────────────────────────────────
+// -- MAIN LIST VIEW ------------------------------------------------------------
 
 interface CampaignListViewProps {
   campaigns: Campaign[];
@@ -235,9 +227,9 @@ interface CampaignListViewProps {
   onCampaignsChange: (campaigns: Campaign[]) => void;
 }
 
-type ConfirmState = { open: boolean; action: "delete" | "archive"; id: string; name: string };
+type ConfirmState = { open: boolean; action: "archive"; id: string; name: string };
 
-const EMPTY_CONFIRM: ConfirmState = { open: false, action: "delete", id: "", name: "" };
+const EMPTY_CONFIRM: ConfirmState = { open: false, action: "archive", id: "", name: "" };
 
 const STATUS_ORDER = ["active", "paused", "draft", "completed", "archived"];
 
@@ -283,7 +275,12 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
         onCampaignsChange(campaigns.map((c) => c.id === id ? { ...c, status: current } : c));
         showToast("error", res.error ?? "Error al cambiar estado");
       } else {
-        showToast("success", next === "active" ? "Campaña activada" : "Campaña pausada");
+        const affected = res.data?.affectedTasks ?? 0;
+        if (next === "active") {
+          showToast("success", affected > 0 ? `Campaña activada · ${affected} acciones reanudadas` : "Campaña activada");
+        } else {
+          showToast("success", affected > 0 ? `Campaña pausada · ${affected} acciones pausadas` : "Campaña pausada");
+        }
         router.refresh();
       }
     });
@@ -296,35 +293,28 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
   }
 
   function handleConfirmAction() {
-    const { action, id, name } = confirm;
+    const { id, name } = confirm;
     setConfirm(EMPTY_CONFIRM);
 
     startTransition(async () => {
-      if (action === "delete") {
-        const res = await deleteCampaign(id);
-        if (res.success) {
-          onCampaignsChange(campaigns.filter((c) => c.id !== id));
-          showToast("success", `Campaña "${name}" eliminada`);
-          router.refresh();
-        } else {
-          showToast("error", res.error ?? "Error al eliminar");
-        }
+      const res = await archiveCampaign(id);
+      if (res.success) {
+        const cancelled = res.data?.cancelledTasks ?? 0;
+        onCampaignsChange(campaigns.filter((c) => c.id !== id));
+        showToast("success", cancelled > 0
+          ? `Campaña "${name}" archivada · ${cancelled} acciones canceladas`
+          : `Campaña "${name}" archivada`
+        );
+        router.refresh();
       } else {
-        const res = await archiveCampaign(id);
-        if (res.success) {
-          onCampaignsChange(campaigns.filter((c) => c.id !== id));
-          showToast("success", `Campaña "${name}" archivada`);
-          router.refresh();
-        } else {
-          showToast("error", res.error ?? "Error al archivar");
-        }
+        showToast("error", res.error ?? "Error al archivar");
       }
     });
   }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      {/* ── Header ── */}
+      {/* -- Header -- */}
       <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-6 py-4">
         <div>
           <h1 className="text-lg font-bold text-zinc-900">Campañas de Automatización</h1>
@@ -375,7 +365,7 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
         </div>
       </div>
 
-      {/* ── Grid ── */}
+      {/* -- Grid -- */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -396,7 +386,6 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
                 campaign={c}
                 onOpen={onOpen}
                 onToggleStatus={toggleCampaignStatus}
-                onDelete={(id, name) => setConfirm({ open: true, action: "delete", id, name })}
                 onArchive={(id, name) => setConfirm({ open: true, action: "archive", id, name })}
               />
             ))}
@@ -415,12 +404,10 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
 
       {confirm.open && (
         <ConfirmModal
-          title={confirm.action === "delete" ? "Eliminar campaña" : "Archivar campaña"}
-          body={confirm.action === "delete"
-            ? `¿Eliminar campaña "${confirm.name}"? Esta acción no se puede deshacer.`
-            : `¿Archivar campaña "${confirm.name}"? Puedes reactivarla después.`}
-          confirmLabel={confirm.action === "delete" ? "Eliminar" : "Archivar"}
-          confirmCls={confirm.action === "delete" ? "bg-red-600 hover:bg-red-700" : "bg-amber-500 hover:bg-amber-600"}
+          title="Archivar campaña"
+          body={`¿Archivar campaña "${confirm.name}"? Se cancelarán las acciones pendientes. Los datos y métricas se conservan. Podrás recuperarla desde Archivadas.`}
+          confirmLabel="Archivar"
+          confirmCls="bg-amber-500 hover:bg-amber-600"
           loading={isPending}
           onConfirm={handleConfirmAction}
           onCancel={() => setConfirm(EMPTY_CONFIRM)}

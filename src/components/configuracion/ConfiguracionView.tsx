@@ -13,7 +13,7 @@ import {
   type WorkspaceSettingsRow, type WebhookRow,
 } from "@/app/dashboard/configuracion/actions";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 interface WebhookItem {
   id: string;
@@ -33,7 +33,7 @@ interface ConfiguracionViewProps {
   initialWebhooks: WebhookRow[];
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 function SliderField({
   label, sublabel, value, min, max, step = 1, unit = "", onChange,
@@ -112,7 +112,7 @@ function SectionTitle({ icon: Icon, label }: { icon: React.ElementType; label: s
   );
 }
 
-// ── WEBHOOK EVENTS ─────────────────────────────────────────────────────────────
+// -- WEBHOOK EVENTS -------------------------------------------------------------
 
 const WEBHOOK_EVENTS = [
   { id: "lead.created",      label: "Lead creado" },
@@ -122,7 +122,7 @@ const WEBHOOK_EVENTS = [
   { id: "connection.accepted", label: "Conexión aceptada" },
 ];
 
-// ── INTEGRATIONS ───────────────────────────────────────────────────────────────
+// -- INTEGRATIONS ---------------------------------------------------------------
 
 const INTEGRATIONS = [
   { id: "zapier",   name: "Zapier",   logo: "⚡", description: "Conecta NexusAI con +5000 apps sin código",   status: "available" },
@@ -133,7 +133,7 @@ const INTEGRATIONS = [
   { id: "outlook",  name: "Outlook",  logo: "📨", description: "Integración SMTP/OAuth con Outlook 365",       status: "available" },
 ];
 
-// ── MOCK PLAN DATA ─────────────────────────────────────────────────────────────
+// -- MOCK PLAN DATA -------------------------------------------------------------
 
 const PLANS = [
   {
@@ -153,7 +153,7 @@ const PLANS = [
   },
 ];
 
-// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
+// -- MAIN COMPONENT ------------------------------------------------------------
 
 function mapWebhook(row: WebhookRow): WebhookItem {
   return {
@@ -205,7 +205,7 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
   // Integrations
   const [connectedApps, setConnectedApps] = useState<string[]>([]);
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // -- Handlers ----------------------------------------------------------------
 
   function handleSave() {
     startTransition(async () => {
@@ -295,7 +295,7 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      {/* ── Header ── */}
+      {/* -- Header -- */}
       <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-white px-6 py-4">
         <div>
           <h1 className="text-lg font-bold text-zinc-900">Configuración</h1>
@@ -323,7 +323,7 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
         </div>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* -- Tabs -- */}
       <div className="flex flex-shrink-0 gap-1 border-b border-border bg-white px-6">
         {tabs.map((t) => {
           const Icon = t.icon;
@@ -345,12 +345,12 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
         })}
       </div>
 
-      {/* ── Content ── */}
+      {/* -- Content -- */}
       <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-6">
 
-        {/* ════════════════════════════════════════════
+        {/* --------------------------------------------
             TAB: LÍMITES & SEGURIDAD
-        ════════════════════════════════════════════ */}
+        -------------------------------------------- */}
         {activeTab === "limites" && (
           <div className="mx-auto max-w-3xl space-y-6">
 
@@ -591,9 +591,9 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
           </div>
         )}
 
-        {/* ════════════════════════════════════════════
+        {/* --------------------------------------------
             TAB: TOKENS & PLAN
-        ════════════════════════════════════════════ */}
+        -------------------------------------------- */}
         {activeTab === "tokens" && (
           <div className="mx-auto max-w-3xl space-y-6">
 
@@ -675,9 +675,9 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
           </div>
         )}
 
-        {/* ════════════════════════════════════════════
+        {/* --------------------------------------------
             TAB: WEBHOOKS
-        ════════════════════════════════════════════ */}
+        -------------------------------------------- */}
         {activeTab === "webhooks" && (
           <div className="mx-auto max-w-3xl space-y-5">
             <div className="flex items-center justify-between">
@@ -851,13 +851,13 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
           </div>
         )}
 
-        {/* ════════════════════════════════════════════
+        {/* --------------------------------------------
             TAB: INTEGRACIONES
-        ════════════════════════════════════════════ */}
+        -------------------------------------------- */}
         {activeTab === "integraciones" && (
           <div className="mx-auto max-w-3xl space-y-6">
 
-            {/* ── LinkedIn OAuth ── */}
+            {/* -- LinkedIn OAuth -- */}
             <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-2xl">💼</span>
@@ -905,7 +905,7 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
               </p>
             </div>
 
-            {/* ── Email OAuth ── */}
+            {/* -- Email OAuth -- */}
             <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-5">
                 <span className="text-2xl">📧</span>
@@ -1001,7 +1001,7 @@ export function ConfiguracionView({ initialSettings, initialWebhooks }: Configur
               </div>
             </div>
 
-            {/* ── Otras integraciones ── */}
+            {/* -- Otras integraciones -- */}
             <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
               <p className="text-sm font-bold text-zinc-900 mb-4">Otras integraciones</p>
               <div className="grid gap-3 sm:grid-cols-2">

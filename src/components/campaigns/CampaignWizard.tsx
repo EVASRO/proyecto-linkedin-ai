@@ -12,7 +12,7 @@ import type { CampaignType, WizardData, Template } from "./types";
 type ChromeRuntime = { sendMessage: (msg: unknown) => Promise<unknown> };
 declare const chrome: { runtime: ChromeRuntime } | undefined;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 const TYPE_OPTIONS: {
   type: CampaignType;
@@ -38,7 +38,7 @@ const EMPTY_WIZARD: WizardData = {
   estimatedLeads: 0,
 };
 
-// ── Step 1 — Identity ─────────────────────────────────────────────────────────
+// -- Step 1 — Identity ---------------------------------------------------------
 
 function Step1({
   data,
@@ -102,7 +102,7 @@ function Step1({
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 function isValidLinkedInUrl(url: string, type: CampaignType | null): boolean {
   try {
@@ -119,7 +119,7 @@ function isValidLinkedInUrl(url: string, type: CampaignType | null): boolean {
   }
 }
 
-// ── Step 2 — Segmentación ─────────────────────────────────────────────────────
+// -- Step 2 — Segmentación -----------------------------------------------------
 
 type CountState =
   | { status: "idle" }
@@ -370,7 +370,7 @@ function Step2({
   );
 }
 
-// ── Step 3 — Estructura ───────────────────────────────────────────────────────
+// -- Step 3 — Estructura -------------------------------------------------------
 
 function Step3({
   data,
@@ -458,7 +458,7 @@ function Step3({
   );
 }
 
-// ── Main Wizard ───────────────────────────────────────────────────────────────
+// -- Main Wizard ---------------------------------------------------------------
 
 const STEPS = [
   { num: 1, label: "Identidad"    },

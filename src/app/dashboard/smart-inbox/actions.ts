@@ -36,7 +36,7 @@ async function getAuthContext() {
   return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
 }
 
-// ── Cargar conversaciones con mensajes ────────────────────────────────────────
+// -- Cargar conversaciones con mensajes ----------------------------------------
 
 export async function getConversationsWithMessages(): Promise<Result<{ conversations: Conversation[]; workspaceId: string }>> {
   try {
@@ -78,6 +78,12 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
           status:    (m.status ?? undefined) as Message["status"] | undefined,
         }));
 
+        const leadUrl = String(lead.linkedin_url ?? "");
+        const source: "linkedin" | "salesnav" =
+          leadUrl.includes("sales/lead") || leadUrl.includes("salesnavigator")
+            ? "salesnav"
+            : "linkedin";
+
         return {
           id:              String(row.id),
           status:          (row.status ?? "active") as Conversation["status"],
@@ -86,6 +92,7 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
           unreadCount:     Number(row.unread_count ?? 0),
           messages,
           aiSuggestions:   [],
+          source,
           lead: {
             id:          String(lead.id),
             name:        String(lead.full_name ?? "Sin nombre"),
@@ -94,7 +101,7 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
             email:       lead.email       ? String(lead.email)        : undefined,
             phone:       lead.phone       ? String(lead.phone)        : undefined,
             linkedinUrl: lead.linkedin_url ? String(lead.linkedin_url) : undefined,
-            source:      "linkedin" as const,
+            source,
             pipeline:    "en_contacto" as const,
             tags:        [],
             value:       Number(lead.value ?? 0),
@@ -111,7 +118,7 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
   }
 }
 
-// ── Enviar mensaje desde la plataforma ───────────────────────────────────────
+// -- Enviar mensaje desde la plataforma ---------------------------------------
 
 export async function sendInboxMessage(data: {
   conversation_id: string;
@@ -140,16 +147,37 @@ export async function sendInboxMessage(data: {
 
     if (msgErr) return { success: false, error: msgErr.message };
 
+    // Obtener linkedin_url actualizada del lead (puede haber cambiado o faltar en el caller)
+    const { data: leadRow } = await supabase
+      .from("leads")
+      .select("linkedin_url, salesnav_url")
+      .eq("id", data.lead_id)
+      .single();
+
+    const profileUrl = leadRow?.linkedin_url || leadRow?.salesnav_url || data.linkedin_url;
+
+    if (!profileUrl) {
+      await supabase
+        .from("messages")
+        .update({ status: "failed" })
+        .eq("id", msg.id);
+      return { success: false, error: "Lead sin URL de LinkedIn — envío manual requerido" };
+    }
+
     await supabase.from("engine_queue").insert({
       workspace_id: workspaceId,
       lead_id:      data.lead_id,
       task_type:    "message",
+      action_type:  "message",
       status:       "pending",
       priority:     1,
+      scheduled_at: new Date().toISOString(),
       payload: {
         message_text: data.text,
-        profile_url:  data.linkedin_url,
+        profile_url:  profileUrl,
         lead_id:      data.lead_id,
+        campaign_id:  null,
+        source:       profileUrl.includes("sales/lead") ? "salesnav" : "linkedin",
       },
     });
 
@@ -172,7 +200,7 @@ export async function sendInboxMessage(data: {
   }
 }
 
-// ── Toggle autopilot ──────────────────────────────────────────────────────────
+// -- Toggle autopilot ----------------------------------------------------------
 
 export async function toggleAutopilot(
   conversation_id: string,
@@ -197,7 +225,7 @@ export async function toggleAutopilot(
   }
 }
 
-// ── Generar sugerencia de respuesta con IA ────────────────────────────────────
+// -- Generar sugerencia de respuesta con IA ------------------------------------
 
 export async function generateAISuggestion(data: {
   lead_name: string;
@@ -242,7 +270,7 @@ export async function generateAISuggestion(data: {
   }
 }
 
-// ── Archivar conversación ─────────────────────────────────────────────────────
+// -- Archivar conversación -----------------------------------------------------
 
 export async function archiveConversation(conversationId: string): Promise<Result> {
   try {
@@ -259,7 +287,7 @@ export async function archiveConversation(conversationId: string): Promise<Resul
   }
 }
 
-// ── Total de no leídos ────────────────────────────────────────────────────────
+// -- Total de no leídos --------------------------------------------------------
 
 export async function getUnreadCount(): Promise<number> {
   try {
@@ -273,7 +301,7 @@ export async function getUnreadCount(): Promise<number> {
   } catch { return 0; }
 }
 
-// ── Marcar todas las conversaciones como leídas ───────────────────────────────
+// -- Marcar todas las conversaciones como leídas -------------------------------
 
 export async function markAllRead(): Promise<{ success: boolean }> {
   try {
@@ -294,7 +322,7 @@ export async function markAllRead(): Promise<{ success: boolean }> {
   } catch { return { success: false }; }
 }
 
-// ── Autopilot draft: aprobar y encolar envío ──────────────────────────────────
+// -- Autopilot draft: aprobar y encolar envío ----------------------------------
 
 export async function approveDraft(
   msgId: string,
@@ -381,7 +409,7 @@ export async function setAutopilotMode(
   } catch { return { success: false }; }
 }
 
-// ── Marcar conversación como leída ────────────────────────────────────────────
+// -- Marcar conversación como leída --------------------------------------------
 
 export async function markConversationRead(conversation_id: string): Promise<Result> {
   try {

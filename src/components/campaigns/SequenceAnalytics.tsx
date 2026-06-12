@@ -22,7 +22,7 @@ export function SequenceAnalytics({ campaignId }: { campaignId: string }) {
 
   return (
     <div className="space-y-4">
-      {/* ── Funnel visual ── */}
+      {/* -- Funnel visual -- */}
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h3 className="mb-4 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
           Funnel de conversión por paso
@@ -89,7 +89,7 @@ export function SequenceAnalytics({ campaignId }: { campaignId: string }) {
         )}
       </div>
 
-      {/* ── A/B Test results ── */}
+      {/* -- A/B Test results -- */}
       {data.abTest && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">

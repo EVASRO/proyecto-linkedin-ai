@@ -3,12 +3,12 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Archive, Bot, BotOff, Check, CheckCheck, ChevronDown,
-  Clock, Info, LayoutTemplate, Loader2, Paperclip, Send, Sparkles, User, X,
+  Clock, Info, LayoutTemplate, Loader2, Paperclip, Send, Sparkles, User, X, XCircle,
 } from "lucide-react";
 import type { AISuggestion, Conversation, Message, QuickReplyTemplate } from "./types";
 import { approveDraft, rejectDraft } from "@/app/dashboard/smart-inbox/actions";
 
-// ── Quick Reply Templates ─────────────────────────────────────────────────────
+// -- Quick Reply Templates -----------------------------------------------------
 
 const QUICK_REPLIES: QuickReplyTemplate[] = [
   { id: "q1", label: "Seguimiento 48h",    category: "seguimiento",  text: "Hola {{nombre}}, quería hacer un seguimiento a lo que conversamos. ¿Tuviste oportunidad de revisar la info que te compartí?" },
@@ -29,7 +29,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   general:      "bg-zinc-50 text-zinc-600 border-zinc-200",
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 function avatarColor(name: string): string {
   const palette = ["bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-pink-500", "bg-indigo-600"];
@@ -62,18 +62,18 @@ const INTENT_COLOR: Record<string, string> = {
   close:      "bg-red-50    text-red-600    border-red-200",
 };
 
-// ── Message Status Icon ───────────────────────────────────────────────────────
+// -- Message Status Icon -------------------------------------------------------
 
 function StatusIcon({ status }: { status?: string }) {
-  if (!status) return null;
-  if (status === "sending")   return <Clock className="h-3 w-3 text-white/40" />;
-  if (status === "sent")      return <Check className="h-3 w-3 text-white/60" />;
-  if (status === "delivered") return <CheckCheck className="h-3 w-3 text-white/60" />;
+  if (status === "sending")   return <Loader2    className="h-3 w-3 animate-spin text-zinc-300" />;
+  if (status === "sent")      return <Check      className="h-3 w-3 text-zinc-400" />;
+  if (status === "delivered") return <CheckCheck className="h-3 w-3 text-zinc-400" />;
   if (status === "read")      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+  if (status === "failed")    return <XCircle    className="h-3 w-3 text-red-400" />;
   return null;
 }
 
-// ── Message Bubble ────────────────────────────────────────────────────────────
+// -- Message Bubble ------------------------------------------------------------
 
 function Bubble({ msg, leadName }: { msg: Message; leadName: string }) {
   const isOutbound = msg.sender === "user" || msg.sender === "ai";
@@ -113,7 +113,7 @@ function Bubble({ msg, leadName }: { msg: Message; leadName: string }) {
   );
 }
 
-// ── Draft Bubble — AI draft pending approval ──────────────────────────────────
+// -- Draft Bubble — AI draft pending approval ----------------------------------
 
 function DraftBubble({
   msg,
@@ -214,7 +214,7 @@ function DraftBubble({
   );
 }
 
-// ── Quick Replies Panel ───────────────────────────────────────────────────────
+// -- Quick Replies Panel -------------------------------------------------------
 
 function QuickRepliesPanel({ onSelect, onClose }: {
   onSelect: (text: string) => void;
@@ -289,7 +289,7 @@ function QuickRepliesPanel({ onSelect, onClose }: {
   );
 }
 
-// ── Main ChatView ─────────────────────────────────────────────────────────────
+// -- Main ChatView -------------------------------------------------------------
 
 interface ChatViewProps {
   conversation: Conversation;
@@ -315,6 +315,9 @@ export function ChatView({
   const [showSugg, setShowSugg]           = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
   const [aiLoading, setAiLoading]         = useState(false);
+  const [showAutopilotBanner, setShowAutopilotBanner] = useState(
+    !conv.autopilotActive && conv.messages.length <= 3
+  );
   const bottomRef                     = useRef<HTMLDivElement>(null);
   const lastMsg                       = conv.messages[conv.messages.length - 1];
   const hasUnreplied                  = lastMsg?.sender === "lead";
@@ -359,7 +362,7 @@ export function ChatView({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0 bg-zinc-50/30">
-      {/* ── Chat Header ── */}
+      {/* -- Chat Header -- */}
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-border bg-white px-4 py-3">
         <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(conv.lead.name)}`}>
           {initials(conv.lead.name)}
@@ -367,6 +370,11 @@ export function ChatView({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="text-sm font-semibold text-zinc-900">{conv.lead.name}</p>
+            {conv.source === "salesnav" ? (
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[9px] font-bold text-orange-600">Sales Navigator</span>
+            ) : (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold text-blue-600">LinkedIn</span>
+            )}
             {isArchived && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-bold text-zinc-500">ARCHIVADO</span>
             )}
@@ -419,7 +427,52 @@ export function ChatView({
         </div>
       )}
 
-      {/* ── Messages ── */}
+      {/* -- Autopilot onboarding banner -- */}
+      {showAutopilotBanner && !conv.autopilotActive && !isArchived && (
+        <div className="flex flex-shrink-0 items-start gap-3 border-b border-violet-100
+                        bg-gradient-to-r from-violet-50 to-indigo-50 px-4 py-3">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center
+                          rounded-full bg-violet-100">
+            <Bot className="h-4 w-4 text-violet-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-violet-800">
+              ¿Activar IA para esta conversación?
+            </p>
+            <p className="mt-0.5 text-[10px] text-violet-500 leading-relaxed">
+              El Autopilot responderá automáticamente usando tu agente IA.
+              Puedes revisar cada mensaje antes de enviar.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => {
+                  onToggleAutopilot(conv.id, true);
+                  setShowAutopilotBanner(false);
+                }}
+                className="rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-bold
+                           text-white hover:bg-violet-700 transition-colors"
+              >
+                🤖 Activar Autopilot
+              </button>
+              <button
+                onClick={() => setShowAutopilotBanner(false)}
+                className="rounded-lg border border-violet-200 px-3 py-1.5 text-[10px]
+                           font-medium text-violet-500 hover:bg-violet-50 transition-colors"
+              >
+                Responder manualmente
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowAutopilotBanner(false)}
+            className="flex-shrink-0 text-violet-300 hover:text-violet-500"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* -- Messages -- */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {conv.messages.map((msg) =>
           msg.sender === "ai" &&
@@ -437,7 +490,7 @@ export function ChatView({
         <div ref={bottomRef} />
       </div>
 
-      {/* ── AI Suggestions ── */}
+      {/* -- AI Suggestions -- */}
       {hasUnreplied && conv.aiSuggestions.length > 0 && showSugg && !isArchived && (
         <div className="flex-shrink-0 border-t border-zinc-100 bg-white px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
@@ -466,7 +519,7 @@ export function ChatView({
         </div>
       )}
 
-      {/* ── Quick Reply Templates ── */}
+      {/* -- Quick Reply Templates -- */}
       {showTemplates && !isArchived && (
         <QuickRepliesPanel
           onSelect={(text) => setInput(text)}
@@ -474,7 +527,7 @@ export function ChatView({
         />
       )}
 
-      {/* ── Input ── */}
+      {/* -- Input -- */}
       {!isArchived && (
         <div className="flex-shrink-0 border-t border-border bg-white px-4 py-3">
           {!showSugg && hasUnreplied && (
