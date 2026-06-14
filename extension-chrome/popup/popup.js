@@ -293,7 +293,7 @@ btnLogout.addEventListener('click', async () => {
 btnDashboard.addEventListener('click', () => {
   // Read the dashboard URL from storage (set by background.js) or fall back to config
   chrome.storage.local.get(['dashboard_url', 'DASHBOARD_URL'], (data) => {
-    const url = data.dashboard_url ?? data.DASHBOARD_URL ?? 'https://app.cazary.ai/dashboard';
+    const url = data.dashboard_url ?? data.DASHBOARD_URL ?? 'https://proyecto-linkedin-ai.vercel.app/dashboard';
     chrome.tabs.create({ url });
     window.close();
   });
