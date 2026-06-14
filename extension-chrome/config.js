@@ -7,29 +7,54 @@ const SUPABASE_ANON_KEY = 'sb_publishable_b38hB4jcgLsmNmu8oobz_g_MkzyacQb';
 
 // ── Helper: fetch autenticado a Supabase REST API ─────────────────────────────
 async function supabaseFetch(path, opts = {}) {
-  const token  = await getStoredToken();
   const method = opts.method ?? 'GET';
   const prefer = opts.prefer ?? 'return=representation';
   const url    = `${SUPABASE_URL}/rest/v1/${path}`;
-  const headers = {
+
+  const buildHeaders = (token) => ({
     'apikey':        SUPABASE_ANON_KEY,
     'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
     'Content-Type':  'application/json',
     'Prefer':        prefer,
     ...(opts.headers ?? {}),
-  };
+  });
 
   const MAX_RETRIES = 3;
   let lastError = null;
+  let token = await getStoredToken();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, { method, headers, body: opts.body ?? undefined });
+      const res = await fetch(url, { method, headers: buildHeaders(token), body: opts.body ?? undefined });
       const ct = res.headers.get('content-type') ?? '';
       if (res.status === 204 || !ct.includes('json')) return null;
+
+      // ── 401: JWT expirado → intentar refresh y reintentar una vez ────────────
+      if (res.status === 401) {
+        console.warn('[cazary.ai] supabaseFetch 401 JWT expired → refreshing token...');
+        const refreshed = await supabaseRefreshToken();
+        if (refreshed) {
+          const { supabase_token: newToken } = await chrome.storage.local.get('supabase_token');
+          token = newToken;
+          // retry inmediato con nuevo token
+          const retryRes = await fetch(url, { method, headers: buildHeaders(token), body: opts.body ?? undefined });
+          if (retryRes.ok) return retryRes.json();
+          if (retryRes.status === 204) return null;
+        }
+        // refresh falló → limpiar sesión y notificar
+        console.warn('[cazary.ai] supabaseFetch refresh fallido → sesión limpiada, requiere re-login');
+        await chrome.storage.local.remove([
+          'supabase_token', 'supabase_refresh_token',
+          'supabase_token_expires_at', 'supabase_workspace_id',
+        ]);
+        // notificar al popup si está abierto
+        chrome.runtime.sendMessage({ type: 'SESSION_EXPIRED' }).catch(() => {});
+        return null;
+      }
+
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
-        console.error(`[NexusAI] supabaseFetch ERROR ${res.status}`, path.split('?')[0], JSON.stringify(errBody));
+        console.error(`[cazary.ai] supabaseFetch ERROR ${res.status}`, path.split('?')[0], JSON.stringify(errBody));
         return null;
       }
       return res.json();
@@ -37,13 +62,13 @@ async function supabaseFetch(path, opts = {}) {
       lastError = err;
       if (attempt < MAX_RETRIES) {
         const delay = attempt * 1500;
-        console.warn(`[NexusAI] supabaseFetch retry ${attempt}/${MAX_RETRIES} (${path.split('?')[0]}) en ${delay}ms`);
+        console.warn(`[cazary.ai] supabaseFetch retry ${attempt}/${MAX_RETRIES} (${path.split('?')[0]}) en ${delay}ms`);
         await new Promise(r => setTimeout(r, delay));
       }
     }
   }
 
-  console.error('[NexusAI] supabaseFetch NETWORK ERROR', path.split('?')[0], lastError?.message);
+  console.error('[cazary.ai] supabaseFetch NETWORK ERROR', path.split('?')[0], lastError?.message);
   return null;
 }
 
@@ -100,7 +125,14 @@ async function getStoredToken() {
     'supabase_token', 'supabase_token_expires_at'
   ]);
 
-  if (supabase_token_expires_at && Date.now() > supabase_token_expires_at - 5 * 60 * 1000) {
+  // Refrescar si: (a) el token ya expiró o está a menos de 5min de expirar,
+  // o (b) existe token pero no hay timestamp (sesión antigua sin expiración guardada)
+  const shouldRefresh = supabase_token && (
+    !supabase_token_expires_at ||
+    Date.now() > supabase_token_expires_at - 5 * 60 * 1000
+  );
+
+  if (shouldRefresh) {
     const refreshed = await supabaseRefreshToken();
     if (refreshed) {
       const { supabase_token: newToken } = await chrome.storage.local.get('supabase_token');

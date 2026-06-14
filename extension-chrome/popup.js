@@ -493,6 +493,14 @@ chrome.runtime.onMessage.addListener((msg) => {
     lastState = msg.state;
     renderState(msg.state);
   }
+  if (msg.type === 'SESSION_EXPIRED') {
+    // Token no renovable → forzar re-login
+    showLogin();
+    if (loginError) {
+      loginError.textContent = 'Sesión expirada. Por favor inicia sesión de nuevo.';
+      loginError.style.display = 'block';
+    }
+  }
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
