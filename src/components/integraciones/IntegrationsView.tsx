@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback, useTransition } from "react";
+import { useState, useCallback, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { LinkedInConnectionCard } from "./LinkedInConnectionCard";
 import { EngineStatusCard } from "./EngineStatusCard";
+import { getIntegrationsData } from "@/app/dashboard/configuracion/actions";
 import type { IntegrationsData, LinkedInAccount } from "@/app/dashboard/configuracion/actions";
 
 type Props = {
@@ -14,20 +15,35 @@ export function IntegrationsView({ data }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
-  // Local state so UI updates without full page reload
+  // Local state — initialized from server, updated by refreshData()
   const [linkedInAccount, setLinkedInAccount] = useState<LinkedInAccount | null>(
     data.linkedInAccount
   );
   const [engine, setEngine] = useState(data.engine);
 
+  // Track previous data to sync when RSC passes new props after router.refresh()
+  const prevData = useRef(data);
+  if (prevData.current !== data) {
+    prevData.current = data;
+    setLinkedInAccount(data.linkedInAccount);
+    setEngine(data.engine);
+  }
+
   const refreshData = useCallback(async () => {
-    // Trigger server re-fetch via router refresh, which re-renders the RSC
-    // and passes new props. The local state will sync once wizard closes.
+    // Call server action directly so local state updates immediately
+    // (router.refresh() alone doesn't update useState after mount)
+    try {
+      const result = await getIntegrationsData();
+      if (result.success && result.data) {
+        setLinkedInAccount(result.data.linkedInAccount);
+        setEngine(result.data.engine);
+      }
+    } catch (_) {}
+    // Also trigger RSC refresh for other components on the page
     startTransition(() => router.refresh());
   }, [router]);
 
   const handleDisconnect = useCallback(async () => {
-    // Optimistically clear, then re-fetch
     setLinkedInAccount(null);
     await refreshData();
   }, [refreshData]);

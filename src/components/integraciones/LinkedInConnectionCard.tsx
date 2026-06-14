@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Check, RefreshCw, ExternalLink, AlertCircle, Loader2 } from "lucide-react";
 import { LinkedInWizardModal } from "./LinkedInWizardModal";
@@ -246,9 +246,15 @@ export function LinkedInConnectionCard({ account, onRefresh, onDisconnect }: Pro
   const [wizardOpen, setWizardOpen] = useState(false);
   const [localAccount, setLocalAccount] = useState<LinkedInAccount | null>(account);
 
-  // Sync external prop changes (e.g., after server refresh)
-  if (account !== localAccount && !wizardOpen) {
-    setLocalAccount(account);
+  // Sync from parent ONLY when the account prop genuinely changes (server confirmed data)
+  // Never overwrite an optimistic "pending" state with stale null from parent
+  const prevAccount = useRef(account);
+  if (prevAccount.current !== account) {
+    prevAccount.current = account;
+    const isOptimisticPending = localAccount?.id === "pending";
+    if (!isOptimisticPending || account?.status === "connected") {
+      setLocalAccount(account);
+    }
   }
 
   const handleConnected = useCallback(
