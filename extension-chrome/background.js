@@ -1082,7 +1082,7 @@ async function syncLinkedInAccount() {
         profile_url:             linkedin_profile.profile_url ?? '',
         headline:                linkedin_profile.headline    ?? '',
         avatar_url:              linkedin_profile.avatar_url  ?? '',
-        status:                  'active',
+        status:                  'connected',
         connection_mode:         'extension',
         daily_connection_limit:  20,
         daily_message_limit:     30,
