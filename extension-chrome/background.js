@@ -27,9 +27,23 @@ async function ensureInitialized() {
   const { supabase_token, supabase_workspace_id } = await chrome.storage.local.get([
     'supabase_token', 'supabase_workspace_id'
   ]);
-  if (supabase_token && !supabase_workspace_id) {
-    await getWorkspaceId();
-  }
+  if (!supabase_token) return;
+
+  const wsId = supabase_workspace_id ?? await getWorkspaceId();
+  if (!wsId) return;
+
+  // Sincronizar engine_running desde DB al arrancar el service worker
+  try {
+    const rows = await supabaseFetch(
+      `ghost_engine_sessions?workspace_id=eq.${wsId}&select=status&limit=1`
+    );
+    const dbStatus = rows?.[0]?.status;
+    if (dbStatus === 'running') {
+      await chrome.storage.local.set({ engine_running: true });
+    } else if (dbStatus === 'stopped' || dbStatus === 'paused') {
+      await chrome.storage.local.set({ engine_running: false });
+    }
+  } catch (_) {}
 }
 
 // ── Arranque ──────────────────────────────────────────────────────────────────
@@ -107,6 +121,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await sendHeartbeat();
         sendResponse({ ok: true });
         break;
+
+      case 'toggle_engine': {
+        const { engine_running: isRunning } = await chrome.storage.local.get('engine_running');
+        if (isRunning) {
+          // Pausar
+          await chrome.storage.local.set({ engine_running: false, processing: false });
+          await sendHeartbeat();
+          sendResponse({ ok: true, running: false });
+        } else {
+          // Arrancar
+          const tok = await getStoredToken();
+          if (!tok) { sendResponse({ ok: false, error: 'No autenticado' }); break; }
+          const wId = await getWorkspaceId();
+          if (!wId) { sendResponse({ ok: false, error: 'No workspace' }); break; }
+          await chrome.storage.local.set({ engine_running: true });
+          await getTodayStats(wId);
+          await sendHeartbeat();
+          sendResponse({ ok: true, running: true });
+        }
+        break;
+      }
 
       case 'ACTION_DONE':
         await handleActionDone(msg.taskId, msg.result);
@@ -1064,6 +1099,32 @@ async function sendHeartbeat() {
 
   // Sync LinkedIn account on every heartbeat (idempotent upsert)
   await syncLinkedInAccount();
+
+  // ── Poll settings_events: consume comandos del dashboard ─────────────────
+  try {
+    const events = await supabaseFetch(
+      `settings_events?workspace_id=eq.${wsId}&consumed=eq.false&order=created_at.asc&limit=10`
+    );
+    if (Array.isArray(events) && events.length > 0) {
+      for (const evt of events) {
+        if (evt.event_type === 'RESUME_ENGINE') {
+          await chrome.storage.local.set({ engine_running: true });
+          console.log('[cazary.ai] settings_events → RESUME_ENGINE');
+        } else if (evt.event_type === 'PAUSE_ENGINE') {
+          await chrome.storage.local.set({ engine_running: false, processing: false });
+          console.log('[cazary.ai] settings_events → PAUSE_ENGINE');
+        }
+        // Marcar como consumido
+        await supabaseFetch(`settings_events?id=eq.${evt.id}`, {
+          method:  'PATCH',
+          headers: { 'Prefer': 'return=minimal' },
+          body:    JSON.stringify({ consumed: true }),
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[cazary.ai] settings_events poll failed:', err?.message ?? err);
+  }
 
   const { engine_running } = await chrome.storage.local.get('engine_running');
   // Leer stats del caché (ya actualizado por getTodayStats en el último tick)
