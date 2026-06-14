@@ -79,15 +79,11 @@ export async function getIntegrationsData(): Promise<{
     const done = doneRes.status === "fulfilled" ? (doneRes.value.count ?? 0) : 0;
     const errors = errorRes.status === "fulfilled" ? (errorRes.value.count ?? 0) : 0;
 
+    // Mostrar el estado real guardado en DB (lo que el usuario eligió).
+    // La "conectividad" de la extensión se muestra por separado vía last_heartbeat_at.
     let engineStatus: EngineData["status"] = "stopped";
     if (engineRow) {
-      const lastBeat = engineRow.last_heartbeat_at
-        ? new Date(engineRow.last_heartbeat_at as string).getTime()
-        : 0;
-      const stale = Date.now() - lastBeat > 5 * 60_000;
-      if (!stale) {
-        engineStatus = (engineRow.status as EngineData["status"]) ?? "stopped";
-      }
+      engineStatus = (engineRow.status as EngineData["status"]) ?? "stopped";
     }
 
     return {
@@ -129,11 +125,28 @@ export async function updateEngineStatus(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
+
+    // UPSERT: crea la fila si no existe, la actualiza si ya existe
     const { error } = await supabase
       .from("ghost_engine_sessions")
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq("workspace_id", workspaceId);
+      .upsert(
+        {
+          workspace_id: workspaceId,
+          status,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "workspace_id" }
+      );
     if (error) return { success: false, error: error.message };
+
+    // Escribir settings_event para que la extensión lo detecte inmediatamente
+    await supabase.from("settings_events").insert({
+      workspace_id: workspaceId,
+      event_type:   status === "running" ? "RESUME_ENGINE" : "PAUSE_ENGINE",
+      payload:      { status },
+      consumed:     false,
+    });
+
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
