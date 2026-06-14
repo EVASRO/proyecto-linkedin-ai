@@ -224,7 +224,9 @@ export async function updateCampaignWorkflow(
           if (!node) break;
           const data = (node.data ?? {}) as Record<string, unknown>;
           const nodeType = (data.nodeType ?? node.type) as string;
-          if (nodeType === "connect") connNote = String(data.connectionNote ?? data.noteA ?? "");
+          if (nodeType === "connect") {
+            connNote = String(data.connectionNote ?? data.noteA ?? "");
+          }
           if (nodeType === "message" && !followUp) followUp = String(data.bodyA ?? data.body ?? "");
           cur = next.get(cur);
         }

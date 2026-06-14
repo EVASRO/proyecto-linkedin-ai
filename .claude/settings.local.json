@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node gen-pptx.js)",
+      "Bash(which libreoffice *)",
+      "Bash(python3 -c \"from pptx import Presentation; print\\('python-pptx ok'\\)\")",
+      "Bash(ls \"/Users/ernesto/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/4c93a77e-8a9b-4fdf-96ef-1f56a2b0d9bc/a25c8142-e2c9-4b39-b409-a816f1980df5/skills/pptx/scripts/\")",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"from pptx import Presentation; print\\('ok'\\)\")",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(git push *)",
+      "Bash(npm run *)",
+      "Bash(node -e \"const luc = require\\('lucide-react'\\); console.log\\(Object.keys\\(luc\\).filter\\(k => /chrome|linkedin|plugin/i.test\\(k\\)\\)\\)\")",
+      "Bash(grep -E \"^sharp$|^jimp$|^@squoosh\")",
+      "Bash(node -e \"require\\('sharp'\\)\")",
+      "Bash(rm /Users/ernesto/proyecto-linkedin-ai/src/components/crm/crm-view.tsx \\\\ *)",
+      "Bash(rmdir /Users/ernesto/proyecto-linkedin-ai/src/app/api/auth/[...nextauth] 2>/dev/null || true *)"
+    ],
+    "additionalDirectories": [
+      "/Users/ernesto/proyecto-linkedin-ai/src/app/api/auth/[...nextauth]"
+    ]
+  }
+}

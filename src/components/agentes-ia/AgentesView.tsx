@@ -47,6 +47,14 @@ interface TestMessage {
 
 // -- Mock data -----------------------------------------------------------------
 
+const AVATAR_GRADS = [
+  "from-[#2563EB] to-[#06B6D4]",
+  "from-[#06B6D4] to-[#2563EB]",
+  "from-[#1D4ED8] to-[#0891B2]",
+  "from-[#3B82F6] to-[#06B6D4]",
+  "from-[#2563EB] to-[#0EA5E9]",
+  "from-[#0369A1] to-[#06B6D4]",
+];
 
 const TEMPLATES = [
   { emoji: "🎯", name: "SDR B2B", tone: "consultivo" as AgentTone, objective: "agendar_reunion" as AgentObjective, desc: "Prospección SaaS/B2B, cierra demos" },
@@ -81,23 +89,23 @@ function AgentCard({ agent, onSelect, onToggle, onDelete }: {
   onDelete: () => void;
 }) {
   const statusCls = {
-    active: "bg-green-100 text-green-700",
-    paused: "bg-amber-100 text-amber-700",
-    draft:  "bg-zinc-100 text-zinc-500",
+    active: "bg-[rgba(16,185,129,0.12)] text-[#10B981]",
+    paused: "bg-[rgba(245,158,11,0.12)] text-[#F59E0B]",
+    draft:  "bg-[var(--border)] text-[var(--foreground-faint)]",
   }[agent.status];
 
   const objLabel = OBJECTIVE_OPTIONS.find((o) => o.id === agent.objective)?.label ?? agent.objective;
 
   return (
-    <div className="group relative rounded-2xl border border-border bg-white p-5 shadow-sm transition-all hover:shadow-md">
+    <div className="group relative rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm transition-all hover:shadow-md hover:border-[rgba(37,99,235,0.4)]">
       <div className="flex items-start justify-between gap-3">
         <button onClick={onSelect} className="flex items-center gap-3 text-left flex-1 min-w-0">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 text-2xl">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(37,99,235,0.12)] text-2xl">
             {agent.emoji}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-bold text-zinc-900">{agent.name}</p>
-            <p className="text-[11px] text-zinc-500 truncate">{objLabel}</p>
+            <p className="text-sm font-bold text-[var(--foreground)]">{agent.name}</p>
+            <p className="text-[11px] text-[var(--foreground-muted)] truncate">{objLabel}</p>
             <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${statusCls}`}>
               {agent.status === "active" ? "Activo" : agent.status === "paused" ? "Pausado" : "Borrador"}
             </span>
@@ -109,8 +117,8 @@ function AgentCard({ agent, onSelect, onToggle, onDelete }: {
             className={[
               "rounded-lg p-1.5 transition-colors",
               agent.status === "active"
-                ? "text-amber-500 hover:bg-amber-50"
-                : "text-green-500 hover:bg-green-50",
+                ? "text-[#F59E0B] hover:bg-[rgba(245,158,11,0.1)]"
+                : "text-[#10B981] hover:bg-[rgba(16,185,129,0.1)]",
             ].join(" ")}
             title={agent.status === "active" ? "Pausar" : "Activar"}
           >
@@ -118,36 +126,36 @@ function AgentCard({ agent, onSelect, onToggle, onDelete }: {
           </button>
           <button
             onClick={onDelete}
-            className="rounded-lg p-1.5 text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500"
+            className="rounded-lg p-1.5 text-[var(--foreground-faint)] transition-colors hover:bg-[rgba(239,68,68,0.1)] hover:text-[#EF4444]"
           >
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-zinc-50 pt-4">
-        <div className="rounded-lg bg-zinc-50 px-3 py-2 text-center">
-          <p className="text-lg font-black tabular-nums text-zinc-900">{agent.conversations}</p>
-          <p className="text-[10px] text-zinc-400">conversaciones</p>
+      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-4">
+        <div className="rounded-lg bg-[var(--background)] px-3 py-2 text-center">
+          <p className="text-lg font-black tabular-nums text-[var(--foreground)]">{agent.conversations}</p>
+          <p className="text-[10px] text-[var(--foreground-muted)]">conversaciones</p>
         </div>
-        <div className="rounded-lg bg-indigo-50 px-3 py-2 text-center">
-          <p className="text-lg font-black tabular-nums text-indigo-700">{agent.meetings}</p>
-          <p className="text-[10px] text-indigo-400">reuniones</p>
+        <div className="rounded-lg bg-[rgba(37,99,235,0.08)] px-3 py-2 text-center">
+          <p className="text-lg font-black tabular-nums text-[#2563EB]">{agent.meetings}</p>
+          <p className="text-[10px] text-[#06B6D4]">reuniones</p>
         </div>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1">
         {agent.icp.industries.slice(0, 2).map((i) => (
-          <span key={i} className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">{i}</span>
+          <span key={i} className="rounded-full bg-[rgba(37,99,235,0.1)] px-2 py-0.5 text-[10px] font-medium text-[#2563EB]">{i}</span>
         ))}
         {agent.icp.roles.slice(0, 2).map((r) => (
-          <span key={r} className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600">{r}</span>
+          <span key={r} className="rounded-full bg-[rgba(6,182,212,0.1)] px-2 py-0.5 text-[10px] font-medium text-[#06B6D4]">{r}</span>
         ))}
       </div>
 
       <button
         onClick={onSelect}
-        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-100 py-2 text-xs font-medium text-zinc-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] py-2 text-xs font-medium text-[var(--foreground-muted)] transition-colors hover:border-[rgba(37,99,235,0.4)] hover:bg-[rgba(37,99,235,0.06)] hover:text-[#2563EB]"
       >
         Editar agente <ChevronRight className="h-3.5 w-3.5" />
       </button>
@@ -250,11 +258,11 @@ function AgentWizard({ initial, onClose, onSave }: {
       <button onClick={() => setStep(s)} className="flex flex-col items-center gap-1">
         <div className={[
           "flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold transition-all",
-          isCurrent ? "bg-indigo-600 text-white scale-110" : isDone ? "bg-indigo-100 text-indigo-600" : "bg-zinc-100 text-zinc-400",
+          isCurrent ? "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white scale-110" : isDone ? "bg-[rgba(37,99,235,0.2)] text-[#2563EB]" : "bg-[var(--border)] text-[var(--foreground-faint)]",
         ].join(" ")}>
           {isDone ? "✓" : idx + 1}
         </div>
-        <span className={`text-[10px] font-medium ${isCurrent ? "text-indigo-600" : "text-zinc-400"}`}>
+        <span className={`text-[10px] font-medium ${isCurrent ? "text-[#2563EB]" : "text-[var(--foreground-muted)]"}`}>
           {s.charAt(0).toUpperCase() + s.slice(1)}
         </span>
       </button>
@@ -264,27 +272,27 @@ function AgentWizard({ initial, onClose, onSave }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxHeight: "90vh" }}>
+      <div className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-2xl" style={{ maxHeight: "90vh" }}>
         {/* Header */}
-        <div className="flex flex-shrink-0 items-center justify-between border-b border-zinc-100 px-6 py-4">
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-6 py-4 bg-[var(--surface)]">
           <div>
-            <h2 className="text-base font-bold text-zinc-900">
+            <h2 className="text-base font-bold text-[var(--foreground)]">
               {initial ? "Editar agente" : "Crear nuevo agente"}
             </h2>
-            <p className="text-[11px] text-zinc-400">Configura el comportamiento de tu agente IA</p>
+            <p className="text-[11px] text-[var(--foreground-muted)]">Configura el comportamiento de tu agente IA</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[var(--border)]">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Step indicator */}
-        <div className="flex flex-shrink-0 items-center justify-between border-b border-zinc-50 bg-zinc-50/50 px-6 py-3">
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-6 py-3">
           {STEPS.map((s, i) => (
             <div key={s} className="flex items-center">
               <StepDot s={s} />
               {i < STEPS.length - 1 && (
-                <div className={`mx-1.5 h-px w-8 ${STEPS.indexOf(step) > i ? "bg-indigo-300" : "bg-zinc-200"}`} />
+                <div className={`mx-1.5 h-px w-8 ${STEPS.indexOf(step) > i ? "bg-[#2563EB]" : "bg-[var(--border)]"}`} />
               )}
             </div>
           ))}
@@ -297,16 +305,16 @@ function AgentWizard({ initial, onClose, onSave }: {
           {step === "identidad" && (
             <div className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">Nombre del agente</label>
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Nombre del agente</label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ej: Sofia SDR, Max Reclutador..."
-                  className="w-full rounded-xl border border-zinc-200 px-4 py-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">Avatar</label>
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Avatar</label>
                 <div className="flex flex-wrap gap-2">
                   {EMOJIS.map((e) => (
                     <button
@@ -314,7 +322,7 @@ function AgentWizard({ initial, onClose, onSave }: {
                       onClick={() => setEmoji(e)}
                       className={[
                         "flex h-10 w-10 items-center justify-center rounded-xl text-xl transition-all",
-                        emoji === e ? "bg-indigo-100 ring-2 ring-indigo-400 scale-110" : "bg-zinc-50 hover:bg-zinc-100",
+                        emoji === e ? "bg-[rgba(37,99,235,0.15)] ring-2 ring-[#2563EB] scale-110" : "bg-[var(--background)] hover:bg-[rgba(37,99,235,0.08)]",
                       ].join(" ")}
                     >
                       {e}
@@ -323,7 +331,7 @@ function AgentWizard({ initial, onClose, onSave }: {
                 </div>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">Objetivo principal</label>
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Objetivo principal</label>
                 <div className="grid grid-cols-2 gap-2">
                   {OBJECTIVE_OPTIONS.map((opt) => {
                     const Icon = opt.icon;
@@ -334,8 +342,8 @@ function AgentWizard({ initial, onClose, onSave }: {
                         className={[
                           "flex items-center gap-2.5 rounded-xl border-2 p-3 text-left text-sm transition-all",
                           objective === opt.id
-                            ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                            : "border-zinc-200 text-zinc-600 hover:border-zinc-300",
+                            ? "border-[#2563EB] bg-[rgba(37,99,235,0.1)] text-[#2563EB]"
+                            : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)]",
                         ].join(" ")}
                       >
                         <Icon className="h-4 w-4 flex-shrink-0" />
@@ -346,7 +354,7 @@ function AgentWizard({ initial, onClose, onSave }: {
                 </div>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">O elige una plantilla</label>
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">O elige una plantilla</label>
                 <div className="grid grid-cols-3 gap-2">
                   {TEMPLATES.map((t) => (
                     <button
@@ -357,11 +365,11 @@ function AgentWizard({ initial, onClose, onSave }: {
                         setTone(t.tone);
                         setObjective(t.objective);
                       }}
-                      className="rounded-xl border border-zinc-200 p-3 text-center text-xs transition-all hover:border-indigo-300 hover:bg-indigo-50"
+                      className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 text-center text-xs transition-all hover:border-[rgba(37,99,235,0.4)]"
                     >
                       <span className="text-2xl">{t.emoji}</span>
-                      <p className="mt-1 font-bold text-zinc-800">{t.name}</p>
-                      <p className="text-[10px] text-zinc-400">{t.desc}</p>
+                      <p className="mt-1 font-bold text-[var(--foreground)]">{t.name}</p>
+                      <p className="text-[10px] text-[var(--foreground-muted)]">{t.desc}</p>
                     </button>
                   ))}
                 </div>
@@ -372,9 +380,9 @@ function AgentWizard({ initial, onClose, onSave }: {
           {/* -- ICP -- */}
           {step === "icp" && (
             <div className="space-y-5">
-              <p className="text-sm text-zinc-500">Define a quién debe prospectar tu agente — el Perfil de Cliente Ideal (ICP).</p>
+              <p className="text-sm text-[var(--foreground-muted)]">Define a quién debe prospectar tu agente — el Perfil de Cliente Ideal (ICP).</p>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">Industrias objetivo</label>
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Industrias objetivo</label>
                 <div className="flex flex-wrap gap-2">
                   {ICP_INDUSTRIES.map((i) => (
                     <button
@@ -383,8 +391,8 @@ function AgentWizard({ initial, onClose, onSave }: {
                       className={[
                         "rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
                         industries.includes(i)
-                          ? "border-indigo-400 bg-indigo-100 text-indigo-700"
-                          : "border-zinc-200 text-zinc-600 hover:border-zinc-300",
+                          ? "border-[#2563EB] bg-[rgba(37,99,235,0.12)] text-[#2563EB]"
+                          : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)]",
                       ].join(" ")}
                     >
                       {i}
@@ -393,7 +401,7 @@ function AgentWizard({ initial, onClose, onSave }: {
                 </div>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">Cargos / Roles objetivo</label>
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Cargos / Roles objetivo</label>
                 <div className="flex flex-wrap gap-2">
                   {ICP_ROLES.map((r) => (
                     <button
@@ -402,8 +410,8 @@ function AgentWizard({ initial, onClose, onSave }: {
                       className={[
                         "rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
                         roles.includes(r)
-                          ? "border-violet-400 bg-violet-100 text-violet-700"
-                          : "border-zinc-200 text-zinc-600 hover:border-zinc-300",
+                          ? "border-[#2563EB] bg-[rgba(37,99,235,0.12)] text-[#2563EB]"
+                          : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)]",
                       ].join(" ")}
                     >
                       {r}
@@ -412,7 +420,7 @@ function AgentWizard({ initial, onClose, onSave }: {
                 </div>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">Tamaño de empresa</label>
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Tamaño de empresa</label>
                 <div className="flex flex-wrap gap-2">
                   {ICP_SIZES.map((s) => (
                     <button
@@ -421,8 +429,8 @@ function AgentWizard({ initial, onClose, onSave }: {
                       className={[
                         "rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
                         sizes.includes(s)
-                          ? "border-sky-400 bg-sky-100 text-sky-700"
-                          : "border-zinc-200 text-zinc-600 hover:border-zinc-300",
+                          ? "border-[#2563EB] bg-[rgba(37,99,235,0.12)] text-[#2563EB]"
+                          : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)]",
                       ].join(" ")}
                     >
                       {s} empleados
@@ -436,7 +444,7 @@ function AgentWizard({ initial, onClose, onSave }: {
           {/* -- TONO -- */}
           {step === "tono" && (
             <div className="space-y-4">
-              <p className="text-sm text-zinc-500">El tono determina cómo escribe y habla tu agente en cada conversación.</p>
+              <p className="text-sm text-[var(--foreground-muted)]">El tono determina cómo escribe y habla tu agente en cada conversación.</p>
               {TONE_OPTIONS.map((opt) => (
                 <button
                   key={opt.id}
@@ -444,19 +452,19 @@ function AgentWizard({ initial, onClose, onSave }: {
                   className={[
                     "w-full rounded-xl border-2 p-4 text-left transition-all",
                     tone === opt.id
-                      ? "border-indigo-500 bg-indigo-50"
-                      : "border-zinc-200 hover:border-zinc-300",
+                      ? "border-[#2563EB] bg-[rgba(37,99,235,0.08)]"
+                      : "border-[var(--border)] bg-[var(--background)] hover:border-[rgba(37,99,235,0.4)]",
                   ].join(" ")}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-zinc-900">{opt.label}</span>
+                    <span className="text-sm font-bold text-[var(--foreground)]">{opt.label}</span>
                     {tone === opt.id && (
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-r from-[#2563EB] to-[#06B6D4]">
                         <span className="text-[10px] text-white">✓</span>
                       </div>
                     )}
                   </div>
-                  <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs italic text-zinc-500 border border-zinc-100">
+                  <p className="mt-2 rounded-lg bg-[var(--surface)] px-3 py-2 text-xs italic text-[var(--foreground-muted)] border border-[var(--border)]">
                     "{opt.example}"
                   </p>
                 </button>
@@ -468,25 +476,25 @@ function AgentWizard({ initial, onClose, onSave }: {
           {step === "propuesta" && (
             <div className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-semibold text-zinc-800">Propuesta de valor principal</label>
-                <p className="mb-3 text-[12px] text-zinc-400">
+                <label className="mb-2 block text-sm font-semibold text-[var(--foreground)]">Propuesta de valor principal</label>
+                <p className="mb-3 text-[12px] text-[var(--foreground-muted)]">
                   En 2-3 frases, explica qué problema resuelves y qué beneficio tangible obtendrá el prospecto.
                 </p>
                 <textarea
                   value={valueProp}
                   onChange={(e) => setValueProp(e.target.value)}
                   rows={4}
-                  placeholder="Ej: NexusAI automatiza el 80% del proceso de prospección en LinkedIn, permitiendo que tu equipo de SDRs se enfoque en cerrar deals. Nuestros clientes consiguen 3x más reuniones sin contratar más personal..."
-                  className="w-full resize-none rounded-xl border border-zinc-200 px-4 py-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Ej: cazary.ai automatiza el 80% del proceso de prospección en LinkedIn, permitiendo que tu equipo de SDRs se enfoque en cerrar deals. Nuestros clientes consiguen 3x más reuniones sin contratar más personal..."
+                  className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
                 />
-                <p className="mt-1 text-right text-[11px] text-zinc-300">{valueProp.length} / 500 caracteres</p>
+                <p className="mt-1 text-right text-[11px] text-[var(--foreground-faint)]">{valueProp.length} / 500 caracteres</p>
               </div>
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
+              <div className="rounded-xl border border-[rgba(37,99,235,0.15)] bg-[rgba(37,99,235,0.06)] p-4">
                 <div className="flex gap-2">
-                  <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" />
+                  <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#2563EB]" />
                   <div>
-                    <p className="text-xs font-semibold text-indigo-800">Tip IA</p>
-                    <p className="text-[11px] text-indigo-600">
+                    <p className="text-xs font-semibold text-[#2563EB]">Tip IA</p>
+                    <p className="text-[11px] text-[var(--foreground-muted)]">
                       Las mejores propuestas de valor mencionan un número concreto (3x, 80%, 5h/semana) y hacen referencia al cargo o industria del prospecto.
                     </p>
                   </div>
@@ -498,21 +506,21 @@ function AgentWizard({ initial, onClose, onSave }: {
           {/* -- OBJECIONES -- */}
           {step === "objeciones" && (
             <div className="space-y-4">
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-[var(--foreground-muted)]">
                 Enseña a tu agente cómo responder a las objeciones más comunes. Cuantas más entrenadas, mejor tasa de conversión.
               </p>
 
               {objections.map((obj, idx) => (
-                <div key={obj.id} className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
+                <div key={obj.id} className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
-                      <p className="text-xs font-semibold text-zinc-500 mb-1">Objeción #{idx + 1}</p>
-                      <p className="text-sm font-medium text-zinc-800">"{obj.question}"</p>
-                      <p className="mt-1.5 text-xs text-zinc-500 italic">→ "{obj.answer}"</p>
+                      <p className="text-xs font-semibold text-[var(--foreground-muted)] mb-1">Objeción #{idx + 1}</p>
+                      <p className="text-sm font-medium text-[var(--foreground)]">"{obj.question}"</p>
+                      <p className="mt-1.5 text-xs text-[var(--foreground-muted)] italic">→ "{obj.answer}"</p>
                     </div>
                     <button
                       onClick={() => setObjections((p) => p.filter((o) => o.id !== obj.id))}
-                      className="text-zinc-300 hover:text-red-400"
+                      className="text-[var(--foreground-faint)] hover:text-[#EF4444]"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -520,24 +528,24 @@ function AgentWizard({ initial, onClose, onSave }: {
                 </div>
               ))}
 
-              <div className="rounded-xl border-2 border-dashed border-zinc-200 p-4 space-y-3">
-                <p className="text-xs font-semibold text-zinc-600">+ Agregar objeción</p>
+              <div className="rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--background)] p-4 space-y-3">
+                <p className="text-xs font-semibold text-[var(--foreground-muted)]">+ Agregar objeción</p>
                 <input
                   value={newObj.question}
                   onChange={(e) => setNewObj((p) => ({ ...p, question: e.target.value }))}
                   placeholder="Objeción del prospecto..."
-                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
                 />
                 <textarea
                   value={newObj.answer}
                   onChange={(e) => setNewObj((p) => ({ ...p, answer: e.target.value }))}
                   rows={2}
                   placeholder="Respuesta sugerida del agente..."
-                  className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                  className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
                 />
                 <button
                   onClick={addObjection}
-                  className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-700"
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--foreground)] hover:bg-[rgba(37,99,235,0.1)] hover:text-[#2563EB]"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Agregar
@@ -549,27 +557,27 @@ function AgentWizard({ initial, onClose, onSave }: {
           {/* -- TEST CHAT -- */}
           {step === "test" && (
             <div className="flex flex-col" style={{ height: "380px" }}>
-              <div className="mb-3 flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-2.5">
-                <Bot className="h-4 w-4 text-indigo-500" />
-                <p className="text-[12px] text-indigo-700">
-                  Escribe como si fueras un prospecto. El agente <strong>{name || "IA"}</strong> responderá con tono <strong>{tone}</strong>.
+              <div className="mb-3 flex items-center gap-2 rounded-xl border border-[rgba(37,99,235,0.15)] bg-[rgba(37,99,235,0.06)] px-4 py-2.5">
+                <Bot className="h-4 w-4 text-[#2563EB]" />
+                <p className="text-[12px] text-[var(--foreground-muted)]">
+                  Escribe como si fueras un prospecto. El agente <strong className="text-[var(--foreground)]">{name || "IA"}</strong> responderá con tono <strong className="text-[var(--foreground)]">{tone}</strong>.
                 </p>
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto space-y-3 rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+              <div className="flex-1 overflow-y-auto space-y-3 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4">
                 {testMessages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === "prospect" ? "justify-end" : "justify-start"}`}>
                     {msg.role === "agent" && (
-                      <div className="mr-2 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-base">
+                      <div className="mr-2 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[rgba(37,99,235,0.12)] text-base">
                         {emoji}
                       </div>
                     )}
                     <div className={[
                       "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm",
                       msg.role === "agent"
-                        ? "rounded-tl-none bg-white text-zinc-800 shadow-sm"
-                        : "rounded-tr-none bg-indigo-600 text-white",
+                        ? "rounded-tl-none bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)]"
+                        : "rounded-tr-none bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white",
                     ].join(" ")}>
                       {msg.text}
                     </div>
@@ -577,10 +585,10 @@ function AgentWizard({ initial, onClose, onSave }: {
                 ))}
                 {isTyping && (
                   <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-base">{emoji}</div>
-                    <div className="flex gap-1 rounded-2xl rounded-tl-none bg-white px-4 py-3 shadow-sm">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[rgba(37,99,235,0.12)] text-base">{emoji}</div>
+                    <div className="flex gap-1 rounded-2xl rounded-tl-none bg-[var(--surface)] border border-[var(--border)] px-4 py-3">
                       {[0, 1, 2].map((i) => (
-                        <div key={i} className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+                        <div key={i} className="h-1.5 w-1.5 rounded-full bg-[var(--foreground-muted)] animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
                       ))}
                     </div>
                   </div>
@@ -594,11 +602,11 @@ function AgentWizard({ initial, onClose, onSave }: {
                   onChange={(e) => setTestInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleTestSend()}
                   placeholder="Escribe como el prospecto..."
-                  className="flex-1 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
                 />
                 <button
                   onClick={handleTestSend}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white hover:opacity-90"
                 >
                   <Send className="h-4 w-4" />
                 </button>
@@ -608,14 +616,14 @@ function AgentWizard({ initial, onClose, onSave }: {
         </div>
 
         {/* Footer */}
-        <div className="flex flex-shrink-0 items-center justify-between border-t border-zinc-100 px-6 py-4">
+        <div className="flex flex-shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-6 py-4">
           <button
             onClick={() => {
               const prev = STEPS[stepIdx - 1];
               if (prev) setStep(prev);
             }}
             disabled={stepIdx === 0}
-            className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-30"
+            className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] disabled:opacity-30"
           >
             Anterior
           </button>
@@ -627,7 +635,7 @@ function AgentWizard({ initial, onClose, onSave }: {
                   const next = STEPS[stepIdx + 1];
                   if (next) setStep(next);
                 }}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
               >
                 Siguiente <ChevronRight className="h-4 w-4" />
               </button>
@@ -635,13 +643,13 @@ function AgentWizard({ initial, onClose, onSave }: {
               <>
                 <button
                   onClick={() => handleSave("draft")}
-                  className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                  className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-5 py-2 text-sm font-semibold text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]"
                 >
                   Guardar borrador
                 </button>
                 <button
                   onClick={() => handleSave("active")}
-                  className="flex items-center gap-1.5 rounded-xl bg-green-600 px-5 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#10B981] to-[#059669] px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
                 >
                   <Zap className="h-4 w-4" />
                   Activar agente
@@ -738,14 +746,14 @@ export function AgentesView() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
       {/* Header */}
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-white px-6 py-4">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-[var(--background)] px-6 py-4">
         <div>
-          <h1 className="text-lg font-bold text-zinc-900">Agentes IA</h1>
-          <p className="text-xs text-zinc-400">Crea y entrena agentes que prospectan y convierten de forma autónoma</p>
+          <h1 className="text-lg font-bold text-[var(--foreground)]">Agentes IA</h1>
+          <p className="text-xs text-[var(--foreground-muted)]">Crea y entrena agentes que prospectan y convierten de forma autónoma</p>
         </div>
         <button
           onClick={() => { setEditingAgent(null); setWizardOpen(true); }}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700"
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_16px_rgba(37,99,235,0.3)] hover:opacity-90"
         >
           <Plus className="h-4 w-4" />
           Crear agente
@@ -753,36 +761,36 @@ export function AgentesView() {
       </div>
 
       {/* Stats bar */}
-      <div className="flex flex-shrink-0 gap-6 border-b border-border bg-white px-6 py-3">
+      <div className="flex flex-shrink-0 gap-6 border-b border-[var(--border)] bg-[var(--surface)] px-6 py-3">
         {[
-          { label: "Agentes activos", value: activeCount, icon: Zap, color: "text-green-600 bg-green-50" },
-          { label: "Conversaciones totales", value: totalConvs, icon: MessageSquare, color: "text-blue-600 bg-blue-50" },
-          { label: "Reuniones generadas", value: totalMeetings, icon: Target, color: "text-indigo-600 bg-indigo-50" },
+          { label: "Agentes activos", value: activeCount, icon: Zap, color: "text-[#10B981] bg-[rgba(16,185,129,0.12)]" },
+          { label: "Conversaciones totales", value: totalConvs, icon: MessageSquare, color: "text-[#2563EB] bg-[rgba(37,99,235,0.12)]" },
+          { label: "Reuniones generadas", value: totalMeetings, icon: Target, color: "text-[#06B6D4] bg-[rgba(6,182,212,0.12)]" },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="flex items-center gap-2">
             <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${color}`}>
               <Icon className="h-3.5 w-3.5" />
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-500">{label}</p>
-              <p className="text-sm font-black tabular-nums text-zinc-900">{value}</p>
+              <p className="text-xs font-medium text-[var(--foreground-muted)]">{label}</p>
+              <p className="text-sm font-black tabular-nums text-[var(--foreground)]">{value}</p>
             </div>
           </div>
         ))}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-6">
+      <div className="flex-1 overflow-y-auto bg-[var(--background)] p-6">
         {agents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
-              <Bot className="h-8 w-8 text-indigo-400" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--surface)] border border-[var(--border)]">
+              <Bot className="h-8 w-8 text-[var(--foreground-muted)]" />
             </div>
-            <p className="text-base font-semibold text-zinc-600">Sin agentes configurados</p>
-            <p className="mt-1 text-sm text-zinc-400">Crea tu primer agente IA para empezar a prospectar de forma autónoma</p>
+            <p className="text-base font-semibold text-[var(--foreground)]">Sin agentes configurados</p>
+            <p className="mt-1 text-sm text-[var(--foreground-muted)]">Crea tu primer agente IA para empezar a prospectar de forma autónoma</p>
             <button
               onClick={() => { setEditingAgent(null); setWizardOpen(true); }}
-              className="mt-5 flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+              className="mt-5 flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_16px_rgba(37,99,235,0.3)] hover:opacity-90"
             >
               <Plus className="h-4 w-4" /> Crear primer agente
             </button>
@@ -801,13 +809,13 @@ export function AgentesView() {
             {/* New agent card */}
             <button
               onClick={() => { setEditingAgent(null); setWizardOpen(true); }}
-              className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-zinc-200 p-8 transition-all hover:border-indigo-300 hover:bg-indigo-50/30"
+              className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border)] p-8 transition-all hover:border-[rgba(37,99,235,0.4)] hover:bg-[rgba(37,99,235,0.04)]"
             >
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-100">
-                <Plus className="h-6 w-6 text-zinc-400" />
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--surface)]">
+                <Plus className="h-6 w-6 text-[var(--foreground-faint)]" />
               </div>
-              <p className="text-sm font-semibold text-zinc-500">Nuevo agente</p>
-              <p className="mt-1 text-[12px] text-zinc-300">Haz clic para crear</p>
+              <p className="text-sm font-semibold text-[var(--foreground-muted)]">Nuevo agente</p>
+              <p className="mt-1 text-[12px] text-[var(--foreground-faint)]">Haz clic para crear</p>
             </button>
           </div>
         )}

@@ -260,7 +260,7 @@ function renderState(state) {
 
   // Queue tab — show count; actual task list not available from GET_STATUS
   if (queueList && state.queueCount === 0) {
-    queueList.innerHTML = `<div class="queue-empty">Sin tareas en cola<br><span style="font-size:10px;">Añade leads desde el dashboard NexusAI</span></div>`;
+    queueList.innerHTML = `<div class="queue-empty">Sin tareas en cola<br><span style="font-size:10px;">Añade leads desde el dashboard cazary.ai</span></div>`;
     btnClearQueue.style.display = 'none';
   } else if (queueList && state.queueCount > 0) {
     queueList.innerHTML = `<div class="queue-empty" style="color:#a5b4fc;">${state.queueCount} tarea${state.queueCount > 1 ? 's' : ''} pendiente${state.queueCount > 1 ? 's' : ''}</div>`;
@@ -450,7 +450,7 @@ async function loadSettingsUI() {
     if (togWeekend && settings.pauseWeekends !== undefined) togWeekend.checked = settings.pauseWeekends;
 
   } catch (err) {
-    console.warn('[NexusAI Popup] Error loading settings UI:', err);
+    console.warn('[cazary.ai Popup] Error loading settings UI:', err);
   }
 }
 

@@ -9,11 +9,14 @@ async function getAuthContext() {
   return { supabase, workspaceId: profile?.workspace_id ?? "" };
 }
 
-export async function getAnalyticsData() {
+export async function getAnalyticsData(range: "7d" | "30d" | "3m" | "6m" = "30d") {
   try {
     const { supabase, workspaceId } = await getAuthContext();
 
-    const [leadsRes, campaignsRes, queueRes, multiCampLeadsRes] = await Promise.all([
+    const rangeDays = { "7d": 7, "30d": 30, "3m": 90, "6m": 180 }[range];
+    const cutoff = new Date(Date.now() - rangeDays * 86400000).toISOString();
+
+    const [leadsRes, campaignsRes, queueRes, multiCampLeadsRes, messagesRes] = await Promise.all([
       supabase.from("leads")
         .select("id, status, crm_column, created_at, campaign_id, value")
         .eq("workspace_id", workspaceId),
@@ -23,6 +26,7 @@ export async function getAnalyticsData() {
       supabase.from("engine_queue")
         .select("status, task_type, executed_at, created_at")
         .eq("workspace_id", workspaceId)
+        .gte("created_at", cutoff)
         .order("created_at", { ascending: false })
         .limit(200),
       supabase.from("leads")
@@ -30,11 +34,17 @@ export async function getAnalyticsData() {
         .eq("workspace_id", workspaceId)
         .in("crm_column", ["conexion_enviada", "conexion_aceptada"])
         .limit(100),
+      supabase.from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("sender", "user")
+        .gte("created_at", cutoff),
     ]);
 
     const leads     = leadsRes.data ?? [];
     const campaigns = campaignsRes.data ?? [];
     const queue     = queueRes.data ?? [];
+    const messagesSentCount = messagesRes.count ?? 0;
 
     const total       = leads.length;
     const extraidos   = leads.filter(l => l.crm_column === 'extraido').length;
@@ -46,7 +56,7 @@ export async function getAnalyticsData() {
     const pct = (n: number) => total > 0 ? Math.round(n / total * 100) : 0;
 
     const now = Date.now();
-    const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"] as const;
     const weeklyActivity = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(now - (6 - i) * 86400000);
       const dayStr = d.toISOString().split("T")[0];
@@ -55,7 +65,7 @@ export async function getAnalyticsData() {
         t.status === 'done'
       );
       return {
-        day:      days[d.getDay()],
+        day:      dayNames[d.getDay() as 0|1|2|3|4|5|6],
         conns:    dayTasks.filter(t => t.task_type === "connect").length,
         msgs:     dayTasks.filter(t => t.task_type === "message").length,
         meetings: leads.filter(l => l.crm_column === "reunion_agendada" && l.created_at?.startsWith(dayStr)).length,
@@ -95,7 +105,7 @@ export async function getAnalyticsData() {
         kpis: {
           totalLeads:      total,
           connectionsSent: enviadas + aceptadas + enConv + reuniones + clientes,
-          messagesSent:    0,
+          messagesSent:    messagesSentCount,
           meetings:        reuniones,
           conversionRate:  pct(clientes),
         },

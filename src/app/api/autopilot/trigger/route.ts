@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const WEBHOOK_SECRET =
-  process.env.AUTOPILOT_WEBHOOK_SECRET ?? "nexusai-autopilot-2024";
+  process.env.AUTOPILOT_WEBHOOK_SECRET ?? "cazary-autopilot-2025";
 
 interface AgentData {
   name:              string | null;

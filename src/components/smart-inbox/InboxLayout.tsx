@@ -34,27 +34,35 @@ function AgentSelector({ agents, onSelect, onClose }: {
   onClose: () => void;
 }) {
   return (
-    <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-xl border border-zinc-200 bg-white shadow-lg">
-      <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2">
-        <span className="text-[11px] font-bold text-zinc-600">Seleccionar agente</span>
-        <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">
+    <div
+      className="absolute right-0 top-full z-30 mt-1 w-56 rounded-xl shadow-lg"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <div
+        className="flex items-center justify-between border-b px-3 py-2"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <span className="text-[11px] font-bold" style={{ color: "var(--foreground-muted)" }}>
+          Seleccionar agente
+        </span>
+        <button onClick={onClose} style={{ color: "var(--foreground-faint)" }}>
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
       {agents.length === 0 ? (
-        <p className="px-3 py-3 text-[11px] text-zinc-400">Sin agentes activos</p>
+        <p className="px-3 py-3 text-[11px]" style={{ color: "var(--foreground-faint)" }}>Sin agentes activos</p>
       ) : (
         <div className="max-h-48 overflow-y-auto py-1">
           {agents.map((a) => (
             <button
               key={a.id}
               onClick={() => { onSelect(a.id); onClose(); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-indigo-50 transition-colors"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[var(--surface-hover)]"
             >
               <span className="text-base">{a.emoji}</span>
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-zinc-800 truncate">{a.name}</p>
-                <p className="text-[10px] text-zinc-400 capitalize">{a.tone}</p>
+                <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{a.name}</p>
+                <p className="text-[10px] capitalize" style={{ color: "var(--foreground-faint)" }}>{a.tone}</p>
               </div>
             </button>
           ))}
@@ -77,39 +85,32 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
   const [searchQuery, setSearchQuery]     = useState("");
   const [syncing, setSyncing]             = useState(false);
   const [lastSync, setLastSync]           = useState<Date | null>(null);
-  const [engineStatus, setEngineStatus]   = useState<'idle' | 'checking' | 'unknown'>('unknown');
+  const [engineStatus, setEngineStatus]   = useState<"idle" | "checking" | "unknown">("unknown");
 
-  // Load active agents once
   useEffect(() => {
     getAgents().then((r) => {
-      if (r.success && r.data) {
-        setAgents(r.data.filter((a) => a.status === "active"));
-      }
+      if (r.success && r.data) setAgents(r.data.filter((a) => a.status === "active"));
     });
   }, []);
 
-  // -- Engine status polling ---------------------------------------------------
   useEffect(() => {
     if (!workspaceId) return;
     const supabase = createClient();
-
     async function checkEngineStatus() {
       const { data } = await supabase
-        .from('engine_queue')
-        .select('status, created_at')
-        .eq('workspace_id', workspaceId)
-        .eq('task_type', 'check_inbox')
-        .in('status', ['pending', 'processing'])
+        .from("engine_queue")
+        .select("status, created_at")
+        .eq("workspace_id", workspaceId)
+        .eq("task_type", "check_inbox")
+        .in("status", ["pending", "processing"])
         .limit(1);
-      setEngineStatus(data?.length ? 'checking' : 'idle');
+      setEngineStatus(data?.length ? "checking" : "idle");
     }
-
     checkEngineStatus();
     const interval = setInterval(checkEngineStatus, 30000);
     return () => clearInterval(interval);
   }, [workspaceId]);
 
-  // -- Filter + search ---------------------------------------------------------
   const filteredConversations = useMemo(() => {
     let result = conversations;
     if (filter === "unread")    result = result.filter((c) => c.unreadCount > 0);
@@ -138,119 +139,82 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
 
     const channel = supabase
       .channel("inbox-realtime")
-      .on(
-        "postgres_changes",
-        {
-          event:  "INSERT",
-          schema: "public",
-          table:  "messages",
-          filter: `workspace_id=eq.${workspaceId}`,
-        },
-        (payload) => {
-          const m = payload.new as Record<string, unknown>;
-          const incoming: Message = {
-            id:        String(m.id),
-            text:      String(m.message_text ?? ""),
-            sender:    m.sender === "prospect" ? "lead" : (m.sender as Message["sender"]),
-            timestamp: String(m.timestamp ?? m.inserted_at),
-            read:      false,
-            status:    "delivered",
-          };
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.lead.id === String(m.lead_id)
-                ? {
-                    ...c,
-                    messages:    [...c.messages, incoming],
-                    unreadCount: c.id === selectedId ? 0 : c.unreadCount + 1,
-                  }
-                : c
-            )
-          );
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event:  "UPDATE",
-          schema: "public",
-          table:  "messages",
-          filter: `workspace_id=eq.${workspaceId}`,
-        },
-        (payload) => {
-          const updated = payload.new as Record<string, unknown>;
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.lead.id === String(updated.lead_id)
-                ? {
-                    ...c,
-                    messages: c.messages.map((m) =>
-                      m.id === String(updated.id)
-                        ? { ...m, status: updated.status as Message["status"] }
-                        : m
-                    ),
-                  }
-                : c
-            )
-          );
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event:  "UPDATE",
-          schema: "public",
-          table:  "conversations",
-          filter: `workspace_id=eq.${workspaceId}`,
-        },
-        (payload) => {
-          const updated = payload.new as Record<string, unknown>;
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === String(updated.id)
-                ? {
-                    ...c,
-                    unreadCount:
-                      c.id === selectedId
-                        ? 0
-                        : (updated.unread_count as number) ?? c.unreadCount,
-                  }
-                : c
-            )
-          );
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event:  "UPDATE",
-          schema: "public",
-          table:  "leads",
-          filter: `workspace_id=eq.${workspaceId}`,
-        },
-        (payload) => {
-          // Enriquecimiento progresivo de datos del lead en tiempo real
-          const updated = payload.new as Record<string, unknown>;
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.lead.id === String(updated.id)
-                ? {
-                    ...c,
-                    lead: {
-                      ...c.lead,
-                      name:        String(updated.full_name ?? c.lead.name),
-                      company:     String(updated.company   ?? c.lead.company),
-                      title:       String(updated.headline  ?? c.lead.title),
-                      email:       updated.email       ? String(updated.email)        : c.lead.email,
-                      phone:       updated.phone       ? String(updated.phone)        : c.lead.phone,
-                      linkedinUrl: updated.linkedin_url ? String(updated.linkedin_url) : c.lead.linkedinUrl,
-                    },
-                  }
-                : c
-            )
-          );
-        }
-      )
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "messages",
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, (payload) => {
+        const m = payload.new as Record<string, unknown>;
+        const incoming: Message = {
+          id:        String(m.id),
+          text:      String(m.message_text ?? ""),
+          sender:    m.sender === "prospect" ? "lead" : (m.sender as Message["sender"]),
+          timestamp: String(m.timestamp ?? m.inserted_at),
+          read:      false,
+          status:    "delivered",
+        };
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.lead.id === String(m.lead_id)
+              ? { ...c, messages: [...c.messages, incoming], unreadCount: c.id === selectedId ? 0 : c.unreadCount + 1 }
+              : c
+          )
+        );
+      })
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "messages",
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, (payload) => {
+        const updated = payload.new as Record<string, unknown>;
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.lead.id === String(updated.lead_id)
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === String(updated.id) ? { ...m, status: updated.status as Message["status"] } : m
+                  ),
+                }
+              : c
+          )
+        );
+      })
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "conversations",
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, (payload) => {
+        const updated = payload.new as Record<string, unknown>;
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === String(updated.id)
+              ? { ...c, unreadCount: c.id === selectedId ? 0 : (updated.unread_count as number) ?? c.unreadCount }
+              : c
+          )
+        );
+      })
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "leads",
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, (payload) => {
+        const updated = payload.new as Record<string, unknown>;
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.lead.id === String(updated.id)
+              ? {
+                  ...c,
+                  lead: {
+                    ...c.lead,
+                    name:        String(updated.full_name  ?? c.lead.name),
+                    company:     String(updated.company    ?? c.lead.company),
+                    title:       String(updated.headline   ?? c.lead.title),
+                    email:       updated.email        ? String(updated.email)        : c.lead.email,
+                    phone:       updated.phone        ? String(updated.phone)        : c.lead.phone,
+                    linkedinUrl: updated.linkedin_url ? String(updated.linkedin_url) : c.lead.linkedinUrl,
+                  },
+                }
+              : c
+          )
+        );
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -258,54 +222,37 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
-  // -- Select + mark read -------------------------------------------------------
   function selectConversation(id: string) {
     setSelectedId(id);
     setAgentSelectorId(null);
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === id
-          ? { ...c, unreadCount: 0, messages: c.messages.map((m) => ({ ...m, read: true })) }
-          : c
+        c.id === id ? { ...c, unreadCount: 0, messages: c.messages.map((m) => ({ ...m, read: true })) } : c
       )
     );
-    startTransition(async () => {
-      await markConversationRead(id);
-    });
+    startTransition(async () => { await markConversationRead(id); });
   }
 
-  // -- Autopilot: toggle + show agent picker ------------------------------------
   function toggleAutopilot(id: string, active: boolean) {
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === id
-          ? { ...c, autopilotActive: active, status: active ? "ai_handling" : "human" }
-          : c
+        c.id === id ? { ...c, autopilotActive: active, status: active ? "ai_handling" : "human" } : c
       )
     );
-
     if (active) {
-      // Show agent selector instead of immediately sending
       setAgentSelectorId(id);
-      startTransition(async () => {
-        await toggleAutopilotAction(id, active);
-      });
+      startTransition(async () => { await toggleAutopilotAction(id, active); });
     } else {
       setAgentSelectorId(null);
-      startTransition(async () => {
-        await toggleAutopilotAction(id, false);
-      });
+      startTransition(async () => { await toggleAutopilotAction(id, false); });
     }
   }
 
-  // -- Assign agent to conversation ---------------------------------------------
   function handleAssignAgent(agentId: string) {
     const conv = conversations.find((c) => c.id === agentSelectorId);
     if (!conv || !agentSelectorId) return;
-
     const agent = agents.find((a) => a.id === agentId);
     if (agent) {
-      // Show the assigned agent name as a badge (stored locally for now)
       setConversations((prev) =>
         prev.map((c) =>
           c.id === agentSelectorId
@@ -314,33 +261,18 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
         )
       );
     }
-
     setAgentSelectorId(null);
-
-    startTransition(async () => {
-      await assignAgentToConversation(agentId, agentSelectorId);
-    });
+    startTransition(async () => { await assignAgentToConversation(agentId, agentSelectorId); });
   }
 
-  // -- Send message -------------------------------------------------------------
   function sendMessage(convId: string, text: string) {
     const conv = conversations.find((c) => c.id === convId);
     if (!conv) return;
-
     const tempId  = `temp_${Date.now()}`;
-    const tempMsg: Message = {
-      id:        tempId,
-      text,
-      sender:    "user",
-      timestamp: new Date().toISOString(),
-      read:      true,
-      status:    "sending",
-    };
-
+    const tempMsg: Message = { id: tempId, text, sender: "user", timestamp: new Date().toISOString(), read: true, status: "sending" };
     setConversations((prev) =>
       prev.map((c) => c.id === convId ? { ...c, messages: [...c.messages, tempMsg] } : c)
     );
-
     startTransition(async () => {
       const result = await sendInboxMessage({
         conversation_id: convId,
@@ -348,19 +280,11 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
         text,
         linkedin_url:    conv.lead.linkedinUrl ?? "",
       });
-
       if (result.success && result.data?.message_id) {
         setConversations((prev) =>
           prev.map((c) =>
             c.id === convId
-              ? {
-                  ...c,
-                  messages: c.messages.map((m) =>
-                    m.id === tempId
-                      ? { ...m, id: result.data!.message_id, status: "sent" }
-                      : m
-                  ),
-                }
+              ? { ...c, messages: c.messages.map((m) => m.id === tempId ? { ...m, id: result.data!.message_id, status: "sent" } : m) }
               : c
           )
         );
@@ -368,68 +292,39 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
         setConversations((prev) =>
           prev.map((c) =>
             c.id === convId
-              ? {
-                  ...c,
-                  messages: c.messages.map((m) =>
-                    m.id === tempId
-                      ? { ...m, status: "failed" as MessageStatus }
-                      : m
-                  ),
-                }
+              ? { ...c, messages: c.messages.map((m) => m.id === tempId ? { ...m, status: "failed" as MessageStatus } : m) }
               : c
           )
         );
-        console.warn("[NexusAI Inbox] sendMessage failed:", result.error);
       }
     });
   }
 
-  // -- AI suggestion for ChatView -----------------------------------------------
   async function requestAISuggestion(convId: string): Promise<string> {
     const conv = conversations.find((c) => c.id === convId);
     if (!conv) return "";
     const history = conv.messages.slice(-6).map((m) => ({ sender: m.sender, text: m.text }));
-    const result  = await generateAISuggestion({
-      lead_name:            conv.lead.name,
-      conversation_history: history,
-    });
+    const result  = await generateAISuggestion({ lead_name: conv.lead.name, conversation_history: history });
     return result.success ? (result.data?.suggestion ?? "") : "";
   }
 
-  // -- Autopilot mode -----------------------------------------------------------
   function changeAutopilotMode(convId: string, mode: "auto" | "review") {
     setConversations((prev) =>
       prev.map((c) => c.id === convId ? { ...c, autopilotMode: mode } : c)
     );
-    startTransition(async () => {
-      await setAutopilotModeAction(convId, mode);
-    });
+    startTransition(async () => { await setAutopilotModeAction(convId, mode); });
   }
 
-  // -- Draft approval: update message status locally ----------------------------
-  function handleDraftStatusChange(
-    convId: string,
-    msgId: string,
-    status: "approved" | "rejected",
-    text?: string
-  ) {
+  function handleDraftStatusChange(convId: string, msgId: string, status: "approved" | "rejected", text?: string) {
     setConversations((prev) =>
       prev.map((c) =>
         c.id === convId
-          ? {
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === msgId
-                  ? { ...m, status, text: text ?? m.text }
-                  : m
-              ),
-            }
+          ? { ...c, messages: c.messages.map((m) => m.id === msgId ? { ...m, status, text: text ?? m.text } : m) }
           : c
       )
     );
   }
 
-  // -- Other local mutations ----------------------------------------------------
   function changeLeadStage(leadId: string, stage: PipelineStage) {
     setConversations((prev) =>
       prev.map((c) => c.lead.id === leadId ? { ...c, lead: { ...c.lead, pipeline: stage } } : c)
@@ -438,13 +333,10 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
 
   function archiveConversation(id: string) {
     setConversations((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, status: "archived", resolvedAt: new Date().toISOString() } : c
-      )
+      prev.map((c) => c.id === id ? { ...c, status: "archived", resolvedAt: new Date().toISOString() } : c)
     );
   }
 
-  // -- Assigned agent badge for a conversation ----------------------------------
   function getAssignedAgent(conv: Conversation) {
     const extended = conv as Conversation & { assignedAgentName?: string; assignedAgentEmoji?: string };
     return extended.assignedAgentName
@@ -455,12 +347,10 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
   async function handleSync() {
     setSyncing(true);
     try {
-      window.postMessage({ type: 'NEXUSAI_FORCE_INBOX_CHECK' }, '*');
-      await new Promise(r => setTimeout(r, 4000));
+      window.postMessage({ type: "NEXUSAI_FORCE_INBOX_CHECK" }, "*");
+      await new Promise((r) => setTimeout(r, 4000));
       const result = await getConversationsWithMessages();
-      if (result.success && result.data) {
-        setConversations(result.data.conversations);
-      }
+      if (result.success && result.data) setConversations(result.data.conversations);
       setLastSync(new Date());
     } finally {
       setSyncing(false);
@@ -476,56 +366,71 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
 
   return (
     <div className="flex flex-1 overflow-hidden min-h-0">
-      {/* Left panel: header + filtered list */}
-      <div className="flex w-72 flex-shrink-0 flex-col border-r border-border bg-white">
+      {/* ── PANEL 1: Conversation list ──────────────────────────────────────── */}
+      <div
+        className="flex w-72 flex-shrink-0 flex-col border-r"
+        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+      >
         {/* Header */}
-        <div className="flex-shrink-0 border-b border-zinc-100 p-3 space-y-2">
+        <div
+          className="flex-shrink-0 border-b p-3 space-y-2.5"
+          style={{ borderColor: "var(--border)" }}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-zinc-900">Smart Inbox</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold" style={{ color: "var(--foreground)" }}>Inbox</h2>
+                {unreadTotal > 0 && (
+                  <span className="rounded-full bg-[#2563EB] px-2 py-0.5 text-[10px] font-bold text-white">
+                    {unreadTotal}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${
-                  engineStatus === 'checking' ? 'bg-green-400 animate-pulse' :
-                  engineStatus === 'idle'     ? 'bg-zinc-300' : 'bg-zinc-200'
-                }`} />
-                <span className="text-[9px] text-zinc-400">
-                  {engineStatus === 'checking' ? 'Escaneando LinkedIn...' :
-                   engineStatus === 'idle'     ? 'En espera · sync cada 30min' :
-                   'Conectando...'}
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    engineStatus === "checking" ? "bg-[#10B981] animate-pulse" : "bg-[var(--border)]"
+                  }`}
+                />
+                <span className="text-[9px]" style={{ color: "var(--foreground-faint)" }}>
+                  {engineStatus === "checking" ? "Escaneando LinkedIn…" : "Sync cada 30min"}
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              {unreadTotal > 0 && (
-                <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                  {unreadTotal} nuevos
-                </span>
-              )}
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                title="Sincronizar mensajes de LinkedIn ahora"
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1
-                           text-[10px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50
-                           transition-colors"
-              >
-                <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin text-indigo-500' : 'text-zinc-400'}`} />
-                {syncing ? 'Sincronizando...' : lastSync ? `Hace ${Math.round((Date.now() - lastSync.getTime()) / 60000)}min` : 'Sincronizar'}
-              </button>
-            </div>
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-medium transition-colors disabled:opacity-50"
+              style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", color: "var(--foreground-muted)" }}
+            >
+              <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin text-[#2563EB]" : ""}`} />
+              {syncing
+                ? "Sync…"
+                : lastSync
+                ? `${Math.round((Date.now() - lastSync.getTime()) / 60000)}min`
+                : "Sync"}
+            </button>
           </div>
 
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+            <Search
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5"
+              style={{ color: "var(--foreground-faint)" }}
+            />
             <input
               type="text"
               placeholder="Buscar conversación..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-3
-                         text-xs text-zinc-800 placeholder:text-zinc-400
-                         focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-100"
+              className="w-full rounded-lg py-1.5 pl-8 pr-3 text-xs focus:outline-none"
+              style={{
+                background: "var(--background)",
+                border: "1px solid var(--border)",
+                color: "var(--foreground)",
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "#2563EB"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
             />
           </div>
 
@@ -535,12 +440,12 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={[
-                  "flex-shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-medium transition-colors",
+                className="flex-shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-medium transition-colors"
+                style={
                   filter === f.key
-                    ? "bg-indigo-600 text-white"
-                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200",
-                ].join(" ")}
+                    ? { background: "#2563EB", color: "#fff" }
+                    : { background: "var(--surface-hover)", color: "var(--foreground-faint)" }
+                }
               >
                 {f.label}
               </button>
@@ -548,29 +453,30 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
           </div>
         </div>
 
+        {/* Empty state */}
         {filteredConversations.length === 0 && !searchQuery && filter === "all" ? (
           <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
-              <Inbox className="h-7 w-7 text-indigo-400" />
+            <div
+              className="flex h-16 w-16 items-center justify-center rounded-2xl"
+              style={{ background: "rgba(37,99,235,0.1)" }}
+            >
+              <Inbox className="h-7 w-7" style={{ color: "#2563EB" }} />
             </div>
-            <p className="mt-4 text-sm font-semibold text-zinc-800">
+            <p className="mt-4 text-sm font-semibold" style={{ color: "var(--foreground)" }}>
               Tu inbox está vacío
             </p>
-            <p className="mt-1.5 text-xs text-zinc-400 max-w-[200px] leading-relaxed">
-              Las conversaciones aparecen aquí cuando tus leads respondan a las conexiones enviadas.
+            <p className="mt-1.5 text-xs max-w-[200px] leading-relaxed" style={{ color: "var(--foreground-faint)" }}>
+              Las conversaciones aparecen aquí cuando tus leads respondan.
             </p>
             <button
               onClick={handleSync}
               disabled={syncing}
-              className="mt-4 flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2
-                         text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="mt-4 flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg, #2563EB, #06B6D4)" }}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Buscando mensajes...' : 'Buscar mensajes ahora'}
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Buscando…" : "Buscar mensajes"}
             </button>
-            <p className="mt-3 text-[10px] text-zinc-300">
-              Sincronización automática cada 30 minutos
-            </p>
           </div>
         ) : (
           <ConversationList
@@ -581,25 +487,30 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
         )}
       </div>
 
+      {/* ── PANEL 2: Chat thread ────────────────────────────────────────────── */}
       {selected ? (
         <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-          {/* Agent badge + selector */}
+          {/* Agent / autopilot banner */}
           {selected.autopilotActive && (
-            <div className="relative flex flex-shrink-0 items-center gap-2 border-b border-purple-100 bg-purple-50 px-4 py-1.5">
-              <Bot className="h-3.5 w-3.5 text-purple-500" />
+            <div
+              className="relative flex flex-shrink-0 items-center gap-2 border-b px-4 py-1.5"
+              style={{ background: "rgba(124,58,237,0.08)", borderColor: "rgba(124,58,237,0.2)" }}
+            >
+              <Bot className="h-3.5 w-3.5 text-violet-400" />
               {(() => {
                 const assigned = getAssignedAgent(selected);
                 return assigned ? (
-                  <span className="text-[11px] font-semibold text-purple-700">
+                  <span className="text-[11px] font-semibold text-violet-300">
                     {assigned.emoji} {assigned.name} está manejando esta conversación
                   </span>
                 ) : (
-                  <span className="text-[11px] text-purple-600">Autopilot activo — sin agente asignado</span>
+                  <span className="text-[11px] text-violet-400">Autopilot activo — sin agente asignado</span>
                 );
               })()}
               <button
                 onClick={() => setAgentSelectorId(agentSelectorId === selected.id ? null : selected.id)}
-                className="ml-auto flex items-center gap-1 rounded-full border border-purple-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-purple-600 hover:bg-purple-100"
+                className="ml-auto flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold text-violet-300 transition-colors"
+                style={{ border: "1px solid rgba(124,58,237,0.3)" }}
               >
                 Cambiar agente <ChevronDown className="h-3 w-3" />
               </button>
@@ -627,15 +538,26 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
           />
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100">
-            <MessageSquare className="h-6 w-6 text-zinc-400" />
+        <div
+          className="flex flex-1 flex-col items-center justify-center text-center"
+          style={{ background: "var(--background)" }}
+        >
+          <div
+            className="flex h-14 w-14 items-center justify-center rounded-2xl"
+            style={{ background: "var(--surface)" }}
+          >
+            <MessageSquare className="h-6 w-6" style={{ color: "var(--foreground-faint)" }} />
           </div>
-          <p className="mt-3 text-sm font-semibold text-zinc-700">Selecciona una conversación</p>
-          <p className="mt-1 text-xs text-zinc-400">Elige un lead de la lista para ver el hilo</p>
+          <p className="mt-3 text-sm font-semibold" style={{ color: "var(--foreground-muted)" }}>
+            Selecciona una conversación
+          </p>
+          <p className="mt-1 text-xs" style={{ color: "var(--foreground-faint)" }}>
+            Elige un lead de la lista para ver el hilo
+          </p>
         </div>
       )}
 
+      {/* ── PANEL 3: Lead profile ───────────────────────────────────────────── */}
       {selected && detailOpen && (
         <LeadDetailPanel
           lead={selected.lead}

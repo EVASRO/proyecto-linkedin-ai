@@ -313,14 +313,14 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
       )}
 
       {/* -- Toolbar ---------------------------------------------------- */}
-      <div className="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-border bg-white px-5 py-3">
+      <div className="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-zinc-900">Pipeline CRM</p>
-          <p className="text-[11px] text-zinc-500 tabular-nums">
+          <p className="text-sm font-semibold text-[var(--foreground)]">Pipeline CRM</p>
+          <p className="text-[11px] text-[var(--foreground-muted)] tabular-nums">
             {filteredLeads.length}/{leads.length} lead{leads.length !== 1 ? "s" : ""}
             &nbsp;·&nbsp;{fmtUSD(totalValue)} en pipeline
             {hasFilters && <span className="ml-1 text-indigo-500 font-medium">(filtrado)</span>}
-            {isPending && <span className="ml-1 text-zinc-400">· guardando…</span>}
+            {isPending && <span className="ml-1 text-[var(--foreground-muted)]">· guardando…</span>}
           </p>
         </div>
 
@@ -333,50 +333,50 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
                 "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                 hasFilters
                   ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                  : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
+                  : "border-[var(--border)] bg-[var(--surface)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)] hover:text-[var(--foreground)]",
               ].join(" ")}
             >
               <Filter className="h-3.5 w-3.5" />
               Filtros
-              {hasFilters && <span className="rounded-full bg-indigo-600 px-1.5 text-[9px] font-bold text-white">ON</span>}
+              {hasFilters && <span className="rounded-full bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-1.5 text-[9px] font-bold text-white">ON</span>}
               <ChevronDown className={`h-3 w-3 transition-transform ${filterOpen ? "rotate-180" : ""}`} />
             </button>
             {filterOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
-                <div className="absolute left-0 top-full z-20 mt-1 w-72 rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl space-y-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Filtrar leads</p>
+                <div className="absolute left-0 top-full z-20 mt-1 w-72 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-2xl space-y-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--foreground-muted)]">Filtrar leads</p>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-zinc-600">Fuente</label>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--foreground)]">Fuente</label>
                     <select value={filterSource} onChange={(e) => setFilterSource(e.target.value as LeadSource | "all")}
-                      className="w-full rounded-lg border border-zinc-200 px-2.5 py-2 text-xs focus:border-indigo-400 focus:outline-none">
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] px-2.5 py-2 text-xs focus:border-[#2563EB] focus:outline-none">
                       <option value="all">Todas las fuentes</option>
                       {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-zinc-600">Etiqueta</label>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--foreground)]">Etiqueta</label>
                     <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 px-2.5 py-2 text-xs focus:border-indigo-400 focus:outline-none">
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] px-2.5 py-2 text-xs focus:border-[#2563EB] focus:outline-none">
                       <option value="all">Todas las etiquetas</option>
                       {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-zinc-600">Valor mín. ($)</label>
+                      <label className="mb-1 block text-xs font-semibold text-[var(--foreground)]">Valor mín. ($)</label>
                       <input type="number" value={filterMinValue} onChange={(e) => setFilterMinValue(e.target.value)}
-                        placeholder="0" className="w-full rounded-lg border border-zinc-200 px-2.5 py-2 text-xs focus:border-indigo-400 focus:outline-none" />
+                        placeholder="0" className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] px-2.5 py-2 text-xs focus:border-[#2563EB] focus:outline-none" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-zinc-600">Valor máx. ($)</label>
+                      <label className="mb-1 block text-xs font-semibold text-[var(--foreground)]">Valor máx. ($)</label>
                       <input type="number" value={filterMaxValue} onChange={(e) => setFilterMaxValue(e.target.value)}
-                        placeholder="∞" className="w-full rounded-lg border border-zinc-200 px-2.5 py-2 text-xs focus:border-indigo-400 focus:outline-none" />
+                        placeholder="∞" className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] px-2.5 py-2 text-xs focus:border-[#2563EB] focus:outline-none" />
                     </div>
                   </div>
                   {hasFilters && (
                     <button onClick={() => { setFilterSource("all"); setFilterTag("all"); setFilterMinValue(""); setFilterMaxValue(""); }}
-                      className="w-full rounded-lg border border-zinc-200 py-2 text-xs font-semibold text-zinc-500 hover:bg-zinc-50">
+                      className="w-full rounded-lg border border-[var(--border)] py-2 text-xs font-semibold text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.05)]">
                       Limpiar filtros
                     </button>
                   )}
@@ -386,36 +386,36 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
           </div>
 
           <button onClick={() => setSettingsOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50">
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--foreground-muted)] transition-colors hover:border-[rgba(37,99,235,0.4)] hover:text-[var(--foreground)]">
             <Settings className="h-3.5 w-3.5" />
             Columnas
           </button>
 
           <button onClick={() => setView(view === "forecast" ? "kanban" : "forecast")}
             className={["flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-              view === "forecast" ? "border-green-300 bg-green-50 text-green-700" : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
+              view === "forecast" ? "border-green-300 bg-green-50 text-green-700" : "border-[var(--border)] bg-[var(--surface)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)] hover:text-[var(--foreground)]",
             ].join(" ")}>
             <TrendingUp className="h-3.5 w-3.5" />
             Forecast
           </button>
 
           <button onClick={() => setWizardOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-zinc-700">
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground-muted)] transition-colors hover:border-[rgba(37,99,235,0.4)] hover:text-[var(--foreground)]">
             <Megaphone className="h-3.5 w-3.5" />
             Campaña
           </button>
 
           <button onClick={() => setCreateLeadOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-indigo-200 transition-colors hover:bg-indigo-700">
+            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90">
             <Plus className="h-3.5 w-3.5" />
             Nuevo lead
           </button>
 
-          <div className="flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-white p-1">
+          <div className="flex items-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1">
             {(["kanban", "list"] as const).map((v) => (
               <button key={v} onClick={() => setView(v)}
                 className={["flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  view === v ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-800",
+                  view === v ? "bg-[var(--border)] text-[var(--foreground)] shadow-sm" : "text-[var(--foreground-muted)] hover:text-[var(--foreground)]",
                 ].join(" ")}>
                 {v === "kanban" ? <Columns3 className="h-3.5 w-3.5" /> : <LayoutList className="h-3.5 w-3.5" />}
                 {v === "kanban" ? "Kanban" : "Lista"}
@@ -426,8 +426,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
           <button onClick={() => setView(isAuto ? "kanban" : "automations")}
             className={["flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
               isAuto
-                ? "bg-amber-500 text-white shadow-md shadow-amber-200"
-                : "bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-md shadow-amber-200 hover:from-amber-500 hover:to-orange-600",
+                ? "bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white font-bold shadow-md shadow-amber-200"
+                : "bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white font-bold shadow-md shadow-amber-200 hover:opacity-90",
             ].join(" ")}>
             <Zap className="h-3.5 w-3.5" />
             {isAuto ? "← Pipeline" : "⚡ AUTOMATIZA"}
@@ -461,20 +461,20 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
             {/* Barra de búsqueda + filtros de lista */}
             <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
               <div className="relative min-w-[220px] flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--foreground-faint)] pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Buscar contacto, empresa, email..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm
-                             text-zinc-800 placeholder:text-zinc-400 focus:border-indigo-400
-                             focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] py-2 pl-9 pr-8 text-sm
+                             text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB]
+                             focus:outline-none focus:ring-2 focus:ring-[rgba(37,99,235,0.2)]"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -484,8 +484,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
               <select
                 value={filterStage}
                 onChange={(e) => setFilterStage(e.target.value)}
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700
-                           focus:border-indigo-400 focus:outline-none"
+                className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)]
+                           focus:border-[#2563EB] focus:outline-none"
               >
                 <option value="all">Todas las etapas</option>
                 {columns.map((c) => (
@@ -497,8 +497,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
                 <select
                   value={filterCampaign}
                   onChange={(e) => setFilterCampaign(e.target.value)}
-                  className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700
-                             focus:border-indigo-400 focus:outline-none"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)]
+                             focus:border-[#2563EB] focus:outline-none"
                 >
                   <option value="all">Todas las campañas</option>
                   {allCampaigns.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -512,8 +512,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
                   setSortBy(field as typeof sortBy);
                   setSortDir(dir as "asc" | "desc");
                 }}
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700
-                           focus:border-indigo-400 focus:outline-none"
+                className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)]
+                           focus:border-[#2563EB] focus:outline-none"
               >
                 <option value="created_at-desc">Más recientes</option>
                 <option value="created_at-asc">Más antiguos</option>
@@ -522,7 +522,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
                 <option value="days_in_stage-desc">Más días en etapa</option>
               </select>
 
-              <span className="ml-auto text-xs text-zinc-400 whitespace-nowrap">
+              <span className="ml-auto text-xs text-[var(--foreground-muted)] whitespace-nowrap">
                 {filteredLeads.length} de {leads.length} leads
               </span>
             </div>
@@ -563,28 +563,28 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
                 const prob     = probability[col.id] ?? 30;
                 const weighted = Math.round((colValue * prob) / 100);
                 return (
-                  <div key={col.id} className="rounded-2xl border border-border bg-white p-5 shadow-sm">
+                  <div key={col.id} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-bold text-zinc-700 truncate">{col.title}</p>
-                      <span className="text-[11px] font-medium text-zinc-400">{prob}% prob.</span>
+                      <p className="text-xs font-bold text-[var(--foreground)] truncate">{col.title}</p>
+                      <span className="text-[11px] font-medium text-[var(--foreground-muted)]">{prob}% prob.</span>
                     </div>
-                    <p className="text-2xl font-black tabular-nums text-zinc-900">
+                    <p className="text-2xl font-black tabular-nums text-[var(--foreground)]">
                       {colValue >= 1000 ? `$${(colValue / 1000).toFixed(0)}K` : `$${colValue}`}
                     </p>
-                    <p className="text-[11px] text-zinc-400">{colLeads.length} leads</p>
-                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+                    <p className="text-[11px] text-[var(--foreground-muted)]">{colLeads.length} leads</p>
+                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[var(--border)]">
                       <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-400" style={{ width: `${prob}%` }} />
                     </div>
-                    <p className="mt-2 text-[11px] font-semibold text-indigo-600">
+                    <p className="mt-2 text-[11px] font-semibold text-indigo-400">
                       ≈ {weighted >= 1000 ? `$${(weighted / 1000).toFixed(0)}K` : `$${weighted}`} ponderado
                     </p>
                   </div>
                 );
               })}
             </div>
-            <div className="rounded-2xl border border-green-200 bg-green-50 p-5">
-              <p className="text-sm font-bold text-green-800">Pipeline total ponderado</p>
-              <p className="mt-1 text-3xl font-black tabular-nums text-green-700">
+            <div className="rounded-2xl border border-green-800 bg-[rgba(16,185,129,0.08)] p-5">
+              <p className="text-sm font-bold text-green-400">Pipeline total ponderado</p>
+              <p className="mt-1 text-3xl font-black tabular-nums text-green-300">
                 {(() => {
                   const probability: Record<string, number> = {
                     leads_entrantes: 10, en_contacto: 25, demo_agendada: 50,
@@ -597,7 +597,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
                   return total >= 1000 ? `$${(total / 1000).toFixed(1)}K` : `$${total}`;
                 })()}
               </p>
-              <p className="mt-1 text-xs text-green-600">Valor esperado ponderado por probabilidad de cierre</p>
+              <p className="mt-1 text-xs text-green-500">Valor esperado ponderado por probabilidad de cierre</p>
             </div>
           </div>
         )}

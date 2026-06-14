@@ -95,7 +95,7 @@ export function AiMessageWidget() {
               if (error) setError("");
             }}
             placeholder={"Ej: María López — VP de Ventas en Acme Corp. 10+ años en SaaS B2B, enfoque en growth y automatización de pipelines…"}
-            className="w-full resize-none rounded-xl border border-border bg-white px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-zinc-400 transition-all duration-200 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-relaxed text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] transition-all duration-200 focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[rgba(37,99,235,0.2)]"
           />
           <p className="text-xs text-muted">
             Mientras más detallado sea el perfil, mejor será el mensaje generado.
@@ -108,7 +108,7 @@ export function AiMessageWidget() {
           type="button"
           onClick={handleGenerate}
           disabled={isLoading}
-          className="group inline-flex w-full items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all duration-200 hover:from-emerald-600 hover:to-green-700 hover:shadow-emerald-500/35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-60 disabled:shadow-none"
+          className="group inline-flex w-full items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-[rgba(37,99,235,0.25)] transition-all duration-200 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB] disabled:pointer-events-none disabled:opacity-60 disabled:shadow-none"
         >
           {isLoading ? (
             <>
@@ -127,10 +127,10 @@ export function AiMessageWidget() {
         {error && (
           <div
             id="generation-error"
-            className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50/80 px-4 py-3 animate-in"
+            className="flex items-start gap-2.5 rounded-xl border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] px-4 py-3 animate-in"
           >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-            <p className="text-sm leading-relaxed text-red-700">{error}</p>
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#EF4444]" />
+            <p className="text-sm leading-relaxed text-[#EF4444]">{error}</p>
           </div>
         )}
 
@@ -138,12 +138,12 @@ export function AiMessageWidget() {
         {generatedMessage && (
           <div
             id="generated-message-card"
-            className="space-y-3 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/60 to-green-50/40 p-5 animate-in"
+            className="space-y-3 rounded-xl border border-[rgba(37,99,235,0.2)] bg-[rgba(37,99,235,0.06)] p-5 animate-in"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                <div className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-pulse" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
                   Mensaje generado
                 </span>
               </div>
@@ -151,7 +151,7 @@ export function AiMessageWidget() {
                 id="copy-message-btn"
                 type="button"
                 onClick={handleCopy}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-all duration-200 hover:bg-white hover:shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--foreground-muted)] transition-all duration-200 hover:text-[#2563EB] hover:border-[rgba(37,99,235,0.4)]"
               >
                 {copied ? (
                   <>

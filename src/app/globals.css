@@ -1,35 +1,134 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
 
+/* ── cazary.ai Design Tokens ── */
 :root {
-  --background: #f4f4f5;
-  --foreground: #09090b;
-  --muted: #71717a;
-  --border: #e4e4e7;
-  --primary: #16a34a;
-  --primary-hover: #15803d;
-  --primary-soft: #dcfce7;
-  --accent: #10b981;
-  --surface: #ffffff;
-  --sidebar: #09090b;
-  --sidebar-border: #27272a;
-  --sidebar-muted: #a1a1aa;
-  --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  /* Identidad de marca */
+  --cazary-cobalt:        #2563EB;
+  --cazary-cyan:          #06B6D4;
+  --cazary-gradient:      linear-gradient(135deg, #2563EB 0%, #06B6D4 100%);
+
+  /* Dark mode (default) */
+  --background:           #0F172A;
+  --surface:              #1E293B;
+  --surface-hover:        #263348;
+  --border:               #2D3F55;
+  --border-subtle:        #1E2D42;
+  --foreground:           #F8FAFC;
+  --foreground-muted:     #94A3B8;
+  --foreground-faint:     #475569;
+
+  /* Acento primario */
+  --primary:              #2563EB;
+  --primary-hover:        #1D4ED8;
+  --primary-foreground:   #FFFFFF;
+  --primary-soft:         rgba(37, 99, 235, 0.12);
+
+  /* Acento secundario IA */
+  --accent:               #06B6D4;
+  --accent-hover:         #0891B2;
+  --accent-foreground:    #FFFFFF;
+  --accent-soft:          rgba(6, 182, 212, 0.12);
+
+  /* Sidebar (siempre dark) */
+  --sidebar:              #080F1E;
+  --sidebar-border:       #1E293B;
+  --sidebar-muted:        #475569;
+
+  /* Semánticos */
+  --success:              #10B981;
+  --success-soft:         rgba(16, 185, 129, 0.10);
+  --warning:              #F59E0B;
+  --warning-soft:         rgba(245, 158, 11, 0.10);
+  --danger:               #EF4444;
+  --danger-soft:          rgba(239, 68, 68, 0.10);
+
+  /* Sombras */
+  --shadow-sm:            0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:            0 4px 16px rgba(0,0,0,0.35);
+  --shadow-lg:            0 8px 32px rgba(0,0,0,0.45);
+  --shadow-glow-primary:  0 0 24px rgba(37,99,235,0.30);
+  --shadow-glow-accent:   0 0 24px rgba(6,182,212,0.22);
+
+  /* Transiciones */
+  --transition-fast:      150ms ease;
+  --transition-base:      200ms ease;
+  --transition-slow:      300ms ease;
+
+  /* Legacy compat */
+  --muted:                #94A3B8;
+  --card-shadow:          0 1px 3px rgba(0,0,0,0.4);
+}
+
+/* Light mode override */
+[data-theme="light"] {
+  --background:           #F8FAFC;
+  --surface:              #FFFFFF;
+  --surface-hover:        #F1F5F9;
+  --border:               #E2E8F0;
+  --border-subtle:        #F1F5F9;
+  --foreground:           #1E293B;
+  --foreground-muted:     #64748B;
+  --foreground-faint:     #94A3B8;
+  --primary-soft:         rgba(37, 99, 235, 0.08);
+  --accent-soft:          rgba(6, 182, 212, 0.08);
+  --shadow-sm:            0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:            0 4px 16px rgba(0,0,0,0.08);
+  --shadow-lg:            0 8px 32px rgba(0,0,0,0.12);
+  --shadow-glow-primary:  0 0 16px rgba(37,99,235,0.15);
+  --shadow-glow-accent:   0 0 16px rgba(6,182,212,0.12);
+  --card-shadow:          0 1px 3px rgba(0,0,0,0.08);
+  --muted:                #64748B;
+}
+
+/* Dark mode explicit — allows forcing dark on child elements (e.g. landing page wrapper) */
+[data-theme="dark"] {
+  --background:           #0F172A;
+  --surface:              #1E293B;
+  --surface-hover:        #263348;
+  --border:               #2D3F55;
+  --border-subtle:        #1E2D42;
+  --foreground:           #F8FAFC;
+  --foreground-muted:     #94A3B8;
+  --foreground-faint:     #475569;
+  --primary-soft:         rgba(37, 99, 235, 0.12);
+  --accent-soft:          rgba(6, 182, 212, 0.12);
+  --shadow-sm:            0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:            0 4px 16px rgba(0,0,0,0.35);
+  --shadow-lg:            0 8px 32px rgba(0,0,0,0.45);
+  --shadow-glow-primary:  0 0 24px rgba(37,99,235,0.30);
+  --shadow-glow-accent:   0 0 24px rgba(6,182,212,0.22);
+  --card-shadow:          0 1px 3px rgba(0,0,0,0.4);
+  --muted:                #94A3B8;
+}
+
+/* Force dark context (landing sections, always-dark panels) */
+[data-theme="light"] .force-dark,
+.force-dark {
+  --background:           #0F172A;
+  --surface:              #1E293B;
+  --border:               #2D3F55;
+  --foreground:           #F8FAFC;
+  --foreground-muted:     #94A3B8;
+  --foreground-faint:     #475569;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-soft: var(--primary-soft);
-  --color-accent: var(--accent);
-  --color-surface: var(--surface);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-muted: var(--sidebar-muted);
+  --color-background:       var(--background);
+  --color-foreground:       var(--foreground);
+  --color-muted:            var(--foreground-muted);
+  --color-border:           var(--border);
+  --color-primary:          var(--primary);
+  --color-primary-hover:    var(--primary-hover);
+  --color-primary-soft:     var(--primary-soft);
+  --color-accent:           var(--accent);
+  --color-surface:          var(--surface);
+  --color-sidebar:          var(--sidebar);
+  --color-sidebar-border:   var(--sidebar-border);
+  --color-sidebar-muted:    var(--sidebar-muted);
+  --color-success:          var(--success);
+  --color-warning:          var(--warning);
+  --color-danger:           var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -38,4 +137,78 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utilidad: texto con gradiente de marca */
+.text-gradient-cazary {
+  background: var(--cazary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Utilidad: borde con gradiente */
+.border-gradient-cazary {
+  border: 1px solid transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+              var(--cazary-gradient) border-box;
+}
+
+/* ── Micro-interactions ── */
+
+/* Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--foreground-faint); }
+
+/* Selection */
+::selection {
+  background: rgba(37, 99, 235, 0.30);
+  color: var(--foreground);
+}
+
+/* Focus states */
+:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.60);
+  outline-offset: 2px;
+}
+
+/* Primary gradient buttons */
+.btn-primary {
+  transition: all 200ms ease;
+}
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* Spotlight card effect — updated via JS with --mouse-x/--mouse-y */
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    300px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(37, 99, 235, 0.06),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+  z-index: 1;
+}
+.spotlight-card:hover::before {
+  opacity: 1;
 }

@@ -6,6 +6,7 @@ import {
   Sparkles, Users,
 } from "lucide-react";
 import type { CampaignType, WizardData, Template } from "./types";
+import { CAMPAIGN_TEMPLATES } from "./campaignTemplates";
 
 // chrome.runtime is only available inside a Chrome extension content/popup context.
 // When the wizard runs inside Next.js (web), it falls back to the manual flow.
@@ -22,9 +23,9 @@ const TYPE_OPTIONS: {
   color: string;
   bg: string;
 }[] = [
-  { type: "linkedin",       label: "LinkedIn",       sub: "Perfil estándar · hasta 30 conexiones/día",   icon: Link2,    color: "text-blue-700",  bg: "bg-blue-50 border-blue-200 hover:border-blue-400"   },
-  { type: "sales_navigator",label: "Sales Navigator",sub: "Búsqueda avanzada · filtros premium",          icon: Sparkles, color: "text-violet-700",bg: "bg-violet-50 border-violet-200 hover:border-violet-400"},
-  { type: "email",          label: "Email",          sub: "Campaña masiva · outreach por correo",         icon: Mail,     color: "text-sky-700",   bg: "bg-sky-50 border-sky-200 hover:border-sky-400"      },
+  { type: "linkedin",        label: "LinkedIn",        sub: "Perfil estándar · hasta 30 conexiones/día",  icon: Link2,    color: "text-[#2563EB]", bg: "bg-[rgba(37,99,235,0.12)] border-[rgba(37,99,235,0.3)] hover:border-[#2563EB]"   },
+  { type: "sales_navigator", label: "Sales Navigator", sub: "Búsqueda avanzada · filtros premium",         icon: Sparkles, color: "text-[#06B6D4]", bg: "bg-[rgba(6,182,212,0.12)] border-[rgba(6,182,212,0.3)] hover:border-[#06B6D4]"   },
+  { type: "email",           label: "Email",           sub: "Campaña masiva · outreach por correo",        icon: Mail,     color: "text-[#2563EB]", bg: "bg-[rgba(37,99,235,0.08)] border-[rgba(37,99,235,0.2)] hover:border-[#2563EB]"   },
 ];
 
 const EMPTY_WIZARD: WizardData = {
@@ -50,7 +51,7 @@ function Step1({
   return (
     <div className="space-y-6">
       <div>
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
           Tipo de campaña
         </p>
         <div className="grid grid-cols-3 gap-3">
@@ -65,20 +66,20 @@ function Step1({
                   "relative flex flex-col items-center gap-2 rounded-xl border-2 p-4 text-center transition-all",
                   selected
                     ? `${opt.bg} ${opt.color} font-semibold shadow-sm`
-                    : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
+                    : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]",
                 ].join(" ")}
               >
                 {selected && (
-                  <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900">
+                  <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-r from-[#2563EB] to-[#06B6D4]">
                     <Check className="h-3 w-3 text-white" />
                   </span>
                 )}
-                <div className={["flex h-10 w-10 items-center justify-center rounded-xl", selected ? opt.bg : "bg-zinc-100"].join(" ")}>
-                  <Icon className={["h-5 w-5", selected ? opt.color : "text-zinc-500"].join(" ")} />
+                <div className={["flex h-10 w-10 items-center justify-center rounded-xl", selected ? opt.bg.split(" ")[0] : "bg-[var(--border)]"].join(" ")}>
+                  <Icon className={["h-5 w-5", selected ? opt.color : "text-[var(--foreground-muted)]"].join(" ")} />
                 </div>
                 <div>
                   <p className="text-sm font-semibold">{opt.label}</p>
-                  <p className="mt-0.5 text-[10px] text-zinc-500 leading-snug">{opt.sub}</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--foreground-muted)] leading-snug">{opt.sub}</p>
                 </div>
               </button>
             );
@@ -87,7 +88,7 @@ function Step1({
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
           Nombre de la campaña
         </label>
         <input
@@ -95,7 +96,7 @@ function Step1({
           value={data.campaignName}
           onChange={(e) => onChange({ campaignName: e.target.value })}
           placeholder="Ej: Directores IT Lima — Q3 2026"
-          className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-colors"
         />
       </div>
     </div>
@@ -144,7 +145,6 @@ function Step2({
   const urlTouched = data.segmentationUrl.length > 0;
   const urlError   = urlTouched && !urlValid;
 
-  // Reset count state when URL changes
   useEffect(() => {
     setCountState({ status: "idle" });
   }, [data.segmentationUrl]);
@@ -190,7 +190,7 @@ function Step2({
   if (data.campaignType === "email") {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-[var(--foreground-muted)]">
           Selecciona el segmento de contactos del CRM que recibirá esta campaña:
         </p>
         <div className="space-y-2">
@@ -201,15 +201,15 @@ function Step2({
               className={[
                 "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-all",
                 data.crmSegment === seg.id
-                  ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                  : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
+                  ? "border-[#2563EB] bg-[rgba(37,99,235,0.08)] text-[#2563EB]"
+                  : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]",
               ].join(" ")}
             >
               <div className="flex items-center gap-2.5">
                 <Users className="h-4 w-4 opacity-60" />
                 <span className="text-sm font-medium">{seg.label}</span>
               </div>
-              <span className="text-xs text-zinc-400">{seg.count} leads</span>
+              <span className="text-xs text-[var(--foreground-faint)]">{seg.count} leads</span>
             </button>
           ))}
         </div>
@@ -221,7 +221,7 @@ function Step2({
     <div className="space-y-5">
       {/* URL input */}
       <div>
-        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
           URL de segmentación
         </label>
         <input
@@ -233,16 +233,16 @@ function Step2({
               : "https://www.linkedin.com/search/results/people/..."
           }
           className={[
-            "w-full rounded-xl border bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 transition-colors",
+            "w-full rounded-xl border bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:outline-none focus:ring-1 transition-colors",
             urlError
-              ? "border-red-400 focus:border-red-400 focus:ring-red-100"
+              ? "border-red-400 focus:border-red-400 focus:ring-red-400/30"
               : urlValid
-              ? "border-green-400 focus:border-green-400 focus:ring-green-100"
-              : "border-zinc-200 focus:border-indigo-400 focus:ring-indigo-100",
+              ? "border-green-400 focus:border-green-400 focus:ring-green-400/30"
+              : "border-[var(--border)] focus:border-[#2563EB] focus:ring-[rgba(37,99,235,0.3)]",
           ].join(" ")}
         />
         {urlError && (
-          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-600">
+          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-500">
             <span>✕</span>
             {data.campaignType === "sales_navigator"
               ? "Debe ser una URL de Sales Navigator (linkedin.com/sales/...)"
@@ -252,9 +252,9 @@ function Step2({
       </div>
 
       {/* How-to hint */}
-      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
-        <p className="font-semibold mb-2">¿Cómo obtener la URL?</p>
-        <ol className="list-decimal space-y-1 pl-4 text-[12px] leading-relaxed text-blue-700">
+      <div className="rounded-xl border border-[rgba(37,99,235,0.2)] bg-[rgba(37,99,235,0.08)] p-4 text-sm">
+        <p className="font-semibold mb-2 text-[#2563EB]">¿Cómo obtener la URL?</p>
+        <ol className="list-decimal space-y-1 pl-4 text-[12px] leading-relaxed text-[var(--foreground-muted)]">
           <li>Ve a {data.campaignType === "sales_navigator" ? "Sales Navigator" : "LinkedIn"} → Buscar personas</li>
           <li>Aplica tus filtros: sector, cargo, ubicación, empresa</li>
           <li>Copia la URL completa del navegador y pégala aquí</li>
@@ -263,13 +263,13 @@ function Step2({
 
       {/* Count leads panel */}
       {urlValid && (
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-zinc-700">Número estimado de leads</p>
+            <p className="text-xs font-semibold text-[var(--foreground-muted)]">Número estimado de leads</p>
             {countState.status === "idle" && (
               <button
                 onClick={handleCount}
-                className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-bold text-[var(--foreground-muted)] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
               >
                 Contar leads
               </button>
@@ -277,7 +277,7 @@ function Step2({
           </div>
 
           {countState.status === "counting" && (
-            <div className="flex items-center gap-2 text-indigo-600">
+            <div className="flex items-center gap-2 text-[#2563EB]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               <span className="text-[11px]">Consultando LinkedIn…</span>
             </div>
@@ -286,26 +286,26 @@ function Step2({
           {countState.status === "done" && (
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
-                <span className="text-xl font-black tabular-nums text-zinc-900">~{countState.count.toLocaleString("es-PE")}</span>
-                <span className="text-[10px] text-zinc-500">leads estimados</span>
+                <span className="text-xl font-black tabular-nums text-[var(--foreground)]">~{countState.count.toLocaleString("es-PE")}</span>
+                <span className="text-[10px] text-[var(--foreground-muted)]">leads estimados</span>
               </div>
               {estimatedDays && (
                 <>
-                  <div className="h-8 w-px bg-zinc-200" />
+                  <div className="h-8 w-px bg-[var(--border)]" />
                   <div className="flex flex-col">
-                    <span className="text-xl font-black tabular-nums text-zinc-900">~{estimatedDays}d</span>
-                    <span className="text-[10px] text-zinc-500">duración estimada</span>
+                    <span className="text-xl font-black tabular-nums text-[var(--foreground)]">~{estimatedDays}d</span>
+                    <span className="text-[10px] text-[var(--foreground-muted)]">duración estimada</span>
                   </div>
-                  <div className="h-8 w-px bg-zinc-200" />
+                  <div className="h-8 w-px bg-[var(--border)]" />
                   <div className="flex flex-col">
-                    <span className="text-xl font-black tabular-nums text-zinc-900">{DAILY_RATE}/día</span>
-                    <span className="text-[10px] text-zinc-500">velocidad segura</span>
+                    <span className="text-xl font-black tabular-nums text-[var(--foreground)]">{DAILY_RATE}/día</span>
+                    <span className="text-[10px] text-[var(--foreground-muted)]">velocidad segura</span>
                   </div>
                 </>
               )}
               <button
                 onClick={() => setCountState({ status: "idle" })}
-                className="ml-auto text-[10px] text-zinc-400 hover:text-zinc-600 underline"
+                className="ml-auto text-[10px] text-[var(--foreground-muted)] hover:text-[var(--foreground)] underline"
               >
                 Recontar
               </button>
@@ -314,7 +314,7 @@ function Step2({
 
           {countState.status === "needs_nav" && (
             <div className="space-y-2">
-              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+              <p className="text-[11px] text-[#F59E0B] bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.2)] rounded-lg px-3 py-2 leading-relaxed">
                 Abre la URL del segmento en LinkedIn y vuelve a hacer click en "Contar leads", o ingresa el número manualmente.
               </p>
               <div className="flex items-center gap-2">
@@ -323,23 +323,23 @@ function Step2({
                   value={manualInput}
                   onChange={(e) => setManualInput(e.target.value)}
                   placeholder="Nº estimado de leads"
-                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
                 />
                 <button
                   onClick={applyManual}
                   disabled={!manualInput}
-                  className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-zinc-700 disabled:opacity-40"
+                  className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90 disabled:opacity-40"
                 >
                   Aplicar
                 </button>
-                <button onClick={handleCount} className="text-[11px] text-indigo-600 hover:underline">Reintentar</button>
+                <button onClick={handleCount} className="text-[11px] text-[#2563EB] hover:underline">Reintentar</button>
               </div>
             </div>
           )}
 
           {(countState.status === "manual" || countState.status === "error") && (
             <div className="space-y-2">
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-[var(--foreground-muted)]">
                 La extensión no pudo leer el conteo automáticamente. Ingresa el número estimado:
               </p>
               <div className="flex items-center gap-2">
@@ -348,12 +348,12 @@ function Step2({
                   value={manualInput}
                   onChange={(e) => setManualInput(e.target.value)}
                   placeholder="Ej: 1500"
-                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
                 />
                 <button
                   onClick={applyManual}
                   disabled={!manualInput}
-                  className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-zinc-700 disabled:opacity-40"
+                  className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90 disabled:opacity-40"
                 >
                   Aplicar
                 </button>
@@ -361,7 +361,7 @@ function Step2({
             </div>
           )}
 
-          <p className="text-[10px] text-zinc-400 italic">
+          <p className="text-[10px] text-[var(--foreground-faint)] italic">
             Número estimado — la extensión contará con precisión al lanzar la campaña.
           </p>
         </div>
@@ -379,37 +379,39 @@ function Step3({
   data: WizardData;
   onChange: (d: Partial<WizardData>) => void;
 }) {
-  const compatibleTemplates: import("./types").Template[] = [];
+  const compatibleTemplates = CAMPAIGN_TEMPLATES.filter(
+    (t) => !data.campaignType || t.types.includes(data.campaignType)
+  );
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
             Nombre del segmento
           </label>
           <input
             value={data.segmentName}
             onChange={(e) => onChange({ segmentName: e.target.value })}
             placeholder="Ej: Directores IT Lima"
-            className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-colors"
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
             Nombre de la automatización
           </label>
           <input
             value={data.automationName}
             onChange={(e) => onChange({ automationName: e.target.value })}
             placeholder="Ej: Secuencia de conexión"
-            className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-colors"
           />
         </div>
       </div>
 
       <div>
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
           Plantilla de automatización
         </p>
         <div className="grid grid-cols-2 gap-2">
@@ -419,8 +421,8 @@ function Step3({
             className={[
               "flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all",
               data.selectedTemplateId === null
-                ? "border-zinc-900 bg-zinc-900 text-white"
-                : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
+                ? "border-[#2563EB] bg-[rgba(37,99,235,0.08)] text-[var(--foreground)]"
+                : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]",
             ].join(" ")}
           >
             <Sparkles className="h-5 w-5" />
@@ -434,22 +436,32 @@ function Step3({
           {compatibleTemplates.map((tpl) => (
             <button
               key={tpl.id}
-              onClick={() => onChange({ selectedTemplateId: tpl.id })}
+              onClick={() => onChange({ selectedTemplateId: tpl.id, _selectedTemplate: tpl })}
               className={[
                 "flex flex-col items-start gap-1.5 rounded-xl border-2 p-3.5 text-left transition-all",
                 data.selectedTemplateId === tpl.id
-                  ? "border-indigo-400 bg-indigo-50 text-indigo-900"
-                  : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
+                  ? "border-[#2563EB] bg-[rgba(37,99,235,0.05)] text-[var(--foreground)]"
+                  : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)]",
               ].join(" ")}
             >
-              <div className="flex w-full items-start justify-between">
-                <FileText className="h-4 w-4 mt-0.5 opacity-60" />
-                <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[9px] font-bold text-zinc-500">
-                  {tpl.nodeCount} nodos
+              <div className="flex w-full items-start justify-between gap-1">
+                <FileText className="h-4 w-4 mt-0.5 shrink-0 opacity-60" />
+                <span className="rounded-full bg-[var(--border)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--foreground-muted)]">
+                  {tpl.nodeCount} pasos
                 </span>
               </div>
-              <p className="text-xs font-semibold leading-tight">{tpl.name}</p>
-              <p className="text-[10px] leading-snug opacity-70">{tpl.description}</p>
+              <p className="text-xs font-semibold leading-tight text-[var(--foreground)]">{tpl.name}</p>
+              <p className="text-[10px] leading-snug text-[var(--foreground-muted)]">{tpl.description}</p>
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {tpl.types.map((type) => (
+                  <span
+                    key={type}
+                    className="rounded-full bg-[var(--border)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--foreground-muted)]"
+                  >
+                    {type}
+                  </span>
+                ))}
+              </div>
             </button>
           ))}
         </div>
@@ -490,7 +502,7 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
   }
 
   function handleComplete() {
-    const template = null;
+    const template = CAMPAIGN_TEMPLATES.find((t) => t.id === data.selectedTemplateId) ?? null;
     onComplete(data, template);
   }
 
@@ -500,9 +512,9 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
         {/* Top bar */}
-        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4 bg-[var(--background)]">
           <div className="flex items-center gap-6">
             {STEPS.map((s) => (
               <div key={s.num} className="flex items-center gap-2">
@@ -512,27 +524,27 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
                     step > s.num
                       ? "bg-green-500 text-white"
                       : step === s.num
-                      ? "bg-zinc-900 text-white"
-                      : "bg-zinc-100 text-zinc-400",
+                      ? "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white"
+                      : "bg-[var(--border)] text-[var(--foreground-muted)]",
                   ].join(" ")}
                 >
                   {step > s.num ? <Check className="h-3 w-3" /> : s.num}
                 </span>
-                <span className={["text-xs font-medium", step >= s.num ? "text-zinc-800" : "text-zinc-400"].join(" ")}>
+                <span className={["text-xs font-medium", step >= s.num ? "text-[var(--foreground)]" : "text-[var(--foreground-muted)]"].join(" ")}>
                   {s.label}
                 </span>
-                {s.num < 3 && <span className="text-zinc-300">—</span>}
+                {s.num < 3 && <span className="text-[var(--border)]">—</span>}
               </div>
             ))}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[var(--border)] hover:text-[var(--foreground)] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Content */}
         <div className="px-6 py-5">
-          <h2 className="mb-4 text-lg font-bold text-zinc-900">
+          <h2 className="mb-4 text-lg font-bold text-[var(--foreground)]">
             {step === 1 && "Configura tu campaña"}
             {step === 2 && "Define el segmento"}
             {step === 3 && "Nombra la estructura"}
@@ -543,10 +555,10 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-zinc-100 bg-zinc-50/60 px-6 py-4">
+        <div className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-6 py-4">
           <button
             onClick={() => (step > 1 ? setStep((s) => s - 1) : onClose())}
-            className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-white transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             {step > 1 ? "Atrás" : "Cancelar"}
@@ -556,7 +568,7 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
             <button
               disabled={!canAdvance(step, data)}
               onClick={() => setStep((s) => s + 1)}
-              className="flex items-center gap-1.5 rounded-xl bg-zinc-900 px-5 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               Continuar
               <ArrowRight className="h-4 w-4" />
@@ -565,7 +577,7 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
             <button
               disabled={!canAdvance(3, data)}
               onClick={handleComplete}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-200 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-2 text-sm font-semibold text-white shadow-[0_0_16px_rgba(37,99,235,0.35)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <Sparkles className="h-4 w-4" />
               Crear y abrir Flow Builder

@@ -16,7 +16,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const cls = STATUS_STYLES[status.toLowerCase()] ?? "bg-zinc-100 text-zinc-600 ring-zinc-500/20";
+  const cls = STATUS_STYLES[status.toLowerCase()] ?? "bg-[var(--border)] text-[var(--foreground-muted)] ring-[var(--border)]";
   return (
     <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>
       {status}
@@ -85,7 +85,7 @@ export function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
         <div className="mb-3 text-4xl">📭</div>
         <p className="text-sm font-medium text-foreground">Sin leads todavía</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Usa la extensión NexusAI en un perfil de LinkedIn para capturar tu primer prospecto.
+          Usa la extensión cazary.ai en un perfil de LinkedIn para capturar tu primer prospecto.
         </p>
       </div>
     );
@@ -95,7 +95,7 @@ export function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <tr className="bg-[var(--background)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
             <th className="px-6 py-3">Nombre</th>
             <th className="px-6 py-3">Empresa</th>
             <th className="px-6 py-3">Resumen IA</th>
@@ -110,7 +110,7 @@ export function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
             const isCopied    = copiedId  === lead.id;
             const isPending   = pendingId === lead.id;
             return (
-              <tr key={lead.id} className="hover:bg-zinc-50/60 transition-colors">
+              <tr key={lead.id} className="hover:bg-[var(--surface)] transition-colors">
                 <td className="px-6 py-4 font-medium text-foreground whitespace-nowrap">
                   {lead.full_name}
                 </td>
@@ -133,7 +133,7 @@ export function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
                     <button
                       onClick={() => handleCopy(lead)}
                       title="Copiar resumen IA"
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition-colors"
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--foreground-muted)] hover:bg-[var(--surface)] hover:text-[var(--foreground)] transition-colors"
                     >
                       {isCopied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
                       <span>{isCopied ? "Copiado" : "Copiar"}</span>
@@ -143,8 +143,8 @@ export function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
                       disabled={isContacted || isPending}
                       className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
                         isContacted  ? "text-green-600 cursor-default" :
-                        isPending    ? "text-zinc-400 cursor-wait"      :
-                        "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                        isPending    ? "text-[var(--foreground-faint)] cursor-wait" :
+                        "text-[var(--foreground-muted)] hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
                       }`}
                     >
                       <CheckCircle size={14} className={isContacted ? "text-green-500" : ""} />

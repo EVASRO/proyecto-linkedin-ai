@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import {
-  Archive, Bot, BotOff, Check, CheckCheck, ChevronDown,
-  Clock, Info, LayoutTemplate, Loader2, Paperclip, Send, Sparkles, User, X, XCircle,
+  Bot, Check, CheckCheck, ChevronDown,
+  ExternalLink, LayoutTemplate, Loader2, Send, Sparkles, User, X, XCircle,
 } from "lucide-react";
 import type { AISuggestion, Conversation, Message, QuickReplyTemplate } from "./types";
 import { approveDraft, rejectDraft } from "@/app/dashboard/smart-inbox/actions";
@@ -12,27 +12,27 @@ import { approveDraft, rejectDraft } from "@/app/dashboard/smart-inbox/actions";
 
 const QUICK_REPLIES: QuickReplyTemplate[] = [
   { id: "q1", label: "Seguimiento 48h",    category: "seguimiento",  text: "Hola {{nombre}}, quería hacer un seguimiento a lo que conversamos. ¿Tuviste oportunidad de revisar la info que te compartí?" },
-  { id: "q2", label: "Solicitar reunión",  category: "seguimiento",  text: "¿Tienes 20 minutos esta semana para una llamada rápida? Me gustaría mostrarte cómo NexusAI puede ayudar a {{empresa}}." },
+  { id: "q2", label: "Solicitar reunión",  category: "seguimiento",  text: "¿Tienes 20 minutos esta semana para una llamada rápida? Me gustaría mostrarte cómo cazary.ai puede ayudar a {{empresa}}." },
   { id: "q3", label: "Propuesta de valor", category: "propuesta",    text: "Nuestros clientes en {{industria}} logran 3x más reuniones en el mismo tiempo. ¿Te gustaría ver los números?" },
   { id: "q4", label: "Respuesta a precio", category: "calificacion", text: "Entiendo la preocupación por el precio. El ROI promedio que ven nuestros clientes es de 8-10x en el primer trimestre. ¿Lo revisamos juntos?" },
   { id: "q5", label: "Agendar demo",       category: "cierre",       text: "Tengo disponibilidad el {{dia}} a las {{hora}}. ¿Te funciona para una demo de 30 minutos?" },
-  { id: "q6", label: "Caso de éxito",      category: "propuesta",    text: "Déjame compartirte un caso de una empresa similar a {{empresa}} que logró resultados en 2 semanas con NexusAI." },
+  { id: "q6", label: "Caso de éxito",      category: "propuesta",    text: "Déjame compartirte un caso de una empresa similar a {{empresa}} que logró resultados en 2 semanas con cazary.ai." },
   { id: "q7", label: "No es el momento",   category: "general",      text: "Perfecto, lo entiendo completamente. ¿Puedo contactarte en {{tiempo}} cuando sea un mejor momento?" },
   { id: "q8", label: "Confirmar reunión",  category: "cierre",       text: "Confirmado! Te envío la invitación al calendario. Hablaremos el {{dia}} a las {{hora}}. ¡Hasta pronto!" },
 ];
 
 const CATEGORY_COLOR: Record<string, string> = {
-  seguimiento:  "bg-blue-50 text-blue-700 border-blue-200",
-  propuesta:    "bg-violet-50 text-violet-700 border-violet-200",
-  calificacion: "bg-amber-50 text-amber-700 border-amber-200",
-  cierre:       "bg-green-50 text-green-700 border-green-200",
-  general:      "bg-zinc-50 text-zinc-600 border-zinc-200",
+  seguimiento:  "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  propuesta:    "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  calificacion: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  cierre:       "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  general:      "bg-[var(--surface-hover)] text-[var(--foreground-muted)] border-[var(--border)]",
 };
 
 // -- Helpers -------------------------------------------------------------------
 
 function avatarColor(name: string): string {
-  const palette = ["bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-pink-500", "bg-indigo-600"];
+  const palette = ["#2563EB", "#7C3AED", "#059669", "#D97706", "#DB2777", "#0891B2"];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return palette[Math.abs(h) % palette.length];
@@ -46,30 +46,14 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-const INTENT_LABEL: Record<string, string> = {
-  follow_up:  "Seguimiento",
-  qualify:    "Calificar",
-  schedule:   "Agendar",
-  value_prop: "Propuesta de valor",
-  close:      "Cerrar",
-};
-
-const INTENT_COLOR: Record<string, string> = {
-  follow_up:  "bg-blue-50   text-blue-700   border-blue-200",
-  qualify:    "bg-amber-50  text-amber-700  border-amber-200",
-  schedule:   "bg-green-50  text-green-700  border-green-200",
-  value_prop: "bg-violet-50 text-violet-700 border-violet-200",
-  close:      "bg-red-50    text-red-600    border-red-200",
-};
-
 // -- Message Status Icon -------------------------------------------------------
 
 function StatusIcon({ status }: { status?: string }) {
-  if (status === "sending")   return <Loader2    className="h-3 w-3 animate-spin text-zinc-300" />;
-  if (status === "sent")      return <Check      className="h-3 w-3 text-zinc-400" />;
-  if (status === "delivered") return <CheckCheck className="h-3 w-3 text-zinc-400" />;
-  if (status === "read")      return <CheckCheck className="h-3 w-3 text-blue-400" />;
-  if (status === "failed")    return <XCircle    className="h-3 w-3 text-red-400" />;
+  if (status === "sending")   return <Loader2    className="h-3 w-3 animate-spin opacity-50" />;
+  if (status === "sent")      return <Check      className="h-3 w-3 opacity-60" />;
+  if (status === "delivered") return <CheckCheck className="h-3 w-3 opacity-60" />;
+  if (status === "read")      return <CheckCheck className="h-3 w-3 text-[#06B6D4]" />;
+  if (status === "failed")    return <XCircle    className="h-3 w-3 text-[var(--danger)]" />;
   return null;
 }
 
@@ -80,30 +64,42 @@ function Bubble({ msg, leadName }: { msg: Message; leadName: string }) {
 
   return (
     <div className={`flex items-end gap-2 ${isOutbound ? "flex-row-reverse" : "flex-row"}`}>
-      <div className={[
-        "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
-        msg.sender === "ai"   ? "bg-gradient-to-br from-purple-500 to-indigo-600 text-white" :
-        msg.sender === "user" ? "bg-zinc-700 text-white" :
-        `${avatarColor(leadName)} text-white`,
-      ].join(" ")}>
-        {msg.sender === "ai"   ? <Bot className="h-3.5 w-3.5"  /> :
-         msg.sender === "user" ? <User className="h-3.5 w-3.5" /> :
+      {/* Mini avatar */}
+      <div
+        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+        style={{
+          background: msg.sender === "ai"
+            ? "linear-gradient(135deg, #7C3AED, #2563EB)"
+            : msg.sender === "user"
+            ? "var(--surface-hover)"
+            : avatarColor(leadName),
+        }}
+      >
+        {msg.sender === "ai"   ? <Bot  className="h-3.5 w-3.5" /> :
+         msg.sender === "user" ? <User className="h-3.5 w-3.5" style={{ color: "var(--foreground-muted)" }} /> :
          initials(leadName)}
       </div>
 
-      <div className={`max-w-[72%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
-        isOutbound
-          ? "rounded-br-sm bg-zinc-900 text-white"
-          : "rounded-bl-sm bg-white border border-zinc-200 text-zinc-800"
-      }`}>
-        <p className="text-[12px] leading-relaxed">{msg.text}</p>
+      <div
+        className="max-w-[72%] rounded-2xl px-3.5 py-2.5"
+        style={
+          isOutbound
+            ? { background: "linear-gradient(135deg, #2563EB 0%, #06B6D4 100%)", color: "#fff" }
+            : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--foreground)" }
+        }
+        // rounded corner towards avatar
+      >
+        <p className="text-[12.5px] leading-relaxed">{msg.text}</p>
         <div className={`mt-1 flex items-center gap-1.5 ${isOutbound ? "justify-end" : "justify-start"}`}>
-          <span className={`text-[9px] ${isOutbound ? "text-white/60" : "text-zinc-400"}`}>
+          <span
+            className="text-[9px]"
+            style={{ color: isOutbound ? "rgba(255,255,255,0.65)" : "var(--foreground-faint)" }}
+          >
             {fmtTime(msg.timestamp)}
           </span>
           {msg.sender === "ai" && (
-            <span className="flex items-center gap-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[8px] font-bold text-purple-300">
-              <Sparkles className="h-2 w-2" /> IA
+            <span className="flex items-center gap-0.5 rounded-full bg-white/20 px-1.5 py-0.5 text-[8px] font-bold text-white">
+              <Sparkles className="h-2 w-2" /> Enviado por IA
             </span>
           )}
           {isOutbound && <StatusIcon status={msg.status} />}
@@ -113,7 +109,7 @@ function Bubble({ msg, leadName }: { msg: Message; leadName: string }) {
   );
 }
 
-// -- Draft Bubble — AI draft pending approval ----------------------------------
+// -- Draft Bubble --------------------------------------------------------------
 
 function DraftBubble({
   msg,
@@ -141,7 +137,10 @@ function DraftBubble({
 
   if (msg.status === "rejected") {
     return (
-      <div className="mx-2 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[10px] text-zinc-400 italic">
+      <div
+        className="mx-2 flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] italic"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--foreground-faint)" }}
+      >
         <X className="h-3 w-3 flex-shrink-0" />
         Respuesta IA descartada
       </div>
@@ -151,14 +150,14 @@ function DraftBubble({
   if (msg.status === "approved" || msg.status === "pending_send") {
     return (
       <div className="flex items-end gap-2 flex-row-reverse">
-        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 text-white">
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white" style={{ background: "linear-gradient(135deg, #7C3AED, #2563EB)" }}>
           <Bot className="h-3.5 w-3.5" />
         </div>
-        <div className="max-w-[72%] rounded-2xl rounded-br-sm bg-zinc-900 px-3.5 py-2.5 shadow-sm">
-          <p className="text-[12px] leading-relaxed text-white">{msg.text}</p>
+        <div className="max-w-[72%] rounded-2xl px-3.5 py-2.5" style={{ background: "linear-gradient(135deg, #2563EB 0%, #06B6D4 100%)", color: "#fff" }}>
+          <p className="text-[12.5px] leading-relaxed">{msg.text}</p>
           <div className="mt-1 flex items-center justify-end gap-1.5">
-            <span className="text-[9px] text-white/60">{fmtTime(msg.timestamp)}</span>
-            <span className="flex items-center gap-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[8px] font-bold text-purple-300">
+            <span className="text-[9px] text-white/65">{fmtTime(msg.timestamp)}</span>
+            <span className="flex items-center gap-0.5 rounded-full bg-white/20 px-1.5 py-0.5 text-[8px] font-bold text-white">
               <Sparkles className="h-2 w-2" /> IA · Encolado
             </span>
           </div>
@@ -167,34 +166,32 @@ function DraftBubble({
     );
   }
 
-  // status === 'draft' — show editable approval card
   return (
-    <div className="mx-2 rounded-xl border-2 border-violet-300 bg-violet-50 p-3">
+    <div
+      className="mx-2 rounded-xl p-3"
+      style={{ border: "2px solid #7C3AED", background: "rgba(124,58,237,0.06)" }}
+    >
       <div className="mb-2 flex items-center gap-2">
-        <Bot className="h-4 w-4 text-violet-600" />
-        <span className="text-[11px] font-bold text-violet-700">Respuesta sugerida por IA</span>
-        <span className="rounded-full bg-violet-200 px-2 py-0.5 text-[9px] font-bold text-violet-700">
+        <Bot className="h-4 w-4 text-violet-400" />
+        <span className="text-[11px] font-bold text-violet-400">Respuesta sugerida por IA</span>
+        <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[9px] font-bold text-violet-300">
           PENDIENTE APROBACIÓN
         </span>
       </div>
-
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={4}
         disabled={working}
-        className="w-full resize-none rounded-lg border border-violet-200 bg-white px-3 py-2
-                   text-xs text-zinc-800 focus:border-violet-400 focus:outline-none
-                   disabled:opacity-60"
+        className="w-full resize-none rounded-lg px-3 py-2 text-xs focus:outline-none disabled:opacity-60"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--foreground)" }}
       />
-
       <div className="mt-2 flex gap-2">
         <button
           onClick={handleApprove}
           disabled={working || !text.trim()}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 py-1.5
-                     text-xs font-bold text-white transition-colors hover:bg-violet-700
-                     disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: "linear-gradient(135deg, #7C3AED, #2563EB)" }}
         >
           {working ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
           Enviar
@@ -202,9 +199,8 @@ function DraftBubble({
         <button
           onClick={handleReject}
           disabled={working}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border
-                     border-zinc-200 py-1.5 text-xs text-zinc-600 transition-colors
-                     hover:bg-zinc-50 disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:opacity-50"
+          style={{ border: "1px solid var(--border)", color: "var(--foreground-muted)" }}
         >
           <X className="h-3 w-3" />
           Descartar
@@ -233,21 +229,26 @@ function QuickRepliesPanel({ onSelect, onClose }: {
   const cats = ["all", "seguimiento", "propuesta", "calificacion", "cierre", "general"];
 
   return (
-    <div className="flex-shrink-0 border-t border-zinc-100 bg-white">
+    <div
+      className="flex-shrink-0 border-t"
+      style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+    >
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
-        <div className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-700">
-          <LayoutTemplate className="h-3.5 w-3.5 text-zinc-400" />
+        <div className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: "var(--foreground-muted)" }}>
+          <LayoutTemplate className="h-3.5 w-3.5" style={{ color: "var(--foreground-faint)" }} />
           Plantillas rápidas
         </div>
-        <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">
+        <button onClick={onClose} style={{ color: "var(--foreground-faint)" }}>
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
       <div className="px-4 pb-2">
         <input
-          value={search} onChange={(e) => setSearch(e.target.value)}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar plantilla..."
-          className="w-full rounded-lg border border-zinc-200 px-3 py-1.5 text-xs focus:border-indigo-400 focus:outline-none"
+          className="w-full rounded-lg px-3 py-1.5 text-xs focus:outline-none"
+          style={{ background: "var(--background)", border: "1px solid var(--border)", color: "var(--foreground)" }}
           autoFocus
         />
       </div>
@@ -256,10 +257,12 @@ function QuickRepliesPanel({ onSelect, onClose }: {
           <button
             key={c}
             onClick={() => setCategory(c)}
-            className={[
-              "flex-shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize transition-colors",
-              category === c ? "bg-zinc-900 text-white" : "border border-zinc-200 text-zinc-500 hover:bg-zinc-50",
-            ].join(" ")}
+            className="flex-shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize transition-colors"
+            style={
+              category === c
+                ? { background: "#2563EB", color: "#fff" }
+                : { border: "1px solid var(--border)", color: "var(--foreground-faint)" }
+            }
           >
             {c === "all" ? "Todas" : c}
           </button>
@@ -267,15 +270,15 @@ function QuickRepliesPanel({ onSelect, onClose }: {
       </div>
       <div className="max-h-40 overflow-y-auto px-4 pb-3 space-y-1.5">
         {filtered.length === 0 ? (
-          <p className="py-3 text-center text-[11px] text-zinc-400">Sin resultados</p>
+          <p className="py-3 text-center text-[11px]" style={{ color: "var(--foreground-faint)" }}>Sin resultados</p>
         ) : (
           filtered.map((r) => (
             <button
               key={r.id}
               onClick={() => { onSelect(r.text); onClose(); }}
-              className={`flex w-full items-start gap-2 rounded-lg border p-2.5 text-left transition-all hover:shadow-sm ${CATEGORY_COLOR[r.category]}`}
+              className={`flex w-full items-start gap-2 rounded-lg border p-2.5 text-left transition-all hover:opacity-90 ${CATEGORY_COLOR[r.category]}`}
             >
-              <span className="mt-0.5 flex-shrink-0 rounded-full bg-white/60 px-1.5 py-0.5 text-[9px] font-bold">
+              <span className="mt-0.5 flex-shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] font-bold">
                 {r.label}
               </span>
               <p className="text-[11px] leading-snug opacity-80">
@@ -299,6 +302,7 @@ interface ChatViewProps {
   onArchive?: (id: string) => void;
   onRequestAISuggestion?: () => Promise<string>;
   isPending?: boolean;
+  onDraftStatusChange?: (msgId: string, status: "approved" | "rejected", text?: string) => void;
 }
 
 export function ChatView({
@@ -310,18 +314,15 @@ export function ChatView({
   onRequestAISuggestion,
   isPending,
   onDraftStatusChange,
-}: ChatViewProps & { onDraftStatusChange?: (msgId: string, status: "approved" | "rejected", text?: string) => void }) {
+}: ChatViewProps) {
   const [input, setInput]                 = useState("");
   const [showSugg, setShowSugg]           = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
   const [aiLoading, setAiLoading]         = useState(false);
-  const [showAutopilotBanner, setShowAutopilotBanner] = useState(
-    !conv.autopilotActive && conv.messages.length <= 3
-  );
-  const bottomRef                     = useRef<HTMLDivElement>(null);
-  const lastMsg                       = conv.messages[conv.messages.length - 1];
-  const hasUnreplied                  = lastMsg?.sender === "lead";
-  const isArchived                    = conv.status === "archived";
+  const bottomRef                         = useRef<HTMLDivElement>(null);
+  const lastMsg                           = conv.messages[conv.messages.length - 1];
+  const hasUnreplied                      = lastMsg?.sender === "lead";
+  const isArchived                        = conv.status === "archived";
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -361,144 +362,94 @@ export function ChatView({
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden min-h-0 bg-zinc-50/30">
-      {/* -- Chat Header -- */}
-      <div className="flex flex-shrink-0 items-center gap-3 border-b border-border bg-white px-4 py-3">
-        <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(conv.lead.name)}`}>
+    <div
+      className="flex flex-1 flex-col overflow-hidden min-h-0"
+      style={{ background: "var(--background)" }}
+    >
+      {/* -- Header -- */}
+      <div
+        className="flex flex-shrink-0 items-center gap-3 border-b px-4 py-3"
+        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+      >
+        <div
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-[12px] font-bold text-white"
+          style={{ background: avatarColor(conv.lead.name) }}
+        >
           {initials(conv.lead.name)}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-zinc-900">{conv.lead.name}</p>
+            <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>{conv.lead.name}</p>
             {conv.source === "salesnav" ? (
-              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[9px] font-bold text-orange-600">Sales Navigator</span>
+              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-bold text-amber-400">Sales Nav</span>
             ) : (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold text-blue-600">LinkedIn</span>
+              <span className="rounded-full bg-[#2563EB]/15 px-2 py-0.5 text-[9px] font-bold text-[#2563EB]">LinkedIn</span>
             )}
             {isArchived && (
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-bold text-zinc-500">ARCHIVADO</span>
+              <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-[9px] font-bold" style={{ color: "var(--foreground-faint)" }}>ARCHIVADO</span>
             )}
           </div>
-          <p className="text-[10px] text-zinc-400">{conv.lead.title} · {conv.lead.company}</p>
+          <p className="text-[11px]" style={{ color: "var(--foreground-faint)" }}>
+            {conv.lead.title ? `${conv.lead.title} · ` : ""}{conv.lead.company}
+          </p>
         </div>
 
+        {/* Actions */}
         <div className="flex items-center gap-2">
-          {/* Autopilot toggle */}
-          <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all ${
-            conv.autopilotActive ? "bg-purple-100 text-purple-700" : "bg-zinc-100 text-zinc-500"
-          }`}>
-            {conv.autopilotActive ? <Bot className="h-3 w-3" /> : <BotOff className="h-3 w-3" />}
-            {conv.autopilotActive ? "Autopilot ON" : "Autopilot OFF"}
-          </div>
-          <button
-            onClick={() => onToggleAutopilot(conv.id, !conv.autopilotActive)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${conv.autopilotActive ? "bg-purple-600" : "bg-zinc-300"}`}
-          >
-            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${conv.autopilotActive ? "translate-x-4" : "translate-x-0.5"}`} />
-          </button>
-
-          {/* Archive button */}
-          {onArchive && !isArchived && (
-            <button
-              onClick={() => onArchive(conv.id)}
-              title="Archivar conversación"
-              className="rounded-lg p-1.5 text-zinc-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
-            >
-              <Archive className="h-4 w-4" />
-            </button>
-          )}
-
-          {/* Info button */}
+          {/* Ver perfil completo */}
           <button
             onClick={onShowDetail}
-            title="Ver detalle del lead"
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors"
+            style={{ background: "var(--surface-hover)", color: "var(--foreground-muted)", border: "1px solid var(--border)" }}
           >
-            <Info className="h-4 w-4" />
+            <ExternalLink className="h-3.5 w-3.5" />
+            Ver perfil
           </button>
         </div>
       </div>
 
       {/* Archived banner */}
       {isArchived && (
-        <div className="flex flex-shrink-0 items-center gap-2 bg-zinc-100 px-4 py-2 text-xs font-medium text-zinc-500">
-          <Archive className="h-3.5 w-3.5" />
+        <div
+          className="flex flex-shrink-0 items-center gap-2 px-4 py-2 text-xs font-medium"
+          style={{ background: "var(--surface-hover)", color: "var(--foreground-muted)" }}
+        >
           Esta conversación está archivada. No se pueden enviar mensajes.
         </div>
       )}
 
-      {/* -- Autopilot onboarding banner -- */}
-      {showAutopilotBanner && !conv.autopilotActive && !isArchived && (
-        <div className="flex flex-shrink-0 items-start gap-3 border-b border-violet-100
-                        bg-gradient-to-r from-violet-50 to-indigo-50 px-4 py-3">
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center
-                          rounded-full bg-violet-100">
-            <Bot className="h-4 w-4 text-violet-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-violet-800">
-              ¿Activar IA para esta conversación?
-            </p>
-            <p className="mt-0.5 text-[10px] text-violet-500 leading-relaxed">
-              El Autopilot responderá automáticamente usando tu agente IA.
-              Puedes revisar cada mensaje antes de enviar.
-            </p>
-            <div className="mt-2 flex gap-2">
-              <button
-                onClick={() => {
-                  onToggleAutopilot(conv.id, true);
-                  setShowAutopilotBanner(false);
-                }}
-                className="rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-bold
-                           text-white hover:bg-violet-700 transition-colors"
-              >
-                🤖 Activar Autopilot
-              </button>
-              <button
-                onClick={() => setShowAutopilotBanner(false)}
-                className="rounded-lg border border-violet-200 px-3 py-1.5 text-[10px]
-                           font-medium text-violet-500 hover:bg-violet-50 transition-colors"
-              >
-                Responder manualmente
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowAutopilotBanner(false)}
-            className="flex-shrink-0 text-violet-300 hover:text-violet-500"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+      {/* -- Messages area -- */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex flex-col gap-3">
+          {conv.messages.map((msg) =>
+            msg.sender === "ai" &&
+            (msg.status === "draft" || msg.status === "rejected" || msg.status === "approved" || msg.status === "pending_send") ? (
+              <DraftBubble
+                key={msg.id}
+                msg={msg}
+                onApprove={handleApproveDraft}
+                onReject={handleRejectDraft}
+              />
+            ) : (
+              <Bubble key={msg.id} msg={msg} leadName={conv.lead.name} />
+            )
+          )}
+          <div ref={bottomRef} />
         </div>
-      )}
-
-      {/* -- Messages -- */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {conv.messages.map((msg) =>
-          msg.sender === "ai" &&
-          (msg.status === "draft" || msg.status === "rejected" || msg.status === "approved" || msg.status === "pending_send") ? (
-            <DraftBubble
-              key={msg.id}
-              msg={msg}
-              onApprove={handleApproveDraft}
-              onReject={handleRejectDraft}
-            />
-          ) : (
-            <Bubble key={msg.id} msg={msg} leadName={conv.lead.name} />
-          )
-        )}
-        <div ref={bottomRef} />
       </div>
 
-      {/* -- AI Suggestions -- */}
+      {/* -- AI Suggestions strip -- */}
       {hasUnreplied && conv.aiSuggestions.length > 0 && showSugg && !isArchived && (
-        <div className="flex-shrink-0 border-t border-zinc-100 bg-white px-4 py-3">
+        <div
+          className="flex-shrink-0 border-t px-4 py-3"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+        >
           <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold text-purple-600">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-violet-400">
               <Sparkles className="h-3 w-3" />
-              Sugerencias IA — Copiloto
+              Sugerencias IA
             </div>
-            <button onClick={() => setShowSugg(false)} className="text-zinc-400 hover:text-zinc-600">
+            <button onClick={() => setShowSugg(false)} style={{ color: "var(--foreground-faint)" }}>
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -507,11 +458,9 @@ export function ChatView({
               <button
                 key={s.id}
                 onClick={() => useSuggestion(s)}
-                className={`flex w-full items-start gap-2 rounded-lg border p-2.5 text-left transition-colors hover:shadow-sm ${INTENT_COLOR[s.intent] ?? "bg-zinc-50 text-zinc-700 border-zinc-200"}`}
+                className="flex w-full items-start gap-2 rounded-lg border p-2.5 text-left transition-colors"
+                style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", color: "var(--foreground-muted)" }}
               >
-                <span className="mt-0.5 flex-shrink-0 rounded-full bg-white/60 px-1.5 py-0.5 text-[9px] font-bold">
-                  {INTENT_LABEL[s.intent] ?? s.intent}
-                </span>
                 <p className="text-[11px] leading-snug">{s.text.slice(0, 120)}{s.text.length > 120 ? "…" : ""}</p>
               </button>
             ))}
@@ -519,7 +468,7 @@ export function ChatView({
         </div>
       )}
 
-      {/* -- Quick Reply Templates -- */}
+      {/* -- Quick Replies -- */}
       {showTemplates && !isArchived && (
         <QuickRepliesPanel
           onSelect={(text) => setInput(text)}
@@ -527,54 +476,102 @@ export function ChatView({
         />
       )}
 
-      {/* -- Input -- */}
+      {/* -- Composer -- */}
       {!isArchived && (
-        <div className="flex-shrink-0 border-t border-border bg-white px-4 py-3">
+        <div
+          className="flex-shrink-0 border-t px-4 py-3"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+        >
           {!showSugg && hasUnreplied && (
-            <button onClick={() => setShowSugg(true)} className="mb-2 flex items-center gap-1 text-[10px] text-purple-500 hover:text-purple-700">
+            <button
+              onClick={() => setShowSugg(true)}
+              className="mb-2 flex items-center gap-1 text-[10px] text-violet-400 hover:text-violet-300"
+            >
               <Sparkles className="h-3 w-3" />
               Ver sugerencias IA
             </button>
           )}
-          <div className="flex items-end gap-2">
-            <button
-              onClick={() => setShowTemplates((v) => !v)}
-              title="Plantillas rápidas"
-              className={`flex-shrink-0 transition-colors ${showTemplates ? "text-indigo-600" : "text-zinc-400 hover:text-zinc-600"}`}
-            >
-              <LayoutTemplate className="h-4 w-4" />
-            </button>
-            <button className="flex-shrink-0 text-zinc-400 hover:text-zinc-600 transition-colors">
-              <Paperclip className="h-4 w-4" />
-            </button>
-            {onRequestAISuggestion && (
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            rows={3}
+            placeholder="Escribe un mensaje… (Enter para enviar, Shift+Enter para nueva línea)"
+            className="w-full resize-none rounded-xl px-3.5 py-2.5 text-[13px] focus:outline-none focus:ring-1 transition-colors"
+            style={{
+              background: "var(--background)",
+              border: "1px solid var(--border)",
+              color: "var(--foreground)",
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#2563EB"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.1)"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = ""; }}
+          />
+          <div className="mt-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {/* Templates button */}
               <button
-                onClick={handleAISuggest}
-                disabled={aiLoading || isPending}
-                title="Sugerir con IA"
-                className="flex-shrink-0 transition-colors disabled:opacity-40 text-purple-400 hover:text-purple-600"
-              >
-                {aiLoading
-                  ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
-                  : <Sparkles className="h-4 w-4" />
+                onClick={() => setShowTemplates((v) => !v)}
+                title="Plantillas rápidas"
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors"
+                style={
+                  showTemplates
+                    ? { background: "rgba(37,99,235,0.15)", color: "#2563EB", border: "1px solid rgba(37,99,235,0.25)" }
+                    : { background: "var(--surface-hover)", color: "var(--foreground-faint)", border: "1px solid var(--border)" }
                 }
+              >
+                <LayoutTemplate className="h-3.5 w-3.5" />
+                Plantillas
               </button>
-            )}
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              rows={2}
-              placeholder="Escribe un mensaje… (Enter para enviar)"
-              className="flex-1 resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm transition-all hover:bg-indigo-700 disabled:opacity-40"
-            >
-              <Send className="h-4 w-4" />
-            </button>
+
+              {/* AI Suggest button */}
+              {onRequestAISuggestion && (
+                <button
+                  onClick={handleAISuggest}
+                  disabled={aiLoading || isPending}
+                  title="Sugerir con IA"
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40"
+                  style={{
+                    background: "linear-gradient(135deg, rgba(124,58,237,0.15), rgba(37,99,235,0.15))",
+                    color: "#7C3AED",
+                    border: "1px solid rgba(124,58,237,0.25)",
+                  }}
+                >
+                  {aiLoading
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Bot className="h-3.5 w-3.5" />
+                  }
+                  Sugerir con IA
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Autopilot toggle label */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium" style={{ color: "var(--foreground-faint)" }}>Autopilot</span>
+                <button
+                  onClick={() => onToggleAutopilot(conv.id, !conv.autopilotActive)}
+                  className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors"
+                  style={{ background: conv.autopilotActive ? "#7C3AED" : "var(--border)" }}
+                >
+                  <span
+                    className="inline-block h-3 w-3 rounded-full bg-white shadow transition-transform"
+                    style={{ transform: conv.autopilotActive ? "translateX(14px)" : "translateX(1px)" }}
+                  />
+                </button>
+              </div>
+
+              {/* Send button */}
+              <button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-white transition-all disabled:opacity-40"
+                style={{ background: "linear-gradient(135deg, #2563EB 0%, #06B6D4 100%)" }}
+              >
+                <Send className="h-3.5 w-3.5" />
+                Enviar
+              </button>
+            </div>
           </div>
         </div>
       )}

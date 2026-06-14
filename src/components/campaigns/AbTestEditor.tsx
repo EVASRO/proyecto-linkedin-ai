@@ -34,20 +34,20 @@ export function AbTestEditor({
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
       {/* Header */}
       <div className="mb-4 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100">
-          <FlaskConical className="h-3.5 w-3.5 text-violet-600" />
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[rgba(124,58,237,0.12)]">
+          <FlaskConical className="h-3.5 w-3.5 text-[#7C3AED]" />
         </div>
         <div>
-          <h3 className="text-sm font-bold text-zinc-900">Editor A/B Test</h3>
-          <p className="text-[10px] text-zinc-400">
+          <h3 className="text-sm font-bold text-[var(--foreground)]">Editor A/B Test</h3>
+          <p className="text-[10px] text-[var(--foreground-faint)]">
             {abEnabled ? 'Test activo — el motor asigna variantes automáticamente' : 'Configura y activa el test'}
           </p>
         </div>
         {abEnabled && (
-          <span className="ml-auto rounded-full bg-violet-100 px-2.5 py-0.5 text-[10px] font-bold text-violet-700">
+          <span className="ml-auto rounded-full bg-[rgba(124,58,237,0.12)] px-2.5 py-0.5 text-[10px] font-bold text-[#7C3AED]">
             ACTIVO
           </span>
         )}
@@ -74,10 +74,10 @@ export function AbTestEditor({
       </div>
 
       {/* Hint */}
-      <p className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 text-[10px] text-zinc-500 leading-relaxed">
-        💡 Variables: <code className="rounded bg-zinc-200 px-1">{'{{nombre}}'}</code>{' '}
-        <code className="rounded bg-zinc-200 px-1">{'{{empresa}}'}</code>{' '}
-        <code className="rounded bg-zinc-200 px-1">{'{{cargo}}'}</code> · El motor asigna variante A o B
+      <p className="mt-3 rounded-lg bg-[var(--background)] px-3 py-2 text-[10px] text-[var(--foreground-muted)] leading-relaxed">
+        💡 Variables: <code className="rounded bg-[rgba(255,255,255,0.08)] px-1">{'{{nombre}}'}</code>{' '}
+        <code className="rounded bg-[rgba(255,255,255,0.08)] px-1">{'{{empresa}}'}</code>{' '}
+        <code className="rounded bg-[rgba(255,255,255,0.08)] px-1">{'{{cargo}}'}</code> · El motor asigna variante A o B
         aleatoriamente (50/50). Los resultados aparecen cuando cada variante tiene ≥ 30 leads.
       </p>
 
@@ -86,10 +86,10 @@ export function AbTestEditor({
         onClick={handleSave}
         disabled={saving || saved}
         className={[
-          'mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-colors',
+          'mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all',
           saved
-            ? 'bg-green-500 text-white'
-            : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60',
+            ? 'bg-[rgba(16,185,129,0.15)] text-[#10B981] border border-[rgba(16,185,129,0.3)]'
+            : 'bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white disabled:opacity-60',
         ].join(' ')}
       >
         {saved ? (
@@ -113,22 +113,25 @@ function VariantPanel({
   variant: Variant;
   onChange: (v: Variant) => void;
 }) {
-  const border  = color === 'blue' ? 'border-blue-200'   : 'border-violet-200';
-  const bg      = color === 'blue' ? 'bg-blue-50'        : 'bg-violet-50';
-  const badge   = color === 'blue' ? 'bg-blue-600'       : 'bg-violet-600';
-  const focus   = color === 'blue' ? 'focus:border-blue-400'   : 'focus:border-violet-400';
+  const borderColor = color === 'blue' ? 'border-[rgba(37,99,235,0.35)]'   : 'border-[rgba(124,58,237,0.35)]';
+  const bgColor     = color === 'blue' ? 'bg-[rgba(37,99,235,0.06)]'        : 'bg-[rgba(124,58,237,0.06)]';
+  const badge       = color === 'blue' ? 'bg-[#2563EB]'                     : 'bg-[#7C3AED]';
+  const labelColor  = color === 'blue' ? 'text-[#2563EB]'                   : 'text-[#7C3AED]';
+  const focusClass  = color === 'blue'
+    ? 'focus:border-[#2563EB] focus:ring-[rgba(37,99,235,0.3)]'
+    : 'focus:border-[#7C3AED] focus:ring-[rgba(124,58,237,0.3)]';
 
   return (
-    <div className={`rounded-xl border-2 p-4 space-y-3 ${border} ${bg}`}>
+    <div className={`rounded-xl border-2 p-4 space-y-3 ${borderColor} ${bgColor}`}>
       <div className="flex items-center gap-2">
         <span className={`rounded-full px-2 py-0.5 text-xs font-bold text-white ${badge}`}>
           {label}
         </span>
-        <span className="text-xs font-semibold text-zinc-600">Variante {label} ({sublabel})</span>
+        <span className={`text-xs font-semibold ${labelColor}`}>Variante {label} ({sublabel})</span>
       </div>
 
       <div>
-        <label className="block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <label className="block text-[10px] font-medium uppercase tracking-wide text-[var(--foreground-faint)]">
           Nota de conexión
         </label>
         <textarea
@@ -137,15 +140,15 @@ function VariantPanel({
           rows={3}
           placeholder={label === 'A' ? 'Hola {{nombre}}, vi tu perfil...' : '{{nombre}}, trabajo con empresas como {{empresa}}...'}
           className={[
-            'mt-1 w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2',
-            'text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-100',
-            focus,
+            'mt-1 w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2',
+            'text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:outline-none focus:ring-1',
+            focusClass,
           ].join(' ')}
         />
       </div>
 
       <div>
-        <label className="block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <label className="block text-[10px] font-medium uppercase tracking-wide text-[var(--foreground-faint)]">
           Primer mensaje (follow-up)
         </label>
         <textarea
@@ -154,9 +157,9 @@ function VariantPanel({
           rows={3}
           placeholder={label === 'A' ? 'Hola {{nombre}}, gracias por conectar...' : 'Hola {{nombre}}, noté que en {{empresa}}...'}
           className={[
-            'mt-1 w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2',
-            'text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-100',
-            focus,
+            'mt-1 w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2',
+            'text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:outline-none focus:ring-1',
+            focusClass,
           ].join(' ')}
         />
       </div>

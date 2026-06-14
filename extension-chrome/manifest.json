@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "NexusAI — Ghost Engine",
+  "name": "cazary.ai — Ghost Engine",
   "version": "3.0.0",
-  "description": "Automatiza LinkedIn con IA. Conectado a NexusAI via Supabase.",
+  "description": "Automatiza LinkedIn con IA. Conectado a cazary.ai via Supabase.",
 
   "permissions": [
     "activeTab", "scripting", "storage", "alarms", "tabs",
@@ -17,8 +17,8 @@
   "background": { "service_worker": "background.js" },
 
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "NexusAI Ghost Engine",
+    "default_popup": "popup/index.html",
+    "default_title": "cazary.ai Ghost Engine",
     "default_icon": {
       "16":  "icons/icon16.png",
       "48":  "icons/icon48.png",
@@ -38,10 +38,16 @@
     "run_at": "document_idle"
   }],
 
-  "web_accessible_resources": [{
-    "resources": ["config.js"],
-    "matches":   ["*://*.linkedin.com/*"]
-  }],
+  "web_accessible_resources": [
+    {
+      "resources": ["config.js"],
+      "matches":   ["*://*.linkedin.com/*"]
+    },
+    {
+      "resources": ["icons/*.png"],
+      "matches":   ["<all_urls>"]
+    }
+  ],
 
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"

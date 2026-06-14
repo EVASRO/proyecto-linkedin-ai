@@ -29,14 +29,14 @@ const ACTION_LABELS: Record<ActionType, string> = {
 };
 
 const TRIGGER_COLOR: Record<TriggerEvent, string> = {
-  moved_to_column: "bg-blue-50 text-blue-700",
-  tag_added:       "bg-violet-50 text-violet-700",
-  inactivity:      "bg-amber-50 text-amber-700",
+  moved_to_column: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]",
+  tag_added:       "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",
+  inactivity:      "bg-[rgba(245,158,11,0.12)] text-[#F59E0B]",
 };
 
 const ACTION_COLOR: Record<ActionType, string> = {
-  add_to_queue: "bg-indigo-50 text-indigo-700",
-  update_lead:  "bg-green-50 text-green-700",
+  add_to_queue: "bg-[rgba(37,99,235,0.18)] text-[#2563EB]",
+  update_lead:  "bg-[rgba(16,185,129,0.12)] text-[#10B981]",
 };
 
 // -- Empty state ---------------------------------------------------------------
@@ -44,18 +44,18 @@ const ACTION_COLOR: Record<ActionType, string> = {
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50">
-        <Zap className="h-8 w-8 text-amber-400" />
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[rgba(245,158,11,0.12)]">
+        <Zap className="h-8 w-8 text-[#F59E0B]" />
       </div>
       <div>
-        <p className="text-sm font-semibold text-zinc-700">Sin automatizaciones</p>
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="text-sm font-semibold text-[var(--foreground)]">Sin automatizaciones</p>
+        <p className="mt-1 text-xs text-[var(--foreground-faint)]">
           Crea reglas que se ejecutan automáticamente cuando ocurre un evento en el CRM
         </p>
       </div>
       <button
         onClick={onCreate}
-        className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-700 transition-colors"
+        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-xs font-bold text-white hover:opacity-90 transition-opacity"
       >
         <Plus className="h-3.5 w-3.5" />
         Crear primera automatización
@@ -118,23 +118,23 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
   }
 
   return (
-    <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl">
-      <p className="mb-5 text-sm font-bold text-zinc-900">Nueva automatización</p>
+    <div className="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
+      <p className="mb-5 text-sm font-bold text-[var(--foreground)]">Nueva automatización</p>
 
       {/* Name */}
       <div className="mb-4">
-        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-zinc-400">Nombre</label>
+        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-[var(--foreground-faint)]">Nombre</label>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Ej: Mensaje de bienvenida"
-          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
         />
       </div>
 
       {/* Trigger */}
-      <div className="mb-4 rounded-xl border border-zinc-100 bg-zinc-50 p-4 space-y-3">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 flex items-center gap-1.5">
+      <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 space-y-3">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-[#F59E0B] flex items-center gap-1.5">
           <Zap className="h-3 w-3" /> Disparador — SI ocurre
         </p>
 
@@ -142,13 +142,13 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
           <select
             value={trigger}
             onChange={(e) => setTrigger(e.target.value as TriggerEvent)}
-            className="w-full appearance-none rounded-lg border border-zinc-200 bg-white px-3 py-2 pr-8 text-xs focus:border-indigo-400 focus:outline-none"
+            className="w-full appearance-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 pr-8 text-xs text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
           >
             {(Object.keys(TRIGGER_LABELS) as TriggerEvent[]).map((t) => (
               <option key={t} value={t}>{TRIGGER_LABELS[t]}</option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-2 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+          <ChevronDown className="pointer-events-none absolute right-2 top-2.5 h-3.5 w-3.5 text-[var(--foreground-faint)]" />
         </div>
 
         {trigger === "moved_to_column" && (
@@ -156,11 +156,11 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
             <select
               value={colTarget}
               onChange={(e) => setColTarget(e.target.value)}
-              className="w-full appearance-none rounded-lg border border-zinc-200 bg-white px-3 py-2 pr-8 text-xs focus:border-indigo-400 focus:outline-none"
+              className="w-full appearance-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 pr-8 text-xs text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
             >
               {columns.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+            <ChevronDown className="pointer-events-none absolute right-2 top-2.5 h-3.5 w-3.5 text-[var(--foreground-faint)]" />
           </div>
         )}
 
@@ -169,7 +169,7 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
             value={tagVal}
             onChange={(e) => setTagVal(e.target.value)}
             placeholder="Nombre del tag (ej: VIP)"
-            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs focus:border-indigo-400 focus:outline-none"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
           />
         )}
 
@@ -181,16 +181,16 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
               max={90}
               value={inactDays}
               onChange={(e) => setInactDays(parseInt(e.target.value) || 7)}
-              className="w-20 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-center text-xs focus:border-indigo-400 focus:outline-none"
+              className="w-20 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-center text-xs text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
             />
-            <span className="text-xs text-zinc-500">días sin actividad</span>
+            <span className="text-xs text-[var(--foreground-muted)]">días sin actividad</span>
           </div>
         )}
       </div>
 
       {/* Action */}
-      <div className="mb-5 rounded-xl border border-zinc-100 bg-zinc-50 p-4 space-y-3">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 flex items-center gap-1.5">
+      <div className="mb-5 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 space-y-3">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-[#2563EB] flex items-center gap-1.5">
           <Bot className="h-3 w-3" /> Acción — ENTONCES ejecutar
         </p>
 
@@ -198,13 +198,13 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
           <select
             value={action}
             onChange={(e) => setAction(e.target.value as ActionType)}
-            className="w-full appearance-none rounded-lg border border-zinc-200 bg-white px-3 py-2 pr-8 text-xs focus:border-indigo-400 focus:outline-none"
+            className="w-full appearance-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 pr-8 text-xs text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
           >
             {(Object.keys(ACTION_LABELS) as ActionType[]).map((a) => (
               <option key={a} value={a}>{ACTION_LABELS[a]}</option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-2 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+          <ChevronDown className="pointer-events-none absolute right-2 top-2.5 h-3.5 w-3.5 text-[var(--foreground-faint)]" />
         </div>
 
         {action === "add_to_queue" && (
@@ -214,39 +214,39 @@ function CreateForm({ columns, onCreated, onCancel }: CreateFormProps) {
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
               placeholder="Texto del mensaje (puede usar {{nombre}}, {{empresa}})"
-              className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs focus:border-indigo-400 focus:outline-none"
+              className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
             />
             <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-500">Retraso:</span>
+              <span className="text-xs text-[var(--foreground-muted)]">Retraso:</span>
               <input
                 type="number"
                 min={0}
                 value={delayH}
                 onChange={(e) => setDelayH(parseInt(e.target.value) || 0)}
-                className="w-16 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-center text-xs focus:border-indigo-400 focus:outline-none"
+                className="w-16 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-center text-xs text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
               />
-              <span className="text-xs text-zinc-500">horas</span>
+              <span className="text-xs text-[var(--foreground-muted)]">horas</span>
             </div>
           </>
         )}
       </div>
 
       {error && (
-        <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 border border-red-200">{error}</p>
+        <p className="mb-3 rounded-lg bg-[rgba(239,68,68,0.12)] px-3 py-2 text-xs text-[#EF4444] border border-[rgba(239,68,68,0.25)]">{error}</p>
       )}
 
       <div className="flex gap-2">
         <button
           onClick={submit}
           disabled={isPending}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 py-2.5 text-xs font-bold text-white hover:bg-zinc-700 disabled:opacity-60 transition-colors"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] py-2.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-60 transition-opacity"
         >
           {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
           Crear automatización
         </button>
         <button
           onClick={onCancel}
-          className="rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-50 transition-colors"
+          className="rounded-xl border border-[var(--border)] px-4 py-2.5 text-xs font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
         >
           Cancelar
         </button>
@@ -272,13 +272,15 @@ function AutoCard({ auto, columns, onToggle, onDelete }: AutoCardProps) {
   return (
     <div className={[
       "flex flex-col gap-3 rounded-2xl border p-4 shadow-sm transition-all",
-      auto.is_active ? "border-zinc-200 bg-white" : "border-zinc-100 bg-zinc-50 opacity-60",
+      auto.is_active
+        ? "border-[var(--border)] bg-[var(--surface)]"
+        : "border-[var(--border)] bg-[var(--background)] opacity-60",
     ].join(" ")}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-zinc-900 leading-tight">{auto.name}</p>
-          <p className="mt-0.5 text-[10px] text-zinc-400">{new Date(auto.created_at).toLocaleDateString("es-PE")}</p>
+          <p className="text-sm font-bold text-[var(--foreground)] leading-tight">{auto.name}</p>
+          <p className="mt-0.5 text-[10px] text-[var(--foreground-faint)]">{new Date(auto.created_at).toLocaleDateString("es-PE")}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Toggle */}
@@ -286,7 +288,7 @@ function AutoCard({ auto, columns, onToggle, onDelete }: AutoCardProps) {
             onClick={() => onToggle(auto.id, !auto.is_active)}
             className={[
               "relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors",
-              auto.is_active ? "bg-green-500" : "bg-zinc-300",
+              auto.is_active ? "bg-[#10B981]" : "bg-[rgba(255,255,255,0.15)]",
             ].join(" ")}
           >
             <span className={[
@@ -296,7 +298,7 @@ function AutoCard({ auto, columns, onToggle, onDelete }: AutoCardProps) {
           </button>
           <button
             onClick={() => onDelete(auto.id)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--foreground-faint)] hover:bg-[rgba(239,68,68,0.12)] hover:text-[#EF4444] transition-colors"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
@@ -305,37 +307,37 @@ function AutoCard({ auto, columns, onToggle, onDelete }: AutoCardProps) {
 
       {/* SI block */}
       <div className="flex items-start gap-2.5">
-        <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md ${TRIGGER_COLOR[trigger] ?? "bg-zinc-50 text-zinc-500"}`}>
+        <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md ${TRIGGER_COLOR[trigger] ?? "bg-[rgba(255,255,255,0.06)] text-[var(--foreground-muted)]"}`}>
           <Zap className="h-3 w-3" />
         </div>
         <div className="min-w-0">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-400">SI</p>
-          <p className="text-[11px] text-zinc-700 leading-snug">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--foreground-faint)]">SI</p>
+          <p className="text-[11px] text-[var(--foreground-muted)] leading-snug">
             {TRIGGER_LABELS[trigger]}
-            {colTitle && <span className="ml-1 font-semibold">→ {colTitle}</span>}
+            {colTitle && <span className="ml-1 font-semibold text-[var(--foreground)]">→ {colTitle}</span>}
             {trigger === "tag_added" && (
-              <span className="ml-1 font-semibold">"{String((auto.trigger_condition as Record<string,unknown>).tag ?? "")}"</span>
+              <span className="ml-1 font-semibold text-[var(--foreground)]">"{String((auto.trigger_condition as Record<string,unknown>).tag ?? "")}"</span>
             )}
             {trigger === "inactivity" && (
-              <span className="ml-1 font-semibold">{String((auto.trigger_condition as Record<string,unknown>).days ?? 7)} días</span>
+              <span className="ml-1 font-semibold text-[var(--foreground)]">{String((auto.trigger_condition as Record<string,unknown>).days ?? 7)} días</span>
             )}
           </p>
         </div>
       </div>
 
       {/* Connector */}
-      <div className="ml-3 border-l-2 border-dashed border-zinc-150 pl-5 h-3" />
+      <div className="ml-3 border-l-2 border-dashed border-[var(--border)] pl-5 h-3" />
 
       {/* ENTONCES block */}
       <div className="flex items-start gap-2.5">
-        <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md ${ACTION_COLOR[action] ?? "bg-zinc-50 text-zinc-500"}`}>
+        <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md ${ACTION_COLOR[action] ?? "bg-[rgba(255,255,255,0.06)] text-[var(--foreground-muted)]"}`}>
           <Bot className="h-3 w-3" />
         </div>
         <div className="min-w-0">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-400">ENTONCES</p>
-          <p className="text-[11px] text-zinc-700 leading-snug">{ACTION_LABELS[action]}</p>
+          <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--foreground-faint)]">ENTONCES</p>
+          <p className="text-[11px] text-[var(--foreground-muted)] leading-snug">{ACTION_LABELS[action]}</p>
           {action === "add_to_queue" && !!(auto.action_payload as Record<string,unknown>).message && (
-            <p className="mt-0.5 text-[10px] text-zinc-400 line-clamp-1">
+            <p className="mt-0.5 text-[10px] text-[var(--foreground-faint)] line-clamp-1">
               &ldquo;{String((auto.action_payload as Record<string,unknown>).message)}&rdquo;
             </p>
           )}
@@ -381,13 +383,13 @@ export function AutomationMatrix({ columns, initialAutomations }: AutomationMatr
       {/* Header row */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-bold text-zinc-900">Automatizaciones CRM</p>
-          <p className="text-[11px] text-zinc-400">{automations.length} regla{automations.length !== 1 ? "s" : ""} configurada{automations.length !== 1 ? "s" : ""}</p>
+          <p className="text-sm font-bold text-[var(--foreground)]">Automatizaciones CRM</p>
+          <p className="text-[11px] text-[var(--foreground-faint)]">{automations.length} regla{automations.length !== 1 ? "s" : ""} configurada{automations.length !== 1 ? "s" : ""}</p>
         </div>
         {!creating && (
           <button
             onClick={() => setCreating(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-amber-200 hover:from-amber-500 hover:to-orange-600 transition-all"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-xs font-bold text-white hover:opacity-90 transition-opacity"
           >
             <Plus className="h-3.5 w-3.5" />
             Nueva automatización

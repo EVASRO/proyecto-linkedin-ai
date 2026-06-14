@@ -6,15 +6,15 @@ import { saveWorkspaceSettings, testAutopilotWebhook } from "@/app/dashboard/set
 import type { WorkspaceSettingsData } from "@/app/dashboard/settings/actions";
 
 const inputCls =
-  "w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all";
+  "w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-all";
 
 const selectCls =
-  "w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all";
+  "w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-all";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</label>
+      <label className="text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">{label}</label>
       {children}
     </div>
   );
@@ -36,7 +36,7 @@ const DAYS = [
   { value: 0, label: "Dom" },
 ];
 
-const AUTOPILOT_SECRET = "nexusai-autopilot-2024";
+const AUTOPILOT_SECRET = "cazary-autopilot-2025";
 
 function AutopilotWebhookInstructions({ appUrl }: { appUrl: string }) {
   const webhookUrl = `${appUrl}/api/autopilot/trigger`;
@@ -56,30 +56,30 @@ function AutopilotWebhookInstructions({ appUrl }: { appUrl: string }) {
   ];
 
   return (
-    <div className="rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 space-y-3">
+    <div className="rounded-xl border border-[rgba(139,92,246,0.3)] bg-[rgba(139,92,246,0.08)] p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Bot className="h-4 w-4 text-violet-400" />
-        <h3 className="text-sm font-bold text-zinc-100">Configurar Autopilot IA</h3>
+        <h3 className="text-sm font-bold text-[var(--foreground)]">Configurar Autopilot IA</h3>
       </div>
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-[var(--foreground-muted)]">
         Para activar el Autopilot, configura este webhook en Supabase:
       </p>
       <div className="space-y-2">
         {rows.map((row) => (
           <div
             key={row.label}
-            className="flex items-center justify-between rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 py-2"
+            className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
           >
-            <span className="text-[11px] text-zinc-500 w-36 shrink-0">{row.label}</span>
+            <span className="text-[11px] text-[var(--foreground-faint)] w-36 shrink-0">{row.label}</span>
             <code className="text-[11px] text-violet-300 font-mono flex-1 truncate">{row.value}</code>
             <button
               type="button"
               onClick={() => copy(row.value, row.label)}
-              className="ml-2 text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="ml-2 text-[var(--foreground-faint)] hover:text-[var(--foreground-muted)] transition-colors"
               title="Copiar"
             >
               {copied === row.label
-                ? <Check className="h-3 w-3 text-emerald-400" />
+                ? <Check className="h-3 w-3 text-[#10B981]" />
                 : <Copy className="h-3 w-3" />}
             </button>
           </div>
@@ -145,12 +145,12 @@ export function WorkspaceSettings({ initial, appUrl = "" }: Props) {
   return (
     <div className="max-w-xl space-y-8">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-100">Workspace</h2>
-        <p className="text-sm text-zinc-400">Configura la identidad y zona horaria de tu workspace</p>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">Workspace</h2>
+        <p className="text-sm text-[var(--foreground-muted)]">Configura la identidad y zona horaria de tu workspace</p>
       </div>
 
 
-      <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
         <Field label="Nombre del workspace">
           <input
             type="text"
@@ -215,8 +215,8 @@ export function WorkspaceSettings({ initial, appUrl = "" }: Props) {
                   key={value}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
                     isActive
-                      ? "border-emerald-600 bg-emerald-600/20 text-emerald-300"
-                      : "border-zinc-700 bg-zinc-800 text-zinc-500"
+                      ? "border-[rgba(37,99,235,0.5)] bg-[rgba(37,99,235,0.15)] text-[#2563EB]"
+                      : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-faint)]"
                   }`}
                 >
                   {label}
@@ -224,7 +224,7 @@ export function WorkspaceSettings({ initial, appUrl = "" }: Props) {
               );
             })}
           </div>
-          <p className="text-xs text-zinc-600 mt-1">Lun–Vie por defecto (edición de días próximamente)</p>
+          <p className="text-xs text-[var(--foreground-faint)] mt-1">Lun–Vie por defecto (edición de días próximamente)</p>
         </Field>
 
         {error && (
@@ -244,7 +244,7 @@ export function WorkspaceSettings({ initial, appUrl = "" }: Props) {
           type="button"
           onClick={handleSave}
           disabled={isPending}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
         >
           {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           Guardar
@@ -253,8 +253,8 @@ export function WorkspaceSettings({ initial, appUrl = "" }: Props) {
 
       {/* Autopilot webhook section */}
       <div>
-        <h2 className="text-lg font-semibold text-zinc-100">Autopilot IA</h2>
-        <p className="text-sm text-zinc-400 mb-4">Conecta el webhook de Supabase para respuestas automáticas</p>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">Autopilot IA</h2>
+        <p className="text-sm text-[var(--foreground-muted)] mb-4">Conecta el webhook de Supabase para respuestas automáticas</p>
 
         <AutopilotWebhookInstructions appUrl={appUrl} />
 
@@ -263,7 +263,7 @@ export function WorkspaceSettings({ initial, appUrl = "" }: Props) {
             type="button"
             onClick={handleTest}
             disabled={testPending}
-            className="flex items-center gap-2 rounded-lg border border-violet-700 bg-violet-900/30 px-4 py-2 text-sm font-semibold text-violet-300 transition-colors hover:bg-violet-800/40 disabled:opacity-60"
+            className="flex items-center gap-2 rounded-lg border border-[rgba(139,92,246,0.5)] bg-[rgba(139,92,246,0.12)] px-4 py-2 text-sm font-semibold text-[#A78BFA] transition-colors hover:bg-[rgba(139,92,246,0.2)] disabled:opacity-60"
           >
             {testPending
               ? <Loader2 className="h-4 w-4 animate-spin" />

@@ -16,7 +16,7 @@ const VARS = [
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--foreground-faint)]">
       {children}
     </label>
   );
@@ -69,7 +69,7 @@ function SmartTextarea({ id, value, onChange, placeholder, maxLength, rows = 4 }
         }}
         rows={rows}
         placeholder={placeholder}
-        className="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-colors"
+        className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-colors"
       />
       <div className="mt-1 flex items-center justify-between">
         <div className="flex flex-wrap gap-1">
@@ -78,14 +78,14 @@ function SmartTextarea({ id, value, onChange, placeholder, maxLength, rows = 4 }
               key={v.token}
               type="button"
               onClick={() => insertAtCursor(v.token)}
-              className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100 transition-colors"
+              className="rounded-md bg-[rgba(37,99,235,0.12)] px-2 py-0.5 text-[10px] font-medium text-[#2563EB] hover:bg-[rgba(37,99,235,0.2)] transition-colors"
             >
               {`{{${v.label}}}`}
             </button>
           ))}
         </div>
         {limit > 0 && (
-          <span className={`text-[10px] tabular-nums ${near ? "text-amber-500 font-semibold" : "text-zinc-400"}`}>
+          <span className={`text-[10px] tabular-nums ${near ? "text-[#F59E0B] font-semibold" : "text-[var(--foreground-faint)]"}`}>
             {len}/{limit}
           </span>
         )}
@@ -97,7 +97,7 @@ function SmartTextarea({ id, value, onChange, placeholder, maxLength, rows = 4 }
 // -- Toggle --------------------------------------------------------------------
 
 function Toggle({
-  checked, onChange, label, description, color = "bg-indigo-500",
+  checked, onChange, label, description, color = "bg-[#2563EB]",
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
@@ -106,17 +106,17 @@ function Toggle({
   color?: string;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2.5 gap-3">
+    <div className="flex items-center justify-between rounded-lg border border-[var(--border)] px-3 py-2.5 gap-3">
       <div className="min-w-0">
-        <p className="text-xs font-medium text-zinc-800">{label}</p>
-        {description && <p className="text-[10px] text-zinc-400 leading-snug">{description}</p>}
+        <p className="text-xs font-medium text-[var(--foreground)]">{label}</p>
+        {description && <p className="text-[10px] text-[var(--foreground-muted)] leading-snug">{description}</p>}
       </div>
       <button
         type="button"
         onClick={() => onChange(!checked)}
         className={[
           "relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors",
-          checked ? color : "bg-zinc-300",
+          checked ? color : "bg-[var(--border)]",
         ].join(" ")}
       >
         <span className={[
@@ -137,11 +137,19 @@ function ConnectPanel({ data, update }: { data: NodeData; update: (p: Partial<No
   return (
     <div className="space-y-4">
       <Toggle
+        checked={!!data.requirePageView}
+        onChange={(v) => update({ requirePageView: v })}
+        label="Visita de perfil antes de conectar"
+        description="Más natural pero más lento. OFF = modo rápido (recomendado)"
+        color="bg-[#F59E0B]"
+      />
+
+      <Toggle
         checked={!!data.addNote}
         onChange={(v) => update({ addNote: v })}
         label="Añadir nota de conexión"
         description="Mensaje opcional al enviar la solicitud"
-        color="bg-indigo-500"
+        color="bg-[#2563EB]"
       />
 
       {data.addNote && (
@@ -150,13 +158,13 @@ function ConnectPanel({ data, update }: { data: NodeData; update: (p: Partial<No
             checked={!!data.useABTest}
             onChange={(v) => update({ useABTest: v })}
             label="Test A/B en nota"
-            color="bg-violet-500"
+            color="bg-[#06B6D4]"
           />
 
           {data.useABTest ? (
             <>
               {/* A/B mode selector */}
-              <div className="flex overflow-hidden rounded-lg border border-zinc-200">
+              <div className="flex overflow-hidden rounded-lg border border-[var(--border)]">
                 {([
                   { value: "note_vs_note",    label: "Nota A vs Nota B"      },
                   { value: "note_vs_no_note", label: "Con nota vs Sin nota"  },
@@ -166,10 +174,10 @@ function ConnectPanel({ data, update }: { data: NodeData; update: (p: Partial<No
                     type="button"
                     onClick={() => update({ abNoteMode: opt.value })}
                     className={[
-                      "flex-1 px-2 py-1.5 text-[10px] font-semibold transition-colors border-r last:border-r-0 border-zinc-200",
+                      "flex-1 px-2 py-1.5 text-[10px] font-semibold transition-colors border-r last:border-r-0 border-[var(--border)]",
                       abMode === opt.value
-                        ? "bg-violet-100 text-violet-700 border-violet-300"
-                        : "bg-white text-zinc-500 hover:bg-zinc-50",
+                        ? "bg-[rgba(6,182,212,0.15)] text-[#06B6D4] border-[rgba(6,182,212,0.3)]"
+                        : "bg-[var(--background)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]",
                     ].join(" ")}
                   >
                     {opt.label}
@@ -190,7 +198,7 @@ function ConnectPanel({ data, update }: { data: NodeData; update: (p: Partial<No
                       rows={4}
                     />
                   </div>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-700">
+                  <div className="rounded-lg border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] px-3 py-2.5 text-[11px] text-[#F59E0B]">
                     Variante B enviará la solicitud <strong>SIN nota</strong> de conexión
                   </div>
                 </>
@@ -248,7 +256,7 @@ function MessagePanel({ data, update }: { data: NodeData; update: (p: Partial<No
         onChange={(v) => update({ useABTest: v })}
         label="Test A/B"
         description="Probar dos versiones del mensaje"
-        color="bg-violet-500"
+        color="bg-[#06B6D4]"
       />
 
       {data.useABTest ? (
@@ -302,7 +310,7 @@ function DelayPanel({ data, update }: { data: NodeData; update: (p: Partial<Node
           <button
             type="button"
             onClick={() => update({ days: Math.max(1, days - 1) })}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-lg text-zinc-600 hover:bg-zinc-50"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-lg text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]"
           >
             −
           </button>
@@ -312,18 +320,18 @@ function DelayPanel({ data, update }: { data: NodeData; update: (p: Partial<Node
             max={unit === "dias" ? 30 : 168}
             value={days}
             onChange={(e) => update({ days: Math.max(1, parseInt(e.target.value) || 1) })}
-            className="w-16 rounded-lg border border-zinc-200 px-2 py-1.5 text-center text-sm font-bold focus:border-indigo-400 focus:outline-none"
+            className="w-16 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-center text-sm font-bold text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none"
           />
           <button
             type="button"
             onClick={() => update({ days: days + 1 })}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-lg text-zinc-600 hover:bg-zinc-50"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-lg text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]"
           >
             +
           </button>
 
           {/* Unit selector */}
-          <div className="flex rounded-lg border border-zinc-200 overflow-hidden">
+          <div className="flex rounded-lg border border-[var(--border)] overflow-hidden">
             {(["dias", "horas"] as const).map((u) => (
               <button
                 key={u}
@@ -332,8 +340,8 @@ function DelayPanel({ data, update }: { data: NodeData; update: (p: Partial<Node
                 className={[
                   "px-3 py-1.5 text-xs font-medium transition-colors",
                   unit === u
-                    ? "bg-amber-500 text-white"
-                    : "bg-white text-zinc-600 hover:bg-zinc-50",
+                    ? "bg-[#F59E0B] text-white"
+                    : "bg-[var(--background)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]",
                 ].join(" ")}
               >
                 {u === "dias" ? "Días" : "Horas"}
@@ -341,7 +349,7 @@ function DelayPanel({ data, update }: { data: NodeData; update: (p: Partial<Node
             ))}
           </div>
         </div>
-        <p className="mt-2 text-[10px] text-zinc-400">
+        <p className="mt-2 text-[10px] text-[var(--foreground-faint)]">
           El lead avanzará al siguiente paso después de {days} {unit === "horas" ? `hora${days !== 1 ? "s" : ""}` : `día${days !== 1 ? "s" : ""}`}.
         </p>
       </div>
@@ -369,16 +377,16 @@ function ConditionPanel({ data, update }: { data: NodeData; update: (p: Partial<
               className={[
                 "flex w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors",
                 data.conditionType === opt.value
-                  ? "border-orange-300 bg-orange-50"
-                  : "border-zinc-200 bg-white hover:bg-zinc-50",
+                  ? "border-[rgba(245,158,11,0.4)] bg-[rgba(245,158,11,0.08)]"
+                  : "border-[var(--border)] bg-[var(--background)] hover:bg-[rgba(255,255,255,0.04)]",
               ].join(" ")}
             >
-              <span className="mt-0.5 text-[10px]">{data.conditionType === opt.value ? "●" : "○"}</span>
+              <span className="mt-0.5 text-[10px] text-[var(--foreground-muted)]">{data.conditionType === opt.value ? "●" : "○"}</span>
               <div>
-                <p className={`text-[11px] font-semibold ${data.conditionType === opt.value ? "text-orange-800" : "text-zinc-800"}`}>
+                <p className={`text-[11px] font-semibold ${data.conditionType === opt.value ? "text-[#F59E0B]" : "text-[var(--foreground)]"}`}>
                   {opt.label}
                 </p>
-                <p className="text-[10px] text-zinc-400">{opt.desc}</p>
+                <p className="text-[10px] text-[var(--foreground-faint)]">{opt.desc}</p>
               </div>
             </button>
           ))}
@@ -394,19 +402,19 @@ function ConditionPanel({ data, update }: { data: NodeData; update: (p: Partial<
             max={60}
             value={data.waitDays ?? 5}
             onChange={(e) => update({ waitDays: parseInt(e.target.value) || 5 })}
-            className="w-24 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-bold focus:border-orange-400 focus:outline-none"
+            className="w-24 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm font-bold text-[var(--foreground)] focus:border-[#F59E0B] focus:outline-none"
           />
         </div>
       )}
 
-      <div className="rounded-lg bg-zinc-50 p-3 text-[11px] text-zinc-500 space-y-1">
-        <p className="font-semibold text-zinc-700">Ramas de salida:</p>
+      <div className="rounded-lg bg-[var(--surface)] p-3 text-[11px] text-[var(--foreground-muted)] space-y-1">
+        <p className="font-semibold text-[var(--foreground)]">Ramas de salida:</p>
         <p className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
+          <span className="h-2 w-2 rounded-full bg-[#10B981] flex-shrink-0" />
           Rama SÍ — condición cumplida
         </p>
         <p className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-red-400 flex-shrink-0" />
+          <span className="h-2 w-2 rounded-full bg-[#EF4444] flex-shrink-0" />
           Rama NO — condición no cumplida
         </p>
       </div>
@@ -423,7 +431,7 @@ function EmailPanel({ data, update }: { data: NodeData; update: (p: Partial<Node
           value={data.subject ?? ""}
           onChange={(e) => update({ subject: e.target.value })}
           placeholder="Ej: Una idea para {{empresa}}"
-          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+          className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
         />
       </div>
 
@@ -432,7 +440,7 @@ function EmailPanel({ data, update }: { data: NodeData; update: (p: Partial<Node
         onChange={(v) => update({ useABTest: v })}
         label="Test A/B"
         description="Probar dos cuerpos diferentes"
-        color="bg-violet-500"
+        color="bg-[#06B6D4]"
       />
 
       {data.useABTest ? (
@@ -476,7 +484,7 @@ function AutopilotPanel({ data, update }: { data: NodeData; update: (p: Partial<
         onChange={(v) => update({ autopilotEnabled: v })}
         label="Agente Autopilot IA"
         description="Claude toma el control de la conversación"
-        color="bg-purple-600"
+        color="bg-gradient-to-r from-[#2563EB] to-[#06B6D4]"
       />
 
       {enabled && (
@@ -488,7 +496,7 @@ function AutopilotPanel({ data, update }: { data: NodeData; update: (p: Partial<
               onChange={(e) => update({ autopilotObjective: e.target.value })}
               rows={3}
               placeholder="Ej: Agendar una demo de 30 minutos…"
-              className="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
+              className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
             />
           </div>
 
@@ -503,8 +511,8 @@ function AutopilotPanel({ data, update }: { data: NodeData; update: (p: Partial<
                   className={[
                     "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
                     style === s.value
-                      ? "border-purple-300 bg-purple-50 text-purple-800"
-                      : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
+                      ? "border-[rgba(37,99,235,0.4)] bg-[rgba(37,99,235,0.08)] text-[#2563EB]"
+                      : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]",
                   ].join(" ")}
                 >
                   <span className="mt-0.5 text-[10px]">{style === s.value ? "●" : "○"}</span>
@@ -520,10 +528,10 @@ function AutopilotPanel({ data, update }: { data: NodeData; update: (p: Partial<
           <div>
             <FieldLabel>Máximo de turnos de negociación</FieldLabel>
             <div className="flex items-center gap-3">
-              <button type="button" onClick={() => update({ autopilotMaxTurns: Math.max(1, maxTurns - 1) })} className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50">−</button>
-              <span className="w-8 text-center text-sm font-bold text-zinc-900">{maxTurns}</span>
-              <button type="button" onClick={() => update({ autopilotMaxTurns: Math.min(20, maxTurns + 1) })} className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50">+</button>
-              <span className="text-[10px] text-zinc-400">intercambios</span>
+              <button type="button" onClick={() => update({ autopilotMaxTurns: Math.max(1, maxTurns - 1) })} className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]">−</button>
+              <span className="w-8 text-center text-sm font-bold text-[var(--foreground)]">{maxTurns}</span>
+              <button type="button" onClick={() => update({ autopilotMaxTurns: Math.min(20, maxTurns + 1) })} className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]">+</button>
+              <span className="text-[10px] text-[var(--foreground-faint)]">intercambios</span>
             </div>
           </div>
 
@@ -533,11 +541,11 @@ function AutopilotPanel({ data, update }: { data: NodeData; update: (p: Partial<
               value={calendarUrl}
               onChange={(e) => update({ autopilotCalendar: e.target.value })}
               placeholder="https://calendly.com/tu-usuario/demo"
-              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
             />
           </div>
 
-          <div className="rounded-lg bg-purple-50 px-3 py-2.5 text-[10px] leading-relaxed text-purple-700">
+          <div className="rounded-lg bg-[rgba(37,99,235,0.08)] border border-[rgba(37,99,235,0.2)] px-3 py-2.5 text-[10px] leading-relaxed text-[#2563EB]">
             <span className="font-bold">Modo Autopilot activo:</span> Claude responderá, gestionará objeciones y enviará el enlace del calendario cuando detecte intención de agendar.
           </div>
         </>
@@ -548,7 +556,7 @@ function AutopilotPanel({ data, update }: { data: NodeData; update: (p: Partial<
 
 function WithdrawPanel() {
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-[11px] leading-relaxed text-red-700">
+    <div className="rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] px-3 py-3 text-[11px] leading-relaxed text-[#EF4444]">
       Este nodo retira la solicitud de conexión pendiente si aún no fue aceptada,
       o elimina la conexión existente. Úsalo al final de flujos de limpieza.
     </div>
@@ -558,8 +566,8 @@ function WithdrawPanel() {
 function FindEmailPanel({ data, update }: { data: NodeData; update: (p: Partial<NodeData>) => void }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-3 text-[11px] leading-relaxed text-teal-700">
-        NexusAI visitará el perfil de LinkedIn del lead y buscará su email en la
+      <div className="rounded-lg border border-[rgba(6,182,212,0.3)] bg-[rgba(6,182,212,0.08)] px-3 py-3 text-[11px] leading-relaxed text-[#06B6D4]">
+        cazary.ai visitará el perfil de LinkedIn del lead y buscará su email en la
         sección &ldquo;Información de contacto&rdquo;. Si lo encuentra, lo guardará en el campo
         email del lead en la base de datos.
       </div>
@@ -568,7 +576,7 @@ function FindEmailPanel({ data, update }: { data: NodeData; update: (p: Partial<
         onChange={(v) => update({ skipIfExists: v })}
         label="Saltar si ya tiene email"
         description="No visitar el perfil si el lead ya tiene email en BD"
-        color="bg-teal-500"
+        color="bg-[#06B6D4]"
       />
     </div>
   );
@@ -577,8 +585,8 @@ function FindEmailPanel({ data, update }: { data: NodeData; update: (p: Partial<
 function FindPhonePanel({ data, update }: { data: NodeData; update: (p: Partial<NodeData>) => void }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-3 text-[11px] leading-relaxed text-teal-700">
-        NexusAI visitará el perfil de LinkedIn del lead y buscará su número de teléfono en la
+      <div className="rounded-lg border border-[rgba(6,182,212,0.3)] bg-[rgba(6,182,212,0.08)] px-3 py-3 text-[11px] leading-relaxed text-[#06B6D4]">
+        cazary.ai visitará el perfil de LinkedIn del lead y buscará su número de teléfono en la
         sección &ldquo;Información de contacto&rdquo;. Si lo encuentra, lo guardará en el campo
         teléfono del lead en la base de datos.
       </div>
@@ -587,7 +595,7 @@ function FindPhonePanel({ data, update }: { data: NodeData; update: (p: Partial<
         onChange={(v) => update({ skipIfExists: v })}
         label="Saltar si ya tiene teléfono"
         description="No visitar el perfil si el lead ya tiene teléfono en BD"
-        color="bg-teal-500"
+        color="bg-[#06B6D4]"
       />
     </div>
   );
@@ -596,7 +604,7 @@ function FindPhonePanel({ data, update }: { data: NodeData; update: (p: Partial<
 function ConnectEmailPanel({ data, update }: { data: NodeData; update: (p: Partial<NodeData>) => void }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-3 text-[11px] leading-relaxed text-violet-700">
+      <div className="rounded-lg border border-[rgba(37,99,235,0.3)] bg-[rgba(37,99,235,0.08)] px-3 py-3 text-[11px] leading-relaxed text-[#2563EB]">
         Envía una solicitud de conexión de LinkedIn usando el email del lead.
         Requiere que el lead tenga email guardado en BD (usa &ldquo;Buscar Email&rdquo; antes).
       </div>
@@ -605,7 +613,7 @@ function ConnectEmailPanel({ data, update }: { data: NodeData; update: (p: Parti
         onChange={(v) => update({ addNote: v })}
         label="Añadir nota de conexión"
         description="Incluir mensaje personalizado en la solicitud"
-        color="bg-violet-500"
+        color="bg-[#2563EB]"
       />
       {data.addNote ? (
         <div>
@@ -620,7 +628,7 @@ function ConnectEmailPanel({ data, update }: { data: NodeData; update: (p: Parti
           />
         </div>
       ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+        <div className="rounded-lg border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] px-3 py-2 text-[11px] text-[#F59E0B]">
           Se enviará sin nota de conexión
         </div>
       )}
@@ -662,18 +670,18 @@ export function PropertyPanel({ node, onUpdate, onDelete, onClose }: PropertyPan
   }
 
   return (
-    <div className="flex h-full w-80 flex-shrink-0 flex-col overflow-hidden border-l border-zinc-200 bg-white">
+    <div className="flex h-full w-80 flex-shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--surface)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Configurar nodo</p>
-          <p className="text-sm font-bold text-zinc-900">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--foreground-faint)]">Configurar nodo</p>
+          <p className="text-sm font-bold text-[var(--foreground)]">
             {TYPE_LABELS[node.type ?? ""] ?? TYPE_LABELS[nodeType] ?? data.label}
           </p>
         </div>
         <button
           onClick={onClose}
-          className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+          className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--foreground)] transition-colors"
         >
           <X className="h-4 w-4" />
         </button>
@@ -681,12 +689,12 @@ export function PropertyPanel({ node, onUpdate, onDelete, onClose }: PropertyPan
 
       {/* Node label editor */}
       {!isStart && !isEnd && (
-        <div className="border-b border-zinc-100 px-4 py-3">
+        <div className="border-b border-[var(--border)] px-4 py-3">
           <FieldLabel>Etiqueta del nodo</FieldLabel>
           <input
             value={data.label}
             onChange={(e) => update({ label: e.target.value })}
-            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-900 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
           />
         </div>
       )}
@@ -704,7 +712,7 @@ export function PropertyPanel({ node, onUpdate, onDelete, onClose }: PropertyPan
         {nodeType === "find_phone"                 && <FindPhonePanel     data={data} update={update} />}
         {nodeType === "connect_email"              && <ConnectEmailPanel  data={data} update={update} />}
         {(isStart || isEnd || ["visit", "like"].includes(nodeType)) && (
-          <p className="pt-4 text-center text-xs text-zinc-400">
+          <p className="pt-4 text-center text-xs text-[var(--foreground-muted)]">
             Este nodo no requiere configuración adicional.
           </p>
         )}
@@ -712,10 +720,10 @@ export function PropertyPanel({ node, onUpdate, onDelete, onClose }: PropertyPan
 
       {/* Delete button */}
       {!isStart && (
-        <div className="border-t border-zinc-100 px-4 py-3">
+        <div className="border-t border-[var(--border)] px-4 py-3">
           <button
             onClick={() => onDelete(node.id)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 transition-colors"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] px-3 py-2 text-xs font-semibold text-[#EF4444] hover:bg-[rgba(239,68,68,0.15)] transition-colors"
           >
             <Trash2 className="h-3.5 w-3.5" />
             Eliminar nodo

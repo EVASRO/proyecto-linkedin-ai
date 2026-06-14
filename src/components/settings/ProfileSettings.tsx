@@ -7,12 +7,12 @@ import type { UserProfileData } from "@/app/dashboard/settings/actions";
 import { createClient } from "@/lib/supabase/browser";
 
 const inputCls =
-  "w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all";
+  "w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-all";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</label>
+      <label className="text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">{label}</label>
       {children}
     </div>
   );
@@ -78,8 +78,8 @@ export function ProfileSettings({ initial }: Props) {
   return (
     <div className="max-w-xl space-y-8">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-100">Perfil</h2>
-        <p className="text-sm text-zinc-400">Tu información personal y de acceso</p>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">Perfil</h2>
+        <p className="text-sm text-[var(--foreground-muted)]">Tu información personal y de acceso</p>
       </div>
 
       {/* Avatar */}
@@ -89,28 +89,28 @@ export function ProfileSettings({ initial }: Props) {
             <img
               src={avatarUrl}
               alt="Avatar"
-              className="h-20 w-20 rounded-full object-cover ring-2 ring-emerald-500/30"
+              className="h-20 w-20 rounded-full object-cover ring-2 ring-[rgba(37,99,235,0.3)]"
             />
           ) : (
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-600 text-xl font-bold text-white">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-xl font-bold text-white">
               {initials}
             </div>
           )}
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+            className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground-muted)] hover:bg-[var(--surface-hover)] transition-colors"
           >
             <Camera className="h-3.5 w-3.5" />
           </button>
         </div>
         <div className="text-sm">
-          <p className="font-medium text-zinc-200">{fullName || "Sin nombre"}</p>
-          <p className="text-zinc-500">{initial.email}</p>
+          <p className="font-medium text-[var(--foreground)]">{fullName || "Sin nombre"}</p>
+          <p className="text-[var(--foreground-faint)]">{initial.email}</p>
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="mt-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            className="mt-1 text-xs text-[#2563EB] hover:text-[#06B6D4] transition-colors"
           >
             Cambiar foto
           </button>
@@ -128,7 +128,7 @@ export function ProfileSettings({ initial }: Props) {
       </div>
 
       {/* Fields */}
-      <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
         <Field label="Nombre completo">
           <input
             type="text"
@@ -165,7 +165,7 @@ export function ProfileSettings({ initial }: Props) {
           type="button"
           onClick={handleSave}
           disabled={isPending}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
         >
           {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           Guardar cambios
@@ -173,16 +173,16 @@ export function ProfileSettings({ initial }: Props) {
       </div>
 
       {/* Security */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-zinc-200">Seguridad</p>
-            <p className="text-xs text-zinc-500">Cambia tu contraseña de acceso</p>
+            <p className="text-sm font-semibold text-[var(--foreground)]">Seguridad</p>
+            <p className="text-xs text-[var(--foreground-faint)]">Cambia tu contraseña de acceso</p>
           </div>
           <button
             type="button"
             onClick={() => setShowPwForm(!showPwForm)}
-            className="flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-zinc-500 hover:text-white transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground-muted)] hover:border-[#2563EB] hover:text-[var(--foreground)] transition-colors"
           >
             <Lock className="h-3.5 w-3.5" />
             Cambiar contraseña
@@ -227,7 +227,7 @@ export function ProfileSettings({ initial }: Props) {
               type="button"
               onClick={handlePwChange}
               disabled={pwPending}
-              className="flex items-center gap-2 rounded-lg bg-zinc-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-600 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
             >
               {pwPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Actualizar contraseña

@@ -43,14 +43,14 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-zinc-700">{label}</label>
+      <label className="text-xs font-semibold text-[var(--foreground-muted)]">{label}</label>
       {children}
     </div>
   );
 }
 
 const inputCls =
-  'rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all';
+  'rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:ring-2 focus:ring-[rgba(37,99,235,0.2)] transition-all';
 
 function PasswordInput({
   value,
@@ -74,7 +74,7 @@ function PasswordInput({
       <button
         type="button"
         onClick={() => setShow((s) => !s)}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
       >
         {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </button>
@@ -219,15 +219,15 @@ export function EmailProviderSetup({ initial }: { initial: EmailProvider | null 
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50">
-          <Settings2 className="h-4.5 w-4.5 text-indigo-600" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(37,99,235,0.12)]">
+          <Settings2 className="h-4.5 w-4.5 text-[#2563EB]" />
         </div>
         <div>
-          <h2 className="text-sm font-bold text-zinc-900">Proveedor de Email</h2>
-          <p className="text-xs text-zinc-500">Configura cómo NexusAI envía emails a tus leads</p>
+          <h2 className="text-sm font-bold text-[var(--foreground)]">Proveedor de Email</h2>
+          <p className="text-xs text-[var(--foreground-muted)]">Configura cómo cazary.ai envía emails a tus leads</p>
         </div>
         {verified && (
-          <div className="ml-auto flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+          <div className="ml-auto flex items-center gap-1.5 rounded-full border border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.12)] px-3 py-1 text-xs font-semibold text-[#10B981]">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Verificado
           </div>
@@ -243,25 +243,25 @@ export function EmailProviderSetup({ initial }: { initial: EmailProvider | null 
             className={[
               'flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition-all',
               providerType === p.type
-                ? 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300'
-                : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50',
+                ? 'border-[#2563EB] bg-[rgba(37,99,235,0.08)] ring-1 ring-[rgba(37,99,235,0.3)]'
+                : 'border-[var(--border)] bg-[var(--background)] hover:border-[rgba(37,99,235,0.4)]',
             ].join(' ')}
           >
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-zinc-900">{p.label}</span>
+              <span className="text-xs font-bold text-[var(--foreground)]">{p.label}</span>
               {p.badge && (
-                <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600">
+                <span className="rounded-full bg-[rgba(37,99,235,0.15)] px-1.5 py-0.5 text-[9px] font-bold text-[#2563EB]">
                   {p.badge}
                 </span>
               )}
             </div>
-            <span className="text-[10px] text-zinc-400">{p.desc}</span>
+            <span className="text-[10px] text-[var(--foreground-faint)]">{p.desc}</span>
           </button>
         ))}
       </div>
 
       {/* Form */}
-      <div className="rounded-xl border border-zinc-200 bg-white p-5 space-y-4">
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 space-y-4">
         {/* Sender info (common to all) */}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Nombre del remitente">
@@ -283,7 +283,7 @@ export function EmailProviderSetup({ initial }: { initial: EmailProvider | null 
           </Field>
         </div>
 
-        <div className="h-px bg-zinc-100" />
+        <div className="h-px bg-[var(--border)]" />
 
         {/* Provider-specific fields */}
         {providerType === 'smtp'     && <SmtpFields     cfg={cfg} set={set} />}
@@ -293,10 +293,10 @@ export function EmailProviderSetup({ initial }: { initial: EmailProvider | null 
 
         {/* Resend hint */}
         {providerType === 'resend' && (
-          <div className="rounded-lg bg-sky-50 px-3 py-2.5 text-[11px] text-sky-700">
+          <div className="rounded-lg bg-[rgba(37,99,235,0.06)] px-3 py-2.5 text-[11px] text-[var(--foreground-muted)]">
             <span className="font-semibold">ℹ️ Resend:</span> El email remitente debe estar verificado en tu cuenta Resend.
             Regístrate gratis en{' '}
-            <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline">
+            <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline text-[#2563EB]">
               resend.com
             </a>
           </div>
@@ -309,8 +309,8 @@ export function EmailProviderSetup({ initial }: { initial: EmailProvider | null 
           className={[
             'flex items-center gap-2 rounded-lg border px-4 py-3 text-sm',
             status.ok
-              ? 'border-green-200 bg-green-50 text-green-700'
-              : 'border-red-200 bg-red-50 text-red-700',
+              ? 'border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.08)] text-[#10B981]'
+              : 'border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[#EF4444]',
           ].join(' ')}
         >
           {status.ok
@@ -325,8 +325,8 @@ export function EmailProviderSetup({ initial }: { initial: EmailProvider | null 
         <button
           onClick={handleSave}
           disabled={saving || !cfg.from_email || !cfg.from_name}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold
-                     text-white shadow-sm transition-all hover:bg-indigo-500
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-2.5 text-sm font-semibold
+                     text-white shadow-[0_0_16px_rgba(37,99,235,0.3)] transition-all hover:opacity-90
                      disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -336,8 +336,8 @@ export function EmailProviderSetup({ initial }: { initial: EmailProvider | null 
         <button
           onClick={handleTest}
           disabled={testing || saving}
-          className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 py-2.5
-                     text-sm font-semibold text-zinc-700 transition-all hover:bg-zinc-50
+          className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 py-2.5
+                     text-sm font-semibold text-[var(--foreground-muted)] transition-all hover:border-[rgba(37,99,235,0.4)] hover:text-[#2563EB]
                      disabled:cursor-not-allowed disabled:opacity-50"
         >
           {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

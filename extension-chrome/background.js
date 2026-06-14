@@ -37,14 +37,14 @@ chrome.runtime.onInstalled.addListener(async () => {
   await chrome.alarms.clearAll();
   await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 0.5 });
   await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
-  console.log('[NexusAI] Alarms initialized on install/update');
+  console.log('[cazary.ai] Alarms initialized on install/update');
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await chrome.alarms.clearAll();
   await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 0.5 });
   await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
-  console.log('[NexusAI] Alarms initialized on startup');
+  console.log('[cazary.ai] Alarms initialized on startup');
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -142,6 +142,69 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
 
+      case 'report_selector_failure': {
+        // Fire-and-forget — no bloquear el engine
+        (async () => {
+          try {
+            const wsId = await getWorkspaceId();
+            if (!wsId) return;
+
+            // Dedupe: no insertar si ya existe el mismo failure en las últimas 2h
+            const since = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+            const existing = await supabaseFetch(
+              `selector_failures?workspace_id=eq.${wsId}` +
+              `&platform=eq.${encodeURIComponent(msg.platform)}` +
+              `&action=eq.${encodeURIComponent(msg.selectorAction)}` +
+              `&selector_key=eq.${encodeURIComponent(msg.selectorKey)}` +
+              `&created_at=gte.${since}&select=id&limit=1`
+            ).catch(() => null);
+            if (existing?.length > 0) {
+              console.log(`[cazary.ai][SelectorHealing] Failure ya registrado recientemente: ${msg.selectorKey}`);
+              return;
+            }
+
+            const inserted = await supabaseFetch('selector_failures', {
+              method: 'POST',
+              prefer: 'return=representation',
+              body: JSON.stringify({
+                workspace_id:   wsId,
+                platform:       msg.platform,
+                action:         msg.selectorAction,
+                selector_key:   msg.selectorKey,
+                selector_tried: msg.selectorTried,
+                html_context:   msg.htmlContext ?? null,
+                page_url:       msg.pageUrl ?? null,
+                status:         'pending',
+              }),
+            }).catch(() => null);
+
+            const failureId = inserted?.[0]?.id;
+            if (failureId) {
+              console.log(`[cazary.ai][SelectorHealing] Failure registrado: ${msg.selectorKey} → ${failureId}`);
+              triggerSelectorAnalysis(failureId);
+            }
+          } catch (err) {
+            console.warn('[cazary.ai][SelectorHealing] Error registrando failure:', err?.message);
+          }
+        })();
+        sendResponse({ ok: true });
+        break;
+      }
+
+      case 'get_selector_overrides': {
+        try {
+          const wsId = msg.wsId ?? await getWorkspaceId();
+          if (!wsId) { sendResponse([]); break; }
+          const overrides = await supabaseFetch(
+            `selector_overrides?workspace_id=eq.${wsId}&active=eq.true`
+          ).catch(() => []);
+          sendResponse(overrides ?? []);
+        } catch (_) {
+          sendResponse([]);
+        }
+        break;
+      }
+
       case 'RESET_PROCESSING':
         await chrome.storage.local.set({
           processing:            false,
@@ -225,7 +288,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             profile.url      ? `URL: ${profile.url}`          : '',
           ].filter(Boolean).join('\n');
 
-          const nexusUrl = 'https://proyecto-linkedin-ai.vercel.app/api/generate-message';
+          const nexusUrl = `${DASHBOARD_URL}/api/generate-message`;
           const msgRes = await fetch(nexusUrl, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -269,7 +332,7 @@ async function processTick() {
   // Validate token before hitting Supabase — avoids "Failed to fetch" on expiry
   const token = await getStoredToken();
   if (!token) {
-    console.warn('[NexusAI] Token inválido, saltando tick');
+    console.warn('[cazary.ai] Token inválido, saltando tick');
     return;
   }
 
@@ -281,7 +344,7 @@ async function processTick() {
   const _stats = await getTodayStats(wsId);
   if (_stats.connections >= _settings.maxConnections &&
       _stats.messages >= _settings.maxMessages) {
-    console.log('[NexusAI] Límite diario alcanzado (Supabase), saltando tick');
+    console.log('[cazary.ai] Límite diario alcanzado (Supabase), saltando tick');
     return;
   }
 
@@ -291,7 +354,7 @@ async function processTick() {
       await chrome.storage.local.get(['processing_started_at', 'processing_task_id']);
     const elapsed = processing_started_at ? Date.now() - processing_started_at : 0;
     if (elapsed > 60000) {
-      console.warn('[NexusAI] Watchdog activado: liberando processing atascado');
+      console.warn('[cazary.ai] Watchdog activado: liberando processing atascado');
       await chrome.storage.local.set({ processing: false, processing_started_at: null });
       if (processing_task_id) {
         await supabaseFetch(`engine_queue?id=eq.${processing_task_id}`, {
@@ -301,6 +364,19 @@ async function processTick() {
       }
       // Continuar con el siguiente tick
     } else {
+      return;
+    }
+  }
+
+  // ── Cooldown adaptativo por errores consecutivos ───────────────────────────
+  const consecutiveErrors = await getConsecutiveErrors();
+  if (consecutiveErrors > 0) {
+    const { last_error_at } = await chrome.storage.local.get('last_error_at');
+    const delayMs = getAdaptiveDelay(consecutiveErrors);
+    const elapsed = last_error_at ? Date.now() - last_error_at : Infinity;
+    if (elapsed < delayMs) {
+      const remaining = Math.round((delayMs - elapsed) / 60000);
+      console.log(`[cazary.ai][Safety] Cooldown activo (${consecutiveErrors} errores) → esperando ${remaining}min más`);
       return;
     }
   }
@@ -368,7 +444,7 @@ async function processTick() {
     });
     await executeTask(task);
   } catch (err) {
-    console.error('[NexusAI] Error en tick:', err.message);
+    console.error('[cazary.ai] Error en tick:', err.message);
     await chrome.storage.local.set({ processing: false });
   }
 }
@@ -438,7 +514,7 @@ async function sendToContentScript(tabId, message) {
       await sleep(1500);
       await chrome.tabs.sendMessage(tabId, message);
     } catch (e2) {
-      console.error('[NexusAI] sendToContentScript failed:', e2.message);
+      console.error('[cazary.ai] sendToContentScript failed:', e2.message);
       throw e2;
     }
   }
@@ -466,7 +542,7 @@ async function executeTask(task) {
       ).catch(() => null);
       const camp = campCheck?.[0];
       if (!camp || camp.status !== 'active' || camp.deleted_at) {
-        console.log(`[NexusAI] Campaign ${task.campaign_id} no está activa, marcando tarea como paused`);
+        console.log(`[cazary.ai] Campaign ${task.campaign_id} no está activa, marcando tarea como paused`);
         await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body:   JSON.stringify({ status: 'paused' }),
@@ -498,7 +574,7 @@ async function executeTask(task) {
           `blacklist?workspace_id=eq.${wsId}&linkedin_url=eq.${encodeURIComponent(profileUrl)}&select=id&limit=1`
         ).catch(() => []);
         if (blacklisted?.length) {
-          console.log('[NexusAI] Lead en blacklist, saltando:', profileUrl);
+          console.log('[cazary.ai] Lead en blacklist, saltando:', profileUrl);
           await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
             method: 'PATCH', prefer: 'return=minimal',
             body: JSON.stringify({ status: 'done', last_error: 'blacklisted' }),
@@ -560,11 +636,12 @@ async function executeTask(task) {
             ).then(r => r?.[0] ?? null).catch(() => null)
           : null;
         await sendToContentScript(tab.id, {
-          action:     'execute_task',
-          task:       'connect',
-          taskId:     task.id,
-          note:       finalNote,
-          addNote:    task.payload?.add_note ?? false,
+          action:          'execute_task',
+          task:            'connect',
+          taskId:          task.id,
+          note:            finalNote,
+          addNote:         task.payload?.add_note ?? false,
+          requirePageView: task.payload?.require_page_view ?? false,
           lead:       connectLead ? (() => {
             const parts     = (connectLead.full_name || '').trim().split(/\s+/);
             const firstName = parts[0] || '';
@@ -595,7 +672,7 @@ async function executeTask(task) {
           const accepted = ['conexion_aceptada', 'en_conversacion', 'reunion_agendada', 'cliente'].includes(col);
           if (!accepted) {
             // Reschedule +4h — no dejar en 'processing' (quedaría bloqueado)
-            console.log(`[NexusAI] Mensaje pendiente — lead ${task.payload.lead_id} aún no aceptó (${col}) → reschedule +4h`);
+            console.log(`[cazary.ai] Mensaje pendiente — lead ${task.payload.lead_id} aún no aceptó (${col}) → reschedule +4h`);
             const reschedAt = new Date(Date.now() + 4 * 3600 * 1000).toISOString();
             await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
               method: 'PATCH', prefer: 'return=minimal',
@@ -976,7 +1053,7 @@ async function syncLinkedInAccount() {
         daily_message_limit:     30,
       }),
     });
-    console.log('[NexusAI] LinkedIn account synced:', linkedin_profile.name);
+    console.log('[cazary.ai] LinkedIn account synced:', linkedin_profile.name);
   } catch (_) {}
 }
 
@@ -1011,7 +1088,7 @@ async function sendHeartbeat() {
       }),
     });
   } catch (err) {
-    console.warn('[NexusAI] Heartbeat failed:', err?.message ?? err);
+    console.warn('[cazary.ai] Heartbeat failed:', err?.message ?? err);
   }
 
   // Emitir estado al popup si está abierto
@@ -1054,7 +1131,7 @@ async function handleActionDone(taskId, result) {
     // Re-sync desde Supabase cada 10 acciones (corrige drift)
     if (newCount % 10 === 0) {
       const freshStats = await getTodayStats(wsId);
-      console.log('[NexusAI] Re-sync stats cada 10 acciones:', freshStats);
+      console.log('[cazary.ai] Re-sync stats cada 10 acciones:', freshStats);
     }
   } finally {
     await chrome.storage.local.set({
@@ -1067,7 +1144,7 @@ async function handleActionDone(taskId, result) {
   // 3. Manejar fallos con lógica de reintento
   if (result.success === false) {
     if (result.reason === 'daily_limit_reached') {
-      console.warn('[NexusAI] LinkedIn daily limit → pausando engine');
+      console.warn('[cazary.ai] LinkedIn daily limit → pausando engine');
       await chrome.storage.local.set({ engine_running: false });
       await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
         method: 'PATCH', prefer: 'return=minimal',
@@ -1099,6 +1176,23 @@ async function handleActionDone(taskId, result) {
           last_error: `${result.reason} (attempt ${attempts}/3)`,
         }),
       }).catch(() => {});
+
+      // Contar errores de selector consecutivos → cooldown adaptativo
+      const errorCount = await incrementConsecutiveErrors();
+      await chrome.storage.local.set({ last_error_at: Date.now() });
+      if (errorCount >= 5) {
+        console.error('[cazary.ai][Safety] 5 errores consecutivos → pausando engine automáticamente');
+        await chrome.storage.local.set({ engine_running: false });
+        await supabaseFetch('activity_log', {
+          method: 'POST', prefer: 'return=minimal',
+          body: JSON.stringify({
+            workspace_id: wsId,
+            action_type:  'engine_auto_paused',
+            description:  `Engine pausado automáticamente: ${errorCount} errores de selector consecutivos`,
+            metadata:     { error_count: errorCount, reason: result.reason },
+          }),
+        }).catch(() => {});
+      }
       return;
     }
 
@@ -1147,6 +1241,9 @@ async function handleActionDone(taskId, result) {
     return;
   }
 
+  // Reset errores consecutivos en cada éxito
+  await resetConsecutiveErrors();
+
   // 4. Actualizar el lead en el CRM según la acción completada
   if (wsId && result.lead_id) {
     try {
@@ -1161,7 +1258,7 @@ async function handleActionDone(taskId, result) {
             connection_accepted_at: now,
             status:                 'connected',
           }),
-        }).catch(e => console.warn('[NexusAI] PATCH already_connected:', e));
+        }).catch(e => console.warn('[cazary.ai] PATCH already_connected:', e));
 
         // Obtener workspace_id real del lead (el wsId externo puede ser de otro workspace)
         const acLeadData = await supabaseFetch(
@@ -1170,7 +1267,7 @@ async function handleActionDone(taskId, result) {
         ).catch(() => null);
         const acWsId = acLeadData?.[0]?.workspace_id ?? wsId;
         const convId = await createOrGetConversation(result.lead_id, acWsId, result.campaign_id ?? null);
-        if (convId) console.log('[NexusAI] already_connected: conversation creada/encontrada:', convId);
+        if (convId) console.log('[cazary.ai] already_connected: conversation creada/encontrada:', convId);
 
         if (result.campaign_id) {
           const campRows = await supabaseFetch(
@@ -1207,7 +1304,7 @@ async function handleActionDone(taskId, result) {
                 },
               }),
             }).catch(() => {});
-            console.log('[NexusAI] already_connected: follow-up encolado para', result.lead_id);
+            console.log('[cazary.ai] already_connected: follow-up encolado para', result.lead_id);
           }
         }
 
@@ -1219,7 +1316,7 @@ async function handleActionDone(taskId, result) {
             last_error:  'already_connected — moved to conexion_aceptada',
           }),
         }).catch(() => {});
-        console.log('[NexusAI] already_connected → conexion_aceptada:', result.lead_id);
+        console.log('[cazary.ai] already_connected → conexion_aceptada:', result.lead_id);
         return;
       }
 
@@ -1250,7 +1347,7 @@ async function handleActionDone(taskId, result) {
             last_error:  'already_pending — no reenvío',
           }),
         }).catch(() => {});
-        console.log('[NexusAI] already_pending → conexion_enviada:', result.lead_id);
+        console.log('[cazary.ai] already_pending → conexion_enviada:', result.lead_id);
         return;
       }
 
@@ -1264,11 +1361,11 @@ async function handleActionDone(taskId, result) {
             connection_sent_at: now,
             status:             'contacted',
           }),
-        }).catch(e => console.error('[NexusAI] PATCH lead connect error:', e));
+        }).catch(e => console.error('[cazary.ai] PATCH lead connect error:', e));
 
         // Crear conversación en Smart Inbox
         const convId = await createOrGetConversation(result.lead_id, wsId, result.campaign_id ?? null);
-        if (convId) console.log('[NexusAI] conexion_enviada: conversation creada/encontrada:', convId);
+        if (convId) console.log('[cazary.ai] conexion_enviada: conversation creada/encontrada:', convId);
 
         if (convId && nota) {
           await supabaseFetch('messages', {
@@ -1296,7 +1393,7 @@ async function handleActionDone(taskId, result) {
             }),
           }).catch(() => {});
         }
-        console.log('[NexusAI] conexion_enviada:', result.lead_id);
+        console.log('[cazary.ai] conexion_enviada:', result.lead_id);
 
       } else if (result.action === 'connect_accepted') {
         // Manejar aceptación con follow-up automático
@@ -1399,7 +1496,7 @@ async function handleActionDone(taskId, result) {
             }),
           }).catch(() => {});
         }
-        console.log('[NexusAI] en_conversacion:', result.lead_id);
+        console.log('[cazary.ai] en_conversacion:', result.lead_id);
 
       } else if (result.action === 'reply_received') {
         // Solo mover a en_conversacion si aún no lo estaba
@@ -1437,7 +1534,7 @@ async function handleActionDone(taskId, result) {
 
       } else if (result.action === 'check_inbox') {
         const conversations = result.conversations ?? [];
-        console.log(`[NexusAI] check_inbox: ${result.unreadCount} no leídos, ${conversations.length} procesando`);
+        console.log(`[cazary.ai] check_inbox: ${result.unreadCount} no leídos, ${conversations.length} procesando`);
 
         for (const conv of conversations) {
           if (!conv.name) continue;
@@ -1456,7 +1553,7 @@ async function handleActionDone(taskId, result) {
 
           const lead = matchedLeads?.[0];
           if (!lead) {
-            console.log(`[NexusAI] check_inbox: Lead no encontrado para "${searchName}"`);
+            console.log(`[cazary.ai] check_inbox: Lead no encontrado para "${searchName}"`);
             continue;
           }
 
@@ -1471,7 +1568,7 @@ async function handleActionDone(taskId, result) {
                 score:      35,
               }),
             }).catch(() => {});
-            console.log(`[NexusAI] check_inbox: ${searchName} → en_conversacion`);
+            console.log(`[cazary.ai] check_inbox: ${searchName} → en_conversacion`);
           }
 
           const existingConv = await supabaseFetch(
@@ -1527,7 +1624,7 @@ async function handleActionDone(taskId, result) {
                 method: 'POST',
                 headers: {
                   'Content-Type':  'application/json',
-                  'Authorization': `Bearer nexusai-autopilot-2024`,
+                  'Authorization': `Bearer cazary-autopilot-2025`,
                 },
                 body: JSON.stringify({
                   record: {
@@ -1563,7 +1660,7 @@ async function handleActionDone(taskId, result) {
             next_task:  'Confirmar reunión',
           }),
         }).catch(() => {});
-        console.log('[NexusAI] reunion_agendada:', result.lead_id);
+        console.log('[cazary.ai] reunion_agendada:', result.lead_id);
 
       } else if (result.action === 'check_connection') {
         if (result.connected === true) {
@@ -1574,7 +1671,7 @@ async function handleActionDone(taskId, result) {
               connection_accepted_at: now,
               status:                 'connected',
             }),
-          }).catch(e => console.error('[NexusAI] PATCH check_connection error:', e));
+          }).catch(e => console.error('[cazary.ai] PATCH check_connection error:', e));
 
           // Obtener config follow-up de la campaña (solo backward compat)
           if (result.campaign_id) {
@@ -1638,12 +1735,12 @@ async function handleActionDone(taskId, result) {
               }),
             }).catch(() => {});
           }
-          console.log('[NexusAI] conexion_aceptada:', result.lead_id);
+          console.log('[cazary.ai] conexion_aceptada:', result.lead_id);
         }
         // Si pending: dejar en conexion_enviada, se reintentará
       }
     } catch (err) {
-      console.error('[NexusAI] Error actualizando lead:', err);
+      console.error('[cazary.ai] Error actualizando lead:', err);
     }
   }
 
@@ -1730,7 +1827,7 @@ async function handleActionDone(taskId, result) {
       await supabaseFetch(msgFilter, {
         method: 'PATCH', prefer: 'return=minimal',
         body: JSON.stringify({ status: 'sent', is_read: true }),
-      }).catch(e => console.warn('[NexusAI] messages status update failed:', e));
+      }).catch(e => console.warn('[cazary.ai] messages status update failed:', e));
     }
   }
 }
@@ -1871,7 +1968,7 @@ async function handleMessageReceived(data) {
     }).catch(() => {});
 
   } catch (err) {
-    console.error('[NexusAI] handleMessageReceived error:', err);
+    console.error('[cazary.ai] handleMessageReceived error:', err);
   }
 }
 
@@ -1938,10 +2035,11 @@ function parseWorkflowSequence(wf) {
 
     if (nodeType === 'connect') {
       steps.push({
-        type: 'connect',
-        delayMs: accumulatedDelayMs,
-        note: data.noteA || data.note || data.bodyA || '',
-        message: '',
+        type:            'connect',
+        delayMs:         accumulatedDelayMs,
+        note:            data.noteA || data.note || data.bodyA || '',
+        message:         '',
+        requirePageView: data.requirePageView ?? false,
       });
     } else if (nodeType === 'delay') {
       const days = data.days ?? data.waitDays ?? 1;
@@ -2264,15 +2362,16 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
           task_type:    'connect',
           action_type:  'connect',
           payload: {
-            profile_url:   lead.linkedin_url,
-            linkedin_url:  lead.linkedin_url,
-            lead_id:       lead.id,
-            lead_name:     lead.full_name || 'Sin nombre',
-            campaign_id:   campaignId,
-            campaign_name: campaign?.name || '',
-            note:          connNote,
-            add_note:      connAddNote,
-            ab_variant:    assignedVariant,
+            profile_url:      lead.linkedin_url,
+            linkedin_url:     lead.linkedin_url,
+            lead_id:          lead.id,
+            lead_name:        lead.full_name || 'Sin nombre',
+            campaign_id:      campaignId,
+            campaign_name:    campaign?.name || '',
+            note:             connNote,
+            add_note:         connAddNote,
+            ab_variant:       assignedVariant,
+            require_page_view: step.requirePageView ?? false,
           },
           status:       'pending',
           priority:     5,
@@ -2349,9 +2448,9 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
       await supabaseFetch('engine_queue', {
         method: 'POST', prefer: 'return=minimal',
         body:   JSON.stringify(inserts.slice(b, b + 50)),
-      }).catch(e => console.error('[NexusAI] Batch insert error:', e));
+      }).catch(e => console.error('[cazary.ai] Batch insert error:', e));
     }
-    console.log(`[NexusAI] Encolados ${inserts.length} tasks para ${pendingLeads.length} leads (secuencia de ${sequence.length} pasos)`);
+    console.log(`[cazary.ai] Encolados ${inserts.length} tasks para ${pendingLeads.length} leads (secuencia de ${sequence.length} pasos)`);
   }
 
   // Persist A/B variant assignment on each lead (fire-and-forget, best-effort)
@@ -2446,14 +2545,14 @@ async function getOrCreateEngineTab() {
     try {
       const tab = await chrome.tabs.get(engine_tab_id);
       if (tab && tab.url?.includes('linkedin.com')) {
-        console.log('[NexusAI] Reutilizando engine tab:', tab.id);
+        console.log('[cazary.ai] Reutilizando engine tab:', tab.id);
         return tab;
       }
     } catch (_) {
       // Tab cerrada — crear nueva
     }
   }
-  console.log('[NexusAI] Creando nueva engine tab...');
+  console.log('[cazary.ai] Creando nueva engine tab...');
   const tab = await chrome.tabs.create({
     url: 'https://www.linkedin.com/feed/',
     active: true,   // ACTIVA para que JS funcione correctamente
@@ -2494,10 +2593,10 @@ async function getTodayStats(wsId) {
 
     // Actualizar caché local (solo para sesión actual)
     await chrome.storage.local.set({ daily_stats: stats });
-    console.log('[NexusAI] Stats sincronizadas desde Supabase:', stats);
+    console.log('[cazary.ai] Stats sincronizadas desde Supabase:', stats);
     return stats;
   } catch (err) {
-    console.warn('[NexusAI] getTodayStats error:', err.message);
+    console.warn('[cazary.ai] getTodayStats error:', err.message);
     // Fallback a caché local si Supabase falla
     const { daily_stats } = await chrome.storage.local.get('daily_stats');
     return daily_stats ?? { connections: 0, messages: 0, likes: 0, views: 0, date: todayStr() };
@@ -2526,13 +2625,13 @@ async function checkDailyLimitsByType(wsId, taskType) {
 
     const count = rows?.length ?? 0;
     if (count >= limit) {
-      console.log(`[NexusAI] Límite diario de ${taskType} alcanzado (${count}/${limit})`);
+      console.log(`[cazary.ai] Límite diario de ${taskType} alcanzado (${count}/${limit})`);
       return false;
     }
-    console.log(`[NexusAI] Daily ${taskType}: ${count}/${limit} ✓`);
+    console.log(`[cazary.ai] Daily ${taskType}: ${count}/${limit} ✓`);
     return true;
   } catch (err) {
-    console.warn('[NexusAI] checkDailyLimitsByType error:', err.message);
+    console.warn('[cazary.ai] checkDailyLimitsByType error:', err.message);
     return true; // Fail open para no bloquear el engine
   }
 }
@@ -2624,7 +2723,7 @@ async function incrementLeadsQueued(campaignId) {
       body: JSON.stringify({ leads_queued: currentCount + 1 }),
     });
   } catch (e) {
-    console.warn('[NexusAI] incrementLeadsQueued omitido:', e.message);
+    console.warn('[cazary.ai] incrementLeadsQueued omitido:', e.message);
   }
 }
 
@@ -2708,6 +2807,51 @@ async function scheduleInboxCheck(wsId) {
   }
 }
 
+// ── Seguridad adaptativa ──────────────────────────────────────────────────────
+
+async function getConsecutiveErrors() {
+  const { consecutive_errors } = await chrome.storage.local.get('consecutive_errors');
+  return consecutive_errors ?? 0;
+}
+
+async function incrementConsecutiveErrors() {
+  const current = await getConsecutiveErrors();
+  const next = current + 1;
+  await chrome.storage.local.set({ consecutive_errors: next });
+  console.warn(`[cazary.ai][Safety] consecutive_errors: ${next}`);
+  return next;
+}
+
+async function resetConsecutiveErrors() {
+  await chrome.storage.local.set({ consecutive_errors: 0 });
+}
+
+// Calcula el delay extra según errores consecutivos (exponential backoff)
+function getAdaptiveDelay(errors) {
+  if (errors === 0) return 0;
+  if (errors === 1) return 2  * 60 * 1000;  // 2 min
+  if (errors === 2) return 5  * 60 * 1000;  // 5 min
+  if (errors === 3) return 15 * 60 * 1000;  // 15 min
+  if (errors === 4) return 30 * 60 * 1000;  // 30 min
+  return 60 * 60 * 1000;                    // 1 hora — máximo
+}
+
+// ── Selector Healing: disparar análisis IA via Next.js API ───────────────────
+async function triggerSelectorAnalysis(failureId) {
+  try {
+    const { supabase_workspace_settings } = await chrome.storage.local.get('supabase_workspace_settings');
+    const dashboardUrl = supabase_workspace_settings?.dashboard_url ?? DASHBOARD_URL;
+    fetch(`${dashboardUrl}/api/selector-healing`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ failure_id: failureId }),
+    }).catch(() => {});
+    console.log(`[cazary.ai][SelectorHealing] triggerSelectorAnalysis → ${failureId}`);
+  } catch (_) {
+    // fire-and-forget
+  }
+}
+
 // ── Procesar cola de emails pendientes ───────────────────────────────────────
 async function processEmailQueue(wsId) {
   const now = new Date().toISOString();
@@ -2732,12 +2876,12 @@ async function processEmailQueue(wsId) {
         body:    JSON.stringify({ email_queue_id: job.id }),
       });
       if (res.ok) {
-        console.log(`[NexusAI] Email enviado: ${job.id}`);
+        console.log(`[cazary.ai] Email enviado: ${job.id}`);
       } else {
-        console.warn(`[NexusAI] Error enviando email ${job.id}: ${res.status}`);
+        console.warn(`[cazary.ai] Error enviando email ${job.id}: ${res.status}`);
       }
     } catch (e) {
-      console.error(`[NexusAI] Error enviando email ${job.id}:`, e.message);
+      console.error(`[cazary.ai] Error enviando email ${job.id}:`, e.message);
     }
   }
 }

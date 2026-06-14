@@ -1,69 +1,117 @@
-import { auth } from "@/auth";
-import { Bell } from "lucide-react";
-import Link from "next/link";
+"use client";
 
-type DashboardHeaderProps = {
-  title: string;
-  description?: string;
+import { usePathname } from "next/navigation";
+import { Bell, Search } from "lucide-react";
+import Link from "next/link";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { DashboardMobileMenuButton } from "@/components/layout/dashboard-sidebar";
+import { useCommandPalette } from "@/components/ui/CommandPalette";
+
+// ── Breadcrumb map ─────────────────────────────────────────────────────────────
+
+const breadcrumbMap: Record<string, string> = {
+  "/dashboard":                          "Dashboard",
+  "/dashboard/campanas":                 "Campañas",
+  "/dashboard/crm":                      "CRM",
+  "/dashboard/smart-inbox":              "Smart Inbox",
+  "/dashboard/inbound":                  "Inbound",
+  "/dashboard/agentes-ia":              "Agentes IA",
+  "/dashboard/analytics":               "Analytics",
+  "/dashboard/settings":                "Ajustes",
+  "/dashboard/settings/email":          "Ajustes · Email",
+  "/dashboard/configuracion":           "Integraciones",
+  "/dashboard/configuracion/selectores":"Selectores IA",
+  "/dashboard/equipo":                  "Equipo",
+  "/dashboard/perfil":                  "Mi perfil",
+  "/dashboard/onboarding":              "Onboarding",
 };
 
-function getInitials(name?: string | null, email?: string | null): string {
-  if (name) {
-    const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  }
-  if (email) {
-    return email.slice(0, 2).toUpperCase();
-  }
-  return "U";
+function Breadcrumb() {
+  const pathname = usePathname();
+  const label = breadcrumbMap[pathname] ?? "Dashboard";
+  const parts = label.split(" · ");
+  return (
+    <div className="flex items-center gap-1.5 text-sm">
+      <span className="text-[var(--foreground-faint)]">cazary.ai</span>
+      <span className="text-[var(--foreground-faint)]">/</span>
+      {parts.map((part, i) => (
+        <span key={part}>
+          {i > 0 && <span className="mr-1.5 text-[var(--foreground-faint)]">/</span>}
+          <span className={i === parts.length - 1 ? "font-semibold text-[var(--foreground)]" : "text-[var(--foreground-muted)]"}>
+            {part}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
 }
 
-export async function DashboardHeader({
-  title,
-  description,
-}: DashboardHeaderProps) {
-  const session = await auth();
-  const initials = getInitials(session?.user?.name, session?.user?.email);
+// ── Search trigger ─────────────────────────────────────────────────────────────
 
+function SearchTrigger() {
+  const { open } = useCommandPalette();
   return (
-    <header className="sticky top-0 z-10 border-b border-border bg-surface/95 px-4 py-5 backdrop-blur-md sm:px-6 lg:px-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-            Plataforma B2B
-          </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            {title}
-          </h1>
-          {description && (
-            <p className="mt-1.5 max-w-2xl text-sm text-muted">{description}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:border-emerald-200 hover:bg-emerald-50/50 hover:text-foreground"
-          >
-            <Bell className="h-4 w-4" />
-            <span className="hidden sm:inline">Alertas</span>
-          </button>
-          <div className="hidden text-right sm:block">
-            <p className="text-sm font-semibold text-foreground">
-              {session?.user?.name ?? "Usuario"}
-            </p>
-            <p className="text-xs text-muted">{session?.user?.email}</p>
-          </div>
-          <Link
-            href="/dashboard/perfil"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-600 text-sm font-bold text-white shadow-md shadow-emerald-500/25 transition-transform hover:scale-105"
-            title="Ver mi perfil"
-          >
-            {initials}
-          </Link>
-        </div>
+    <button
+      type="button"
+      onClick={open}
+      className="hidden items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground-muted)] transition-colors hover:border-[var(--primary)]/40 hover:text-[var(--foreground)] sm:flex"
+    >
+      <Search className="h-3.5 w-3.5" />
+      <span>Buscar...</span>
+      <kbd className="ml-4 rounded border border-[var(--border)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--foreground-faint)]">
+        ⌘K
+      </kbd>
+    </button>
+  );
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────────
+
+type DashboardHeaderProps = {
+  onMobileMenuOpen?: () => void;
+};
+
+export function DashboardHeader({ onMobileMenuOpen }: DashboardHeaderProps) {
+  return (
+    <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b border-[var(--border)] bg-[var(--surface)] px-4">
+      {/* Mobile burger */}
+      {onMobileMenuOpen && (
+        <DashboardMobileMenuButton onClick={onMobileMenuOpen} />
+      )}
+
+      {/* Breadcrumb */}
+      <div className="hidden sm:block">
+        <Breadcrumb />
+      </div>
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Center: search */}
+      <SearchTrigger />
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Right: notifications + theme + avatar */}
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="relative rounded-lg p-2 text-[var(--foreground-muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
+          aria-label="Notificaciones"
+        >
+          <Bell className="h-5 w-5" />
+        </button>
+
+        <ThemeToggle />
+
+        <Link
+          href="/dashboard/perfil"
+          className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#2563EB] to-[#06B6D4] text-xs font-bold text-white shadow-[var(--shadow-glow-primary)] transition-transform hover:scale-105"
+          title="Mi perfil"
+        >
+          U
+        </Link>
       </div>
     </header>
   );

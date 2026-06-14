@@ -1,245 +1,299 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Menu, X, Zap } from "lucide-react";
+import {
+  LayoutDashboard, Zap, Users, MessageSquare, Bot, BarChart2,
+  Link2, Users2, Settings, ChevronLeft, X, Menu,
+  BarChart3, Columns3, Inbox, PenLine, Wrench, Megaphone,
+} from "lucide-react";
 import { useState, useEffect } from "react";
-import { Logo } from "@/components/ui/logo";
-import { SignOutButton } from "@/components/auth/sign-out-button";
-import { dashboardNavItems } from "@/lib/dashboard-nav";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/browser";
+import { SignOutButton } from "@/components/auth/sign-out-button";
 
-// -- Inbox nav item with realtime unread badge ---------------------------------
+// ── Nav structure ──────────────────────────────────────────────────────────────
 
-function InboxNavItem({
-  href, label, icon: Icon, isActive, onClick,
-}: {
-  href: string; label: string; icon: React.ElementType;
-  isActive: boolean; onClick?: () => void;
-}) {
+const navGroups = [
+  {
+    label: "PRINCIPAL",
+    items: [
+      { icon: LayoutDashboard, label: "Dashboard",    href: "/dashboard",           exact: true  },
+      { icon: Zap,             label: "Campañas",     href: "/dashboard/campanas",  exact: false },
+      { icon: Columns3,        label: "CRM",          href: "/dashboard/crm",       exact: false },
+      { icon: MessageSquare,   label: "Smart Inbox",  href: "/dashboard/smart-inbox", exact: false, badge: "inbox" },
+      { icon: PenLine,         label: "Inbound",      href: "/dashboard/inbound",   exact: false },
+    ],
+  },
+  {
+    label: "INTELIGENCIA",
+    items: [
+      { icon: Bot,       label: "Agentes IA", href: "/dashboard/agentes-ia", exact: false },
+      { icon: BarChart2, label: "Analytics",  href: "/dashboard/analytics",  exact: false },
+    ],
+  },
+  {
+    label: "CONFIGURACIÓN",
+    items: [
+      { icon: Settings, label: "Ajustes",       href: "/dashboard/settings",                exact: false },
+      { icon: Link2,    label: "Integraciones", href: "/dashboard/configuracion",            exact: false },
+      { icon: Users2,   label: "Equipo",        href: "/dashboard/equipo",                   exact: false },
+      { icon: Wrench,   label: "Selectores IA", href: "/dashboard/configuracion/selectores", exact: false, badge: "selectores" },
+    ],
+  },
+];
+
+// ── Inbox badge (realtime) ─────────────────────────────────────────────────────
+
+function useInboxBadge() {
   const [unread, setUnread] = useState(0);
-
   useEffect(() => {
     const supabase = createClient();
-    // Nombre único por instancia para evitar conflicto con StrictMode double-mount
-    const channelName = `inbox-badge-${Math.random().toString(36).slice(2)}`;
-
-    function fetchUnread() {
-      supabase
-        .from("conversations")
-        .select("unread_count")
-        .gt("unread_count", 0)
+    const ch = `inbox-badge-${Math.random().toString(36).slice(2)}`;
+    function fetch() {
+      supabase.from("conversations").select("unread_count").gt("unread_count", 0)
         .then(({ data }) => {
-          const total = (data ?? []).reduce((s: number, r: { unread_count: number | null }) => s + (r.unread_count ?? 0), 0);
-          setUnread(total);
+          setUnread((data ?? []).reduce((s: number, r: { unread_count: number | null }) => s + (r.unread_count ?? 0), 0));
         });
     }
-
-    fetchUnread();
-
-    const channel = supabase
-      .channel(channelName)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, fetchUnread)
+    fetch();
+    const channel = supabase.channel(ch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, fetch)
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, []);
+  return unread;
+}
+
+// ── Selectores badge (polling) ─────────────────────────────────────────────────
+
+function useSelectorBadge() {
+  const [proposed, setProposed] = useState(0);
+  useEffect(() => {
+    const supabase = createClient();
+    function fetch() {
+      supabase.from("selector_failures").select("id", { count: "exact", head: true })
+        .eq("status", "proposed").then(({ count }) => setProposed(count ?? 0));
+    }
+    fetch();
+    const id = setInterval(fetch, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  return proposed;
+}
+
+// ── Single nav item ────────────────────────────────────────────────────────────
+
+function NavItem({
+  icon: Icon, label, href, exact, badgeCount, isCollapsed, onClick,
+}: {
+  icon: React.ElementType; label: string; href: string; exact: boolean;
+  badgeCount?: number; isCollapsed: boolean; onClick?: () => void;
+}) {
+  const pathname = usePathname();
+  const isActive = exact ? pathname === href : pathname.startsWith(href);
+
+  const inner = (
+    <>
+      <div className={cn("relative flex shrink-0 items-center justify-center", isCollapsed ? "mx-auto" : "")}>
+        <Icon
+          className={cn("h-[18px] w-[18px] shrink-0", isActive ? "text-white" : "text-[var(--sidebar-muted)]")}
+          strokeWidth={isActive ? 2.25 : 2}
+        />
+        {/* Badge on icon when collapsed */}
+        {isCollapsed && badgeCount && badgeCount > 0 ? (
+          <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-[#EF4444] px-0.5 text-[8px] font-bold text-white">
+            {badgeCount > 99 ? "99+" : badgeCount}
+          </span>
+        ) : null}
+      </div>
+      {!isCollapsed && (
+        <>
+          <span className="flex-1 truncate text-sm font-medium">{label}</span>
+          {badgeCount && badgeCount > 0 ? (
+            <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#EF4444] px-1 text-[9px] font-bold text-white">
+              {badgeCount > 99 ? "99+" : badgeCount}
+            </span>
+          ) : null}
+        </>
+      )}
+    </>
+  );
 
   return (
     <Link
       href={href}
       onClick={onClick}
+      title={isCollapsed ? label : undefined}
       className={cn(
-        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+        "group flex items-center gap-3 rounded-lg px-2.5 py-2 transition-all duration-150",
+        isCollapsed && "justify-center px-2",
         isActive
-          ? "bg-gradient-to-r from-emerald-600/90 to-green-600/90 text-white shadow-md shadow-emerald-900/30"
-          : "text-sidebar-muted hover:bg-zinc-800/80 hover:text-white"
+          ? "border-l-2 border-[#2563EB] bg-[rgba(37,99,235,0.18)] pl-[calc(0.625rem-2px)] text-white"
+          : "text-[#475569] hover:bg-[rgba(37,99,235,0.10)] hover:text-[#CBD5E1]",
+        isCollapsed && isActive && "border-l-0 pl-2"
       )}
     >
-      <Icon
-        className={cn(
-          "h-5 w-5 shrink-0",
-          isActive ? "text-white" : "text-zinc-500 group-hover:text-emerald-400"
-        )}
-        strokeWidth={isActive ? 2.25 : 2}
-      />
-      <span className="flex-1 truncate">{label}</span>
-      {unread > 0 && (
-        <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-          {unread > 99 ? "99+" : unread}
-        </span>
-      )}
+      {inner}
     </Link>
   );
 }
+
+// ── Motor status indicator ─────────────────────────────────────────────────────
+
+function MotorStatus({ isCollapsed }: { isCollapsed: boolean }) {
+  const status: "active" | "paused" | "error" = "active";
+  const dot = {
+    active: "bg-[#10B981] animate-pulse",
+    paused: "bg-[#F59E0B]",
+    error:  "bg-[#EF4444]",
+  }[status];
+  const label = { active: "Motor activo", paused: "Motor pausado", error: "Error en motor" }[status];
+
+  return (
+    <div className={cn("flex items-center gap-2 rounded-lg border border-[var(--sidebar-border)] bg-[#0A1628] px-3 py-2", isCollapsed && "justify-center px-2")}>
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", dot)} />
+      {!isCollapsed && (
+        <span className="text-xs font-medium text-[#94A3B8]">{label}</span>
+      )}
+    </div>
+  );
+}
+
+// ── Main sidebar component ─────────────────────────────────────────────────────
 
 type DashboardSidebarProps = {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 };
 
-export function DashboardSidebar({
-  mobileOpen = false,
-  onMobileClose,
-}: DashboardSidebarProps) {
-  const pathname = usePathname();
+export function DashboardSidebar({ mobileOpen = false, onMobileClose }: DashboardSidebarProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const nav = (
-    <>
-      <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-green-600 shadow-lg shadow-emerald-500/20">
-          <Zap className="h-5 w-5 text-white" strokeWidth={2.5} />
-        </div>
-        <div>
-          <Logo variant="light" className="[&_span:last-child]:text-base" />
-          <p className="text-[10px] font-medium uppercase tracking-wider text-sidebar-muted">
-            LinkedIn AI
-          </p>
-        </div>
-        {onMobileClose && (
-          <button
-            type="button"
-            onClick={onMobileClose}
-            className="ml-auto rounded-lg p-2 text-sidebar-muted hover:bg-zinc-800 hover:text-white lg:hidden"
-            aria-label="Cerrar menú"
-          >
-            <X className="h-5 w-5" />
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("cazary-sidebar");
+      if (saved !== null) setIsCollapsed(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  function toggleCollapse() {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("cazary-sidebar", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+
+  const inboxBadge = useInboxBadge();
+  const selectorBadge = useSelectorBadge();
+
+  function getBadge(badge?: string) {
+    if (badge === "inbox") return inboxBadge;
+    if (badge === "selectores") return selectorBadge;
+    return undefined;
+  }
+
+  const navContent = (collapsed: boolean, closeFn?: () => void) => (
+    <div className="flex h-full flex-col">
+      {/* Logo area */}
+      <div className={cn("relative flex h-14 items-center border-b border-[var(--sidebar-border)]", collapsed ? "justify-center px-3" : "px-4")}>
+        {collapsed ? (
+          <Image src="/logo-icon-dark.png" alt="cazary.ai" width={32} height={32} className="h-8 w-8 object-contain" priority />
+        ) : (
+          <Image src="/logo-rect-navy.png" alt="cazary.ai" width={120} height={32} className="h-8 w-auto object-contain" priority />
+        )}
+        {closeFn && (
+          <button type="button" onClick={closeFn} className="ml-auto rounded-lg p-1.5 text-[#475569] hover:text-[#CBD5E1] lg:hidden">
+            <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          Módulos
-        </p>
-        {dashboardNavItems.filter((i) => i.section !== "account").map((item) => {
-          const Icon = item.icon;
-          const isActive =
-            item.href === "/dashboard"
-              ? pathname === "/dashboard"
-              : pathname.startsWith(item.href);
-
-          if (item.href === "/dashboard/smart-inbox") {
-            return (
-              <InboxNavItem
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                icon={Icon}
-                isActive={isActive}
-                onClick={onMobileClose}
-              />
-            );
-          }
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onMobileClose}
-              className={cn(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
-                isActive
-                  ? "bg-gradient-to-r from-emerald-600/90 to-green-600/90 text-white shadow-md shadow-emerald-900/30"
-                  : "text-sidebar-muted hover:bg-zinc-800/80 hover:text-white"
-              )}
-            >
-              <Icon
-                className={cn(
-                  "h-5 w-5 shrink-0",
-                  isActive ? "text-white" : "text-zinc-500 group-hover:text-emerald-400"
-                )}
-                strokeWidth={isActive ? 2.25 : 2}
-              />
-              <span className="truncate">{item.label}</span>
-            </Link>
-          );
-        })}
-
-        <div className="my-2 border-t border-zinc-700/50" />
-        <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          Cuenta
-        </p>
-        {dashboardNavItems.filter((i) => i.section === "account").map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onMobileClose}
-              className={cn(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
-                isActive
-                  ? "bg-gradient-to-r from-emerald-600/90 to-green-600/90 text-white shadow-md shadow-emerald-900/30"
-                  : "text-sidebar-muted hover:bg-zinc-800/80 hover:text-white"
-              )}
-            >
-              <Icon
-                className={cn(
-                  "h-5 w-5 shrink-0",
-                  isActive ? "text-white" : "text-zinc-500 group-hover:text-emerald-400"
-                )}
-                strokeWidth={isActive ? 2.25 : 2}
-              />
-              <span className="truncate">{item.label}</span>
-            </Link>
-          );
-        })}
+      {/* Nav groups */}
+      <nav className="flex-1 overflow-y-auto p-2 space-y-4">
+        {navGroups.map((group) => (
+          <div key={group.label}>
+            {!collapsed && (
+              <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-[#334155]">
+                {group.label}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <NavItem
+                  key={item.href}
+                  icon={item.icon}
+                  label={item.label}
+                  href={item.href}
+                  exact={item.exact}
+                  badgeCount={getBadge(item.badge)}
+                  isCollapsed={collapsed}
+                  onClick={closeFn}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
 
-      <div className="border-t border-sidebar-border p-3">
-        <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
-          <p className="text-xs font-medium text-zinc-300">Human-in-the-loop</p>
-          <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
-            Tú controlas cada conversión crítica.
-          </p>
-        </div>
-        <SignOutButton />
+      {/* Bottom area */}
+      <div className={cn("border-t border-[var(--sidebar-border)] p-2 space-y-2")}>
+        <MotorStatus isCollapsed={collapsed} />
+        {!collapsed && <SignOutButton />}
       </div>
-    </>
+    </div>
   );
 
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        {nav}
+      <aside
+        className={cn(
+          "relative hidden h-full shrink-0 flex-col border-r border-[var(--sidebar-border)] bg-[#080F1E] transition-all duration-300 lg:flex",
+          isCollapsed ? "w-16" : "w-60"
+        )}
+      >
+        {navContent(isCollapsed)}
+
+        {/* Collapse toggle button */}
+        <button
+          type="button"
+          onClick={toggleCollapse}
+          title={isCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
+          className="absolute -right-3 top-[4.5rem] z-10 flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[#0F172A] text-[#475569] shadow-md transition-all hover:text-[#CBD5E1]"
+        >
+          <ChevronLeft
+            className={cn("h-3.5 w-3.5 transition-transform duration-300", isCollapsed && "rotate-180")}
+          />
+        </button>
       </aside>
 
       {/* Mobile overlay */}
       {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
-          onClick={onMobileClose}
-          aria-hidden
-        />
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden" onClick={onMobileClose} aria-hidden />
       )}
 
       {/* Mobile drawer */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-300 lg:hidden",
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-[var(--sidebar-border)] bg-[#080F1E] transition-transform duration-300 lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {nav}
+        {navContent(false, onMobileClose)}
       </aside>
     </>
   );
 }
 
-export function DashboardMobileMenuButton({
-  onClick,
-}: {
-  onClick: () => void;
-}) {
+export function DashboardMobileMenuButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="rounded-xl border border-border bg-surface p-2.5 text-foreground shadow-sm lg:hidden"
+      className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[var(--foreground-muted)] hover:text-[var(--foreground)] lg:hidden"
       aria-label="Abrir menú"
     >
       <Menu className="h-5 w-5" />

@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth-context";
 
 type Result<T = undefined> = T extends undefined
   ? { success: boolean; error?: string }
@@ -13,33 +14,6 @@ export type ActivityRow = {
   created_at: string;
   metadata: Record<string, string>;
 };
-
-async function getAuthContext() {
-  const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) throw new Error("No autenticado");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("workspace_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.workspace_id || profile.workspace_id === "") {
-    const { data: ws } = await supabase
-      .from("workspaces")
-      .insert({ name: "Mi Workspace", plan_type: "growth" })
-      .select("id")
-      .single();
-    if (ws?.id) {
-      await supabase.from("profiles").update({ workspace_id: ws.id }).eq("id", user.id);
-      await supabase.from("workspace_settings").insert({ workspace_id: ws.id });
-    }
-    return { supabase, userId: user.id, workspaceId: ws?.id ?? "" };
-  }
-
-  return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
-}
 
 export async function getDashboardData(): Promise<Result<{
   leadsCount: number;
@@ -466,6 +440,93 @@ export async function getDashboardMetrics(): Promise<Result<DashboardMetrics>> {
         })),
       },
     };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- Onboarding ----------------------------------------------------------------
+
+export type OnboardingSteps = {
+  extension_installed: boolean;
+  linkedin_connected: boolean;
+  first_campaign_created: boolean;
+};
+
+export type OnboardingStatus = {
+  completed: boolean;
+  steps: OnboardingSteps;
+};
+
+export async function getOnboardingStatus(): Promise<Result<OnboardingStatus>> {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error("No autenticado");
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_completed, onboarding_steps")
+      .eq("id", user.id)
+      .single();
+
+    const completed = profile?.onboarding_completed ?? false;
+    const steps: OnboardingSteps = {
+      extension_installed:    (profile?.onboarding_steps as OnboardingSteps | null)?.extension_installed    ?? false,
+      linkedin_connected:     (profile?.onboarding_steps as OnboardingSteps | null)?.linkedin_connected     ?? false,
+      first_campaign_created: (profile?.onboarding_steps as OnboardingSteps | null)?.first_campaign_created ?? false,
+    };
+
+    return { success: true, data: { completed, steps } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+export async function completeOnboardingStep(stepId: keyof OnboardingSteps): Promise<Result> {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error("No autenticado");
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_steps")
+      .eq("id", user.id)
+      .single();
+
+    const current: OnboardingSteps = {
+      extension_installed:    (profile?.onboarding_steps as OnboardingSteps | null)?.extension_installed    ?? false,
+      linkedin_connected:     (profile?.onboarding_steps as OnboardingSteps | null)?.linkedin_connected     ?? false,
+      first_campaign_created: (profile?.onboarding_steps as OnboardingSteps | null)?.first_campaign_created ?? false,
+    };
+    current[stepId] = true;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ onboarding_steps: current })
+      .eq("id", user.id);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+export async function markOnboardingComplete(): Promise<Result> {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error("No autenticado");
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ onboarding_completed: true })
+      .eq("id", user.id);
+
+    if (error) throw error;
+    return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
   }

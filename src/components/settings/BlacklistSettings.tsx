@@ -6,7 +6,7 @@ import { addToBlacklist, removeFromBlacklist } from "@/app/dashboard/settings/ac
 import type { BlacklistEntry } from "@/app/dashboard/settings/actions";
 
 const inputCls =
-  "flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all";
+  "flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:ring-1 focus:ring-[rgba(37,99,235,0.3)] transition-all";
 
 type Props = { initial: BlacklistEntry[] };
 
@@ -51,13 +51,13 @@ export function BlacklistSettings({ initial }: Props) {
   return (
     <div className="max-w-xl space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-100">Blacklist</h2>
-        <p className="text-sm text-zinc-400">Perfiles y emails que el motor nunca contactará</p>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">Blacklist</h2>
+        <p className="text-sm text-[var(--foreground-muted)]">Perfiles y emails que el motor nunca contactará</p>
       </div>
 
       {/* Add form */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 space-y-3">
-        <p className="text-sm font-medium text-zinc-300">Agregar a blacklist</p>
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 space-y-3">
+        <p className="text-sm font-medium text-[var(--foreground)]">Agregar a blacklist</p>
         <div className="flex gap-2">
           <input
             type="text"
@@ -71,7 +71,7 @@ export function BlacklistSettings({ initial }: Props) {
             type="button"
             onClick={handleAdd}
             disabled={addPending || (!isLinkedIn && !isEmail && input.trim().length > 0) || !input.trim()}
-            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
           >
             {addPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Agregar
@@ -85,11 +85,11 @@ export function BlacklistSettings({ initial }: Props) {
           className={`${inputCls} flex-none w-full`}
         />
         {input.trim() && !isLinkedIn && !isEmail && (
-          <p className="text-xs text-yellow-500">Ingresa una URL de LinkedIn válida o un email</p>
+          <p className="text-xs text-[#F59E0B]">Ingresa una URL de LinkedIn válida o un email</p>
         )}
 
         {error && (
-          <div className="flex items-center gap-2 rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-sm text-red-400">
+          <div className="flex items-center gap-2 rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] px-3 py-2 text-sm text-[#EF4444]">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error}
           </div>
@@ -97,33 +97,33 @@ export function BlacklistSettings({ initial }: Props) {
       </div>
 
       {/* List */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50">
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]">
         {entries.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-10 text-zinc-500">
+          <div className="flex flex-col items-center gap-2 py-10 text-[var(--foreground-faint)]">
             <Ban className="h-8 w-8 opacity-40" />
             <p className="text-sm">Blacklist vacía</p>
           </div>
         ) : (
-          <ul className="divide-y divide-zinc-800">
+          <ul className="divide-y divide-[var(--border)]">
             {entries.map((entry) => (
               <li key={entry.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-zinc-200">
+                  <p className="truncate text-sm font-medium text-[var(--foreground)]">
                     {entry.linkedin_url ?? entry.email ?? "—"}
                   </p>
                   <div className="flex items-center gap-2 mt-0.5">
                     {entry.linkedin_url && (
-                      <span className="rounded-full bg-blue-900/30 px-2 py-0.5 text-[10px] font-medium text-blue-400 border border-blue-800/50">
+                      <span className="rounded-full bg-[rgba(37,99,235,0.12)] px-2 py-0.5 text-[10px] font-medium text-[#2563EB] border border-[rgba(37,99,235,0.3)]">
                         LinkedIn
                       </span>
                     )}
                     {entry.email && (
-                      <span className="rounded-full bg-purple-900/30 px-2 py-0.5 text-[10px] font-medium text-purple-400 border border-purple-800/50">
+                      <span className="rounded-full bg-[rgba(6,182,212,0.12)] px-2 py-0.5 text-[10px] font-medium text-[#06B6D4] border border-[rgba(6,182,212,0.3)]">
                         Email
                       </span>
                     )}
                     {entry.reason && (
-                      <span className="text-xs text-zinc-500 truncate">{entry.reason}</span>
+                      <span className="text-xs text-[var(--foreground-faint)] truncate">{entry.reason}</span>
                     )}
                   </div>
                 </div>
@@ -131,7 +131,7 @@ export function BlacklistSettings({ initial }: Props) {
                   type="button"
                   onClick={() => handleRemove(entry.id)}
                   disabled={removingId === entry.id}
-                  className="shrink-0 rounded-lg p-1.5 text-zinc-500 hover:bg-red-900/30 hover:text-red-400 transition-colors disabled:opacity-50"
+                  className="shrink-0 rounded-lg p-1.5 text-[var(--foreground-faint)] hover:bg-[rgba(239,68,68,0.1)] hover:text-[#EF4444] transition-colors disabled:opacity-50"
                 >
                   {removingId === entry.id
                     ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -144,7 +144,7 @@ export function BlacklistSettings({ initial }: Props) {
         )}
       </div>
 
-      <p className="text-xs text-zinc-600">
+      <p className="text-xs text-[var(--foreground-faint)]">
         {entries.length} entrada{entries.length !== 1 ? "s" : ""} en la blacklist
       </p>
     </div>

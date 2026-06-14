@@ -1,3 +1,8 @@
+"use client";
+
+import { useRef } from "react";
+import { motion } from "framer-motion";
+
 const features = [
   {
     icon: (
@@ -6,9 +11,7 @@ const features = [
       </svg>
     ),
     title: "Automatización inteligente",
-    description:
-      "La extensión de Chrome envía conexiones y mensajes automáticamente respetando los límites de LinkedIn. Campañas de múltiples pasos sin esfuerzo manual.",
-    color: "text-indigo-600 bg-indigo-50",
+    description: "La extensión de Chrome envía conexiones y mensajes automáticamente respetando los límites de LinkedIn. Campañas de múltiples pasos sin esfuerzo manual.",
   },
   {
     icon: (
@@ -17,9 +20,7 @@ const features = [
       </svg>
     ),
     title: "CRM integrado",
-    description:
-      "Kanban y lista en tiempo real. Los leads se mueven automáticamente entre etapas según su respuesta. Sin Salesforce, sin exportar CSVs.",
-    color: "text-emerald-600 bg-emerald-50",
+    description: "Kanban y lista en tiempo real. Los leads se mueven automáticamente entre etapas según su respuesta. Sin Salesforce, sin exportar CSVs.",
   },
   {
     icon: (
@@ -28,9 +29,7 @@ const features = [
       </svg>
     ),
     title: "Autopilot con IA",
-    description:
-      "Claude Sonnet lee los mensajes de tus prospectos y redacta respuestas personalizadas. Tú revisas y apruebas antes de enviar — o activas el modo automático.",
-    color: "text-violet-600 bg-violet-50",
+    description: "cazary.ai lee los mensajes de tus prospectos y redacta respuestas personalizadas. Tú revisas y apruebas antes de enviar — o activas el modo automático.",
   },
   {
     icon: (
@@ -39,9 +38,7 @@ const features = [
       </svg>
     ),
     title: "Secuencias de email",
-    description:
-      "Combina LinkedIn + email en una sola campaña. A/B testing de mensajes para encontrar qué convierte mejor en tu nicho.",
-    color: "text-blue-600 bg-blue-50",
+    description: "Combina LinkedIn + email en una sola campaña. A/B testing de mensajes para encontrar qué convierte mejor en tu nicho.",
   },
   {
     icon: (
@@ -50,9 +47,7 @@ const features = [
       </svg>
     ),
     title: "Importa tus leads",
-    description:
-      "Sube tu CSV de Sales Navigator o LinkedIn directamente. Enriquecimiento automático de perfiles con datos actualizados.",
-    color: "text-amber-600 bg-amber-50",
+    description: "Sube tu CSV de Sales Navigator o LinkedIn directamente. Enriquecimiento automático de perfiles con datos actualizados.",
   },
   {
     icon: (
@@ -61,46 +56,83 @@ const features = [
       </svg>
     ),
     title: "Analytics en tiempo real",
-    description:
-      "Tasa de respuesta, conversiones por campaña y pipeline generado. Sabe exactamente qué campaña genera reuniones.",
-    color: "text-rose-600 bg-rose-50",
+    description: "Tasa de respuesta, conversiones por campaña y pipeline generado. Sabe exactamente qué campaña genera reuniones.",
   },
 ];
 
+const cardVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 },
+};
+
+const containerVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.08 } },
+};
+
+function FeatureCard({ feature }: { feature: typeof features[number] }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    cardRef.current?.style.setProperty("--mouse-x", `${x}%`);
+    cardRef.current?.style.setProperty("--mouse-y", `${y}%`);
+  }
+
+  return (
+    <motion.div
+      ref={cardRef}
+      variants={cardVariants}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      whileHover={{ scale: 1.01, transition: { type: "spring", stiffness: 400 } }}
+      onMouseMove={handleMouseMove}
+      className="spotlight-card group rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 transition-all duration-300 hover:border-[rgba(37,99,235,0.4)] hover:bg-[var(--surface-hover)] hover:shadow-[0_0_20px_rgba(37,99,235,0.08)]"
+    >
+      {/* Icon */}
+      <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#2563EB] to-[#06B6D4] opacity-90">
+        <div className="text-white">{feature.icon}</div>
+      </div>
+
+      <h3 className="mt-4 text-base font-semibold text-[var(--foreground)]">
+        {feature.title}
+      </h3>
+      <p className="mt-2 text-sm leading-relaxed text-[var(--foreground-muted)]">
+        {feature.description}
+      </p>
+    </motion.div>
+  );
+}
+
 export function Features() {
   return (
-    <section id="caracteristicas" className="bg-white py-24">
+    <section id="caracteristicas" className="bg-[var(--background)] py-32 md:py-40">
       <div className="mx-auto max-w-6xl px-6">
         <div className="mx-auto max-w-2xl text-center">
-          <span className="text-xs font-semibold uppercase tracking-widest text-indigo-600">
+          <span className="bg-gradient-to-r from-[#2563EB] to-[#06B6D4] bg-clip-text text-xs font-semibold uppercase tracking-widest text-transparent">
             Características
           </span>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight text-zinc-900 md:text-4xl">
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-[var(--foreground)] md:text-4xl">
             Todo lo que un SDR necesita, en un solo lugar
           </h2>
-          <p className="mt-4 text-lg text-zinc-500">
+          <p className="mt-4 text-lg text-[var(--foreground-muted)]">
             Sin extensiones de terceros dudosas. Sin exportar datos a 5 herramientas distintas.
           </p>
         </div>
 
-        <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-50px" }}
+          className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {features.map((feature) => (
-            <div
-              key={feature.title}
-              className="rounded-2xl border border-zinc-100 bg-zinc-50 p-6 transition-shadow hover:shadow-md hover:shadow-zinc-100"
-            >
-              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${feature.color}`}>
-                {feature.icon}
-              </div>
-              <h3 className="mt-4 text-base font-semibold text-zinc-900">
-                {feature.title}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                {feature.description}
-              </p>
-            </div>
+            <FeatureCard key={feature.title} feature={feature} />
           ))}
-        </div>
+        </motion.div>
       </div>
     </section>
   );

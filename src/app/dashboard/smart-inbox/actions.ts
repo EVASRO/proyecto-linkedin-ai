@@ -1,40 +1,13 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { getAuthContext } from "@/lib/auth-context";
 import type { Conversation, Message } from "@/components/smart-inbox/types";
 import { processAutopilotConversations } from "@/app/dashboard/agentes-ia/actions";
 
 type Result<T = undefined> = T extends undefined
   ? { success: boolean; error?: string }
   : { success: boolean; error?: string; data?: T };
-
-async function getAuthContext() {
-  const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) throw new Error("No autenticado");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("workspace_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.workspace_id || profile.workspace_id === "") {
-    const { data: ws } = await supabase
-      .from("workspaces")
-      .insert({ name: "Mi Workspace", plan_type: "growth" })
-      .select("id")
-      .single();
-    if (ws?.id) {
-      await supabase.from("profiles").update({ workspace_id: ws.id }).eq("id", user.id);
-      await supabase.from("workspace_settings").insert({ workspace_id: ws.id });
-    }
-    return { supabase, userId: user.id, workspaceId: ws?.id ?? "" };
-  }
-
-  return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
-}
 
 // -- Cargar conversaciones con mensajes ----------------------------------------
 

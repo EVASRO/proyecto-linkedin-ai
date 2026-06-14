@@ -212,7 +212,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
 
     const supabase = createClient();
     const channel = supabase
-      .channel("nexusai-leads-live")
+      .channel("cazary-leads-live")
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "leads" },

@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Archive, Bot, Check, MoreVertical, User } from "lucide-react";
+import { Archive, Check, MoreVertical, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { Conversation, ConvStatus } from "./types";
 import { archiveConversation, markConversationRead } from "@/app/dashboard/smart-inbox/actions";
-
-// -- Helpers -------------------------------------------------------------------
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);
@@ -21,7 +19,7 @@ function fmtTime(iso: string): string {
 }
 
 function avatarColor(name: string): string {
-  const palette = ["bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-pink-500", "bg-indigo-600", "bg-sky-500", "bg-orange-500"];
+  const palette = ["#2563EB", "#7C3AED", "#059669", "#D97706", "#DB2777", "#0891B2"];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return palette[Math.abs(h) % palette.length];
@@ -31,15 +29,13 @@ function initials(name: string): string {
   return name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 }
 
-const STATUS_CONFIG: Record<ConvStatus, { label: string; dot: string }> = {
-  new:         { label: "Nuevo",       dot: "bg-blue-500"   },
-  active:      { label: "Activo",      dot: "bg-green-400"  },
-  ai_handling: { label: "Autopilot",   dot: "bg-purple-500" },
-  human:       { label: "Manual",      dot: "bg-amber-400"  },
-  archived:    { label: "Archivado",   dot: "bg-zinc-400"   },
+const STATUS_DOT: Record<ConvStatus, string> = {
+  new:         "bg-[#2563EB]",
+  active:      "bg-[#10B981]",
+  ai_handling: "bg-violet-500",
+  human:       "bg-[#F59E0B]",
+  archived:    "bg-[var(--foreground-faint)]",
 };
-
-// -- Row menu ------------------------------------------------------------------
 
 interface RowMenuProps {
   conv: Conversation;
@@ -88,32 +84,39 @@ function RowMenu({ conv, onArchived }: RowMenuProps) {
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         disabled={isPending}
-        className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+        className="flex h-6 w-6 items-center justify-center rounded-md transition-colors"
+        style={{ color: "var(--foreground-faint)" }}
       >
         <MoreVertical className="h-3.5 w-3.5" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+        <div
+          className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl shadow-xl"
+          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        >
           <button
             onClick={(e) => { e.stopPropagation(); handleMarkRead(); }}
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+            style={{ color: "var(--foreground-muted)" }}
           >
-            <Check className="h-3.5 w-3.5 text-zinc-400" />
+            <Check className="h-3.5 w-3.5" style={{ color: "var(--foreground-faint)" }} />
             Marcar como leído
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); handleViewLead(); }}
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+            style={{ color: "var(--foreground-muted)" }}
           >
-            <User className="h-3.5 w-3.5 text-zinc-400" />
+            <User className="h-3.5 w-3.5" style={{ color: "var(--foreground-faint)" }} />
             Ver lead en CRM
           </button>
-          <div className="my-1 h-px bg-zinc-100" />
+          <div className="my-1 h-px" style={{ background: "var(--border)" }} />
           <button
             onClick={(e) => { e.stopPropagation(); handleArchive(); }}
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-amber-50"
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+            style={{ color: "var(--foreground-muted)" }}
           >
-            <Archive className="h-3.5 w-3.5 text-zinc-400" />
+            <Archive className="h-3.5 w-3.5" style={{ color: "var(--foreground-faint)" }} />
             Archivar conversación
           </button>
         </div>
@@ -121,8 +124,6 @@ function RowMenu({ conv, onArchived }: RowMenuProps) {
     </div>
   );
 }
-
-// -- Component -----------------------------------------------------------------
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -132,46 +133,68 @@ interface ConversationListProps {
 
 export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
   const [localConvs, setLocalConvs] = useState(conversations);
-
   useEffect(() => { setLocalConvs(conversations); }, [conversations]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* List */}
-      <div className="flex-1 overflow-y-auto divide-y divide-zinc-100">
+      <div className="flex-1 overflow-y-auto">
         {localConvs.length === 0 && (
-          <p className="px-4 py-8 text-center text-xs text-zinc-400">Sin conversaciones</p>
+          <p className="px-4 py-8 text-center text-xs" style={{ color: "var(--foreground-faint)" }}>
+            Sin conversaciones
+          </p>
         )}
         {localConvs.map((conv) => {
           const lastMsg  = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
-          const selected = conv.id === selectedId;
-          const status   = STATUS_CONFIG[conv.status] ?? STATUS_CONFIG.active;
+          const isSelected = conv.id === selectedId;
+          const isUnread   = conv.unreadCount > 0;
 
           return (
             <div
               key={conv.id}
-              className={[
-                "group relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer",
-                selected ? "bg-indigo-50 border-l-2 border-indigo-500" : "hover:bg-zinc-50 border-l-2 border-transparent",
-              ].join(" ")}
               onClick={() => onSelect(conv.id)}
+              className="group relative flex w-full cursor-pointer items-start gap-3 px-3 py-3 transition-colors"
+              style={{
+                background: isSelected ? "var(--primary-soft)" : undefined,
+                borderLeft: isSelected ? "2px solid #2563EB" : "2px solid transparent",
+              }}
+              onMouseEnter={(e) => {
+                if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = "var(--surface-hover)";
+              }}
+              onMouseLeave={(e) => {
+                if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = "";
+              }}
             >
               {/* Avatar */}
               <div className="relative flex-shrink-0">
-                <div className={`flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(conv.lead.name)}`}>
+                <div
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                  style={{ background: avatarColor(conv.lead.name) }}
+                >
                   {initials(conv.lead.name)}
                 </div>
-                <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${status.dot}`} />
+                <span
+                  className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 ${STATUS_DOT[conv.status]}`}
+                  style={{ borderColor: "var(--surface)" }}
+                />
               </div>
 
               {/* Content */}
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-1">
-                  <p className={`truncate text-xs ${conv.unreadCount > 0 ? "font-bold text-zinc-900" : "font-medium text-zinc-700"}`}>
+                  <p
+                    className="truncate text-[13px]"
+                    style={{
+                      fontWeight: isUnread ? 700 : 500,
+                      color: isUnread ? "var(--foreground)" : "var(--foreground-muted)",
+                    }}
+                  >
                     {conv.lead.name}
                   </p>
-                  <span className="flex-shrink-0 text-[10px] text-zinc-400 group-hover:hidden">
-                    {lastMsg ? fmtTime(lastMsg.timestamp) : conv.lead.createdAt ?? ""}
+                  <span
+                    className="flex-shrink-0 text-[10px] group-hover:hidden"
+                    style={{ color: "var(--foreground-faint)" }}
+                  >
+                    {lastMsg ? fmtTime(lastMsg.timestamp) : ""}
                   </span>
                   <div className="hidden group-hover:flex flex-shrink-0">
                     <RowMenu
@@ -181,29 +204,32 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  {conv.source === "salesnav" ? (
-                    <span className="flex-shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[8px] font-bold text-orange-600">SN</span>
-                  ) : (
-                    <span className="flex-shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[8px] font-bold text-blue-600">in</span>
-                  )}
-                  <p className="truncate text-[10px] text-zinc-400">{conv.lead.company}</p>
-                </div>
+                <p
+                  className="mt-0.5 truncate text-xs leading-snug"
+                  style={{ color: "var(--foreground-faint)" }}
+                >
+                  {conv.lead.company}
+                </p>
 
                 <div className="mt-1 flex items-center justify-between gap-1">
-                  <p className={`truncate text-[11px] ${conv.unreadCount > 0 ? "font-medium text-zinc-700" : "text-zinc-500"}`}>
-                    {lastMsg
-                      ? <>{lastMsg.sender === "ai" ? "🤖 " : lastMsg.sender === "user" ? "Tú: " : ""}{lastMsg.text.slice(0, 55)}{lastMsg.text.length > 55 ? "…" : ""}</>
-                      : <span className="italic text-zinc-400">Sin mensajes aún</span>}
-                  </p>
-                  <div className="flex flex-shrink-0 items-center gap-1">
-                    {conv.autopilotActive && <Bot className="h-3 w-3 text-purple-500" />}
-                    {conv.unreadCount > 0 && (
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold text-white">
-                        {conv.unreadCount}
-                      </span>
+                  <p
+                    className="truncate text-[11px]"
+                    style={{ color: isUnread ? "var(--foreground-muted)" : "var(--foreground-faint)" }}
+                  >
+                    {lastMsg ? (
+                      <>
+                        {lastMsg.sender === "ai" ? "🤖 " : lastMsg.sender === "user" ? "Tú: " : ""}
+                        {lastMsg.text.slice(0, 50)}{lastMsg.text.length > 50 ? "…" : ""}
+                      </>
+                    ) : (
+                      <span className="italic">Sin mensajes</span>
                     )}
-                  </div>
+                  </p>
+                  {isUnread && (
+                    <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-[9px] font-bold text-white">
+                      {conv.unreadCount}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

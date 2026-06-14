@@ -1,17 +1,143 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth-context";
 
-async function getAuthContext() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("No autenticado");
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("workspace_id")
-    .eq("id", user.id)
-    .single();
-  return { supabase, workspaceId: profile?.workspace_id ?? "", userId: user.id };
+// -- Types ---------------------------------------------------------------------
+
+export type LinkedInAccount = {
+  id: string;
+  name: string | null;
+  headline: string | null;
+  profile_url: string | null;
+  avatar_url: string | null;
+  status: "connected" | "disconnected" | "error" | string;
+  last_synced_at: string | null;
+  error_message: string | null;
+};
+
+export type EngineData = {
+  status: "running" | "stopped" | "paused" | "error";
+  connections_sent: number;
+  messages_sent: number;
+  actions_count: number;
+  last_heartbeat_at: string | null;
+  queue_pending: number;
+  queue_done_today: number;
+  queue_errors_today: number;
+};
+
+export type IntegrationsData = {
+  linkedInAccount: LinkedInAccount | null;
+  engine: EngineData;
+};
+
+// -- getIntegrationsData -------------------------------------------------------
+
+export async function getIntegrationsData(): Promise<{
+  success: boolean;
+  data?: IntegrationsData;
+  error?: string;
+}> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const todayIso = new Date().toISOString().split("T")[0] + "T00:00:00Z";
+
+    const [liRes, engineRes, pendingRes, doneRes, errorRes] = await Promise.allSettled([
+      supabase
+        .from("linkedin_accounts")
+        .select("id, name, headline, profile_url, avatar_url, status, last_synced_at, error_message")
+        .eq("workspace_id", workspaceId)
+        .order("created_at", { ascending: false })
+        .limit(1),
+      supabase
+        .from("ghost_engine_sessions")
+        .select("status, connections_sent, messages_sent, actions_count, last_heartbeat_at")
+        .eq("workspace_id", workspaceId)
+        .maybeSingle(),
+      supabase
+        .from("engine_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("status", "pending"),
+      supabase
+        .from("engine_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("status", "done")
+        .gte("executed_at", todayIso),
+      supabase
+        .from("engine_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("status", "error")
+        .gte("executed_at", todayIso),
+    ]);
+
+    const liRow = liRes.status === "fulfilled" ? (liRes.value.data?.[0] ?? null) : null;
+    const engineRow = engineRes.status === "fulfilled" ? engineRes.value.data : null;
+    const pending = pendingRes.status === "fulfilled" ? (pendingRes.value.count ?? 0) : 0;
+    const done = doneRes.status === "fulfilled" ? (doneRes.value.count ?? 0) : 0;
+    const errors = errorRes.status === "fulfilled" ? (errorRes.value.count ?? 0) : 0;
+
+    let engineStatus: EngineData["status"] = "stopped";
+    if (engineRow) {
+      const lastBeat = engineRow.last_heartbeat_at
+        ? new Date(engineRow.last_heartbeat_at as string).getTime()
+        : 0;
+      const stale = Date.now() - lastBeat > 5 * 60_000;
+      if (!stale) {
+        engineStatus = (engineRow.status as EngineData["status"]) ?? "stopped";
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        linkedInAccount: liRow
+          ? {
+              id:             String(liRow.id),
+              name:           (liRow.name as string | null) ?? null,
+              headline:       (liRow.headline as string | null) ?? null,
+              profile_url:    (liRow.profile_url as string | null) ?? null,
+              avatar_url:     (liRow.avatar_url as string | null) ?? null,
+              status:         (liRow.status as string) ?? "disconnected",
+              last_synced_at: (liRow.last_synced_at as string | null) ?? null,
+              error_message:  (liRow.error_message as string | null) ?? null,
+            }
+          : null,
+        engine: {
+          status:            engineStatus,
+          connections_sent:  (engineRow?.connections_sent  as number) ?? 0,
+          messages_sent:     (engineRow?.messages_sent     as number) ?? 0,
+          actions_count:     (engineRow?.actions_count     as number) ?? 0,
+          last_heartbeat_at: (engineRow?.last_heartbeat_at as string) ?? null,
+          queue_pending:     pending,
+          queue_done_today:  done,
+          queue_errors_today: errors,
+        },
+      },
+    };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- updateEngineStatus -------------------------------------------------------
+
+export async function updateEngineStatus(
+  status: "running" | "paused" | "stopped"
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { error } = await supabase
+      .from("ghost_engine_sessions")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("workspace_id", workspaceId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
 }
 
 // -- Types ---------------------------------------------------------------------
@@ -179,3 +305,4 @@ export async function toggleWebhookActive(
     return { success: false, error: String(err) };
   }
 }
+

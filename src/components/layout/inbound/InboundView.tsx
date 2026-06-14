@@ -30,7 +30,7 @@ type DraftItem = {
 
 // -- Helpers -------------------------------------------------------------------
 
-const LS_DRAFTS_KEY = "nexusai_inbound_drafts";
+const LS_DRAFTS_KEY = "cazaryai_inbound_drafts";
 
 function saveDraft(d: DraftItem) {
   try {
@@ -68,20 +68,20 @@ function relDate(iso: string) {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  monitoring: "bg-green-100 text-green-700",
-  paused:     "bg-amber-100 text-amber-700",
-  error:      "bg-red-100 text-red-600",
+  monitoring: "bg-[rgba(16,185,129,0.12)] text-[#10B981]",
+  paused:     "bg-[var(--border)] text-[var(--foreground-faint)]",
+  error:      "bg-[rgba(239,68,68,0.12)] text-[#EF4444]",
 };
 
 const LEAD_STATUS: Record<string, { label: string; cls: string }> = {
-  nuevo:      { label: "Nuevo",      cls: "bg-blue-50 text-blue-700" },
-  contactado: { label: "Contactado", cls: "bg-indigo-50 text-indigo-700" },
-  respondio:  { label: "Respondió",  cls: "bg-green-50 text-green-700" },
-  cerrado:    { label: "Cerrado",    cls: "bg-zinc-100 text-zinc-500" },
+  nuevo:      { label: "Nuevo",      cls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]" },
+  contactado: { label: "Contactado", cls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]" },
+  respondio:  { label: "Respondió",  cls: "bg-[rgba(16,185,129,0.12)] text-[#10B981]" },
+  cerrado:    { label: "Cerrado",    cls: "bg-[var(--border)] text-[var(--foreground-faint)]" },
 };
 
 function avatarColor(name: string) {
-  const p = ["bg-blue-500","bg-violet-500","bg-emerald-500","bg-amber-500","bg-pink-500","bg-indigo-600"];
+  const p = ["bg-[#2563EB]","bg-[#06B6D4]","bg-[#10B981]","bg-[#F59E0B]","bg-[#EF4444]","bg-[#0EA5E9]"];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return p[Math.abs(h) % p.length];
@@ -127,20 +127,20 @@ function AddPostModal({ onClose, onAdded }: { onClose: () => void; onAdded: (p: 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div className="flex items-center gap-2">
-            <Megaphone className="h-4 w-4 text-indigo-500" />
-            <h2 className="text-sm font-bold text-zinc-900">Monitorear post de LinkedIn</h2>
+            <Megaphone className="h-4 w-4 text-[#2563EB]" />
+            <h2 className="text-sm font-bold text-[var(--foreground)]">Monitorear post de LinkedIn</h2>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--foreground-faint)] hover:bg-[rgba(255,255,255,0.04)]">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="px-5 py-5 space-y-4">
           <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
               URL del post *
             </label>
             <input
@@ -149,33 +149,33 @@ function AddPostModal({ onClose, onAdded }: { onClose: () => void; onAdded: (p: 
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
               placeholder="https://www.linkedin.com/posts/..."
-              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
               Nota (opcional)
             </label>
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ej: Post sobre AI outreach — capturar CTOs"
-              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
             />
           </div>
           {err && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">{err}</p>
+            <p className="rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.1)] px-3 py-2 text-xs text-[#EF4444]">{err}</p>
           )}
         </div>
 
-        <div className="flex gap-3 border-t border-zinc-100 bg-zinc-50/60 px-5 py-4">
-          <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50">
+        <div className="flex gap-3 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-4">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-[var(--border)] py-2.5 text-xs font-semibold text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]">
             Cancelar
           </button>
           <button
             onClick={submit}
             disabled={loading}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] py-2.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
             Agregar post
@@ -224,14 +224,14 @@ function MonitorTab({ posts, leads, onPostsChange }: {
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Posts monitoreados", value: posts.length, sub: `${activeCount} activos`, color: "text-indigo-600" },
-          { label: "Leads capturados",   value: totalLeads,   sub: "vía posts inbound",  color: "text-green-600"  },
-          { label: "Leads inbound",      value: leads.length, sub: "en CRM con tag",      color: "text-violet-600" },
+          { label: "Posts monitoreados", value: posts.length, sub: `${activeCount} activos`, color: "text-[#2563EB]" },
+          { label: "Leads capturados",   value: totalLeads,   sub: "vía posts inbound",  color: "text-[#10B981]"  },
+          { label: "Leads inbound",      value: leads.length, sub: "en CRM con tag",      color: "text-[#2563EB]" },
         ].map(({ label, value, sub, color }) => (
-          <div key={label} className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+          <div key={label} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
             <p className={`text-2xl font-black tabular-nums ${color}`}>{value}</p>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-700">{label}</p>
-            <p className="text-[10px] text-zinc-400">{sub}</p>
+            <p className="mt-0.5 text-xs font-semibold text-[var(--foreground)]">{label}</p>
+            <p className="text-[10px] text-[var(--foreground-faint)]">{sub}</p>
           </div>
         ))}
       </div>
@@ -239,13 +239,13 @@ function MonitorTab({ posts, leads, onPostsChange }: {
       {/* Posts grid */}
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-zinc-900">
+          <h2 className="text-sm font-bold text-[var(--foreground)]">
             Posts monitoreados
-            <span className="ml-2 text-xs font-normal text-zinc-400">({posts.length})</span>
+            <span className="ml-2 rounded-full bg-[rgba(37,99,235,0.15)] px-1.5 py-0.5 text-[10px] font-bold text-[#2563EB]">({posts.length})</span>
           </h2>
           <button
             onClick={() => setAddOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-2 text-xs font-bold text-white hover:opacity-90 transition-opacity"
           >
             <Plus className="h-3.5 w-3.5" />
             Agregar post
@@ -253,17 +253,17 @@ function MonitorTab({ posts, leads, onPostsChange }: {
         </div>
 
         {posts.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white py-12 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50">
-              <Megaphone className="h-6 w-6 text-indigo-400" />
+          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--surface)] py-12 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[rgba(37,99,235,0.1)]">
+              <Megaphone className="h-6 w-6 text-[var(--foreground-faint)]" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-zinc-700">Sin posts monitoreados</p>
-              <p className="mt-0.5 text-xs text-zinc-400">Agrega URLs de posts de LinkedIn para capturar leads automáticamente</p>
+              <p className="text-sm font-semibold text-[var(--foreground)]">Sin posts monitoreados</p>
+              <p className="mt-0.5 text-xs text-[var(--foreground-muted)]">Agrega URLs de posts de LinkedIn para capturar leads automáticamente</p>
             </div>
             <button
               onClick={() => setAddOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-xs font-bold text-white hover:opacity-90"
             >
               <Plus className="h-3.5 w-3.5" /> Agregar primer post
             </button>
@@ -271,14 +271,14 @@ function MonitorTab({ posts, leads, onPostsChange }: {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {posts.map((post) => (
-              <div key={post.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm">
+              <div key={post.id} className="flex flex-col gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
                 {/* URL + status */}
                 <div className="flex items-start justify-between gap-2">
                   <a
                     href={post.post_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-indigo-600 hover:underline"
+                    className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-[#2563EB] hover:underline"
                   >
                     <Link2 className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="truncate">{truncateUrl(post.post_url)}</span>
@@ -286,10 +286,10 @@ function MonitorTab({ posts, leads, onPostsChange }: {
                   </a>
                   <span className={[
                     "flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold flex items-center gap-1",
-                    STATUS_COLORS[post.status] ?? "bg-zinc-100 text-zinc-500",
+                    STATUS_COLORS[post.status] ?? "bg-[var(--border)] text-[var(--foreground-faint)]",
                   ].join(" ")}>
                     {post.status === "monitoring" && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#10B981] animate-pulse" />
                     )}
                     {post.status === "monitoring" ? "Activo" : post.status === "paused" ? "Pausado" : "Error"}
                   </span>
@@ -297,27 +297,27 @@ function MonitorTab({ posts, leads, onPostsChange }: {
 
                 {/* Note */}
                 {post.note && (
-                  <p className="text-[11px] text-zinc-500 leading-snug">{post.note}</p>
+                  <p className="text-[11px] text-[var(--foreground-muted)] leading-snug">{post.note}</p>
                 )}
 
                 {/* Metrics */}
-                <div className="flex items-center gap-3 text-[11px] text-zinc-400">
+                <div className="flex items-center gap-3 text-[11px] text-[var(--foreground-muted)]">
                   <span className="flex items-center gap-1">
                     <Eye className="h-3 w-3" />
-                    <strong className="text-zinc-700">{post.leads_captured}</strong> leads capturados
+                    <strong className="text-[var(--foreground)]">{post.leads_captured}</strong> leads capturados
                   </span>
                   <span>{relDate(post.created_at)}</span>
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 border-t border-zinc-100 pt-3">
+                <div className="flex items-center gap-2 border-t border-[var(--border)] pt-3">
                   <button
                     onClick={() => handleToggle(post)}
                     className={[
                       "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
                       post.status === "monitoring"
-                        ? "border-amber-200 text-amber-700 hover:bg-amber-50"
-                        : "border-green-200 text-green-700 hover:bg-green-50",
+                        ? "border-[rgba(245,158,11,0.3)] text-[#F59E0B] hover:bg-[rgba(245,158,11,0.1)]"
+                        : "border-[rgba(16,185,129,0.3)] text-[#10B981] hover:bg-[rgba(16,185,129,0.1)]",
                     ].join(" ")}
                   >
                     {post.status === "monitoring"
@@ -326,7 +326,7 @@ function MonitorTab({ posts, leads, onPostsChange }: {
                   </button>
                   <button
                     onClick={() => handleRemove(post.id)}
-                    className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                    className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-[var(--foreground-faint)] hover:bg-[rgba(239,68,68,0.1)] hover:text-[#EF4444] transition-colors"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -340,41 +340,41 @@ function MonitorTab({ posts, leads, onPostsChange }: {
       {/* Leads table */}
       {leads.length > 0 && (
         <div>
-          <h2 className="mb-3 text-sm font-bold text-zinc-900">
+          <h2 className="mb-3 text-sm font-bold text-[var(--foreground)]">
             Leads inbound capturados
-            <span className="ml-2 text-xs font-normal text-zinc-400">({leads.length})</span>
+            <span className="ml-2 text-xs font-normal text-[var(--foreground-muted)]">({leads.length})</span>
           </h2>
-          <div className="overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
+          <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-zinc-100 bg-zinc-50">
+                <tr className="border-b border-[var(--border)] bg-[var(--background)]">
                   {["Lead", "Empresa", "Capturado", "Estado", ""].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">{h}</th>
+                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-[var(--foreground-muted)]">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-50">
+              <tbody className="divide-y divide-[var(--border)]">
                 {leads.map((lead) => {
-                  const st = LEAD_STATUS[lead.status] ?? { label: lead.status, cls: "bg-zinc-100 text-zinc-500" };
+                  const st = LEAD_STATUS[lead.status] ?? { label: lead.status, cls: "bg-[var(--border)] text-[var(--foreground-faint)]" };
                   return (
-                    <tr key={lead.id} className="hover:bg-zinc-50/50 transition-colors">
+                    <tr key={lead.id} className="hover:bg-[rgba(255,255,255,0.02)] transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
                           <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${avatarColor(lead.full_name)}`}>
                             {initials(lead.full_name)}
                           </div>
-                          <span className="font-semibold text-zinc-900">{lead.full_name}</span>
+                          <span className="font-semibold text-[var(--foreground)]">{lead.full_name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-zinc-500">{lead.company ?? "—"}</td>
-                      <td className="px-4 py-3 text-zinc-400">{relDate(lead.created_at)}</td>
+                      <td className="px-4 py-3 text-[var(--foreground-muted)]">{lead.company ?? "—"}</td>
+                      <td className="px-4 py-3 text-[var(--foreground-faint)]">{relDate(lead.created_at)}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</span>
                       </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => router.push("/dashboard/crm")}
-                          className="flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors"
+                          className="flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] transition-colors"
                         >
                           Ver en CRM <ChevronRight className="h-3 w-3" />
                         </button>
@@ -522,15 +522,15 @@ function GeneradorTab() {
   return (
     <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
       {/* Form panel */}
-      <div className="space-y-5 rounded-2xl border border-border bg-white p-6 shadow-sm self-start">
+      <div className="space-y-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 self-start">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-indigo-500" />
-          <h2 className="text-sm font-bold text-zinc-900">Generador de contenido IA</h2>
+          <Sparkles className="h-4 w-4 text-[#2563EB]" />
+          <h2 className="text-sm font-bold text-[var(--foreground)]">Generador de contenido IA</h2>
         </div>
 
         {/* Format */}
         <div>
-          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-zinc-400">Formato</label>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-[var(--foreground-muted)]">Formato</label>
           <div className="grid grid-cols-2 gap-2">
             {FORMATS.map(({ id, label, icon: Icon }) => (
               <button
@@ -538,7 +538,9 @@ function GeneradorTab() {
                 onClick={() => setFormat(id)}
                 className={[
                   "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-xs font-semibold transition-all",
-                  format === id ? "border-indigo-400 bg-indigo-50 text-indigo-800" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50",
+                  format === id
+                    ? "bg-[rgba(37,99,235,0.1)] border-[#2563EB] text-[#2563EB]"
+                    : "bg-[var(--background)] border border-[var(--border)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)]",
                 ].join(" ")}
               >
                 <Icon className="h-3.5 w-3.5 flex-shrink-0" />
@@ -550,7 +552,7 @@ function GeneradorTab() {
 
         {/* Tone */}
         <div>
-          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-zinc-400">Tono</label>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-[var(--foreground-muted)]">Tono</label>
           <div className="grid grid-cols-2 gap-1.5">
             {TONES.map(({ id, label, desc }) => (
               <button
@@ -558,11 +560,13 @@ function GeneradorTab() {
                 onClick={() => setTone(id)}
                 className={[
                   "flex flex-col rounded-xl border px-3 py-2 text-left transition-all",
-                  tone === id ? "border-indigo-400 bg-indigo-50" : "border-zinc-200 hover:bg-zinc-50",
+                  tone === id
+                    ? "bg-[rgba(37,99,235,0.1)] border-[#2563EB]"
+                    : "bg-[var(--background)] border border-[var(--border)] hover:border-[rgba(37,99,235,0.4)]",
                 ].join(" ")}
               >
-                <span className={`text-xs font-semibold ${tone === id ? "text-indigo-800" : "text-zinc-700"}`}>{label}</span>
-                <span className="text-[10px] text-zinc-400">{desc}</span>
+                <span className={`text-xs font-semibold ${tone === id ? "text-[#2563EB]" : "text-[var(--foreground-muted)]"}`}>{label}</span>
+                <span className="text-[10px] text-[var(--foreground-faint)]">{desc}</span>
               </button>
             ))}
           </div>
@@ -570,42 +574,42 @@ function GeneradorTab() {
 
         {/* Topic */}
         <div>
-          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-zinc-400">Tema *</label>
+          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--foreground-muted)]">Tema *</label>
           <textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             rows={2}
             placeholder="Ej: Cómo la IA está transformando el outreach de ventas B2B en LATAM"
-            className="w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
           />
         </div>
 
         {/* Industry */}
         <div>
-          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-zinc-400">Industria objetivo</label>
+          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--foreground-muted)]">Industria objetivo</label>
           <input
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
             placeholder="Ej: SaaS B2B, Fintech, Consultoría"
-            className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
           />
         </div>
 
         {/* CTA */}
         <div>
-          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-zinc-400">CTA deseado</label>
+          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--foreground-muted)]">CTA deseado</label>
           <input
             value={cta}
             onChange={(e) => setCta(e.target.value)}
             placeholder="Ej: Agenda una demo gratuita"
-            className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
           />
         </div>
 
         <button
           onClick={handleGenerate}
           disabled={!topic.trim() || loading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-3 text-sm font-bold text-white shadow-md shadow-indigo-200 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] py-3 text-sm font-semibold text-white hover:opacity-90 shadow-[0_0_16px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed transition-all"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           {loading ? "Generando…" : "✨ Generar contenido"}
@@ -615,23 +619,23 @@ function GeneradorTab() {
       {/* Result panel */}
       <div className="space-y-4">
         {/* Output */}
-        <div className="rounded-2xl border border-border bg-white shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3.5">
-            <p className="text-xs font-bold text-zinc-700">Contenido generado</p>
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3.5">
+            <p className="text-xs font-bold text-[var(--foreground)]">Contenido generado</p>
             {content && (
               <div className="flex items-center gap-2">
-                <span className={`text-[11px] tabular-nums font-medium ${overLimit ? "text-red-500" : "text-zinc-400"}`}>
+                <span className={`text-[11px] tabular-nums font-medium ${overLimit ? "text-[#EF4444]" : "text-[var(--foreground-muted)]"}`}>
                   {content.length}/{charLimit}
                   {overLimit && " ⚠️ Excede el límite"}
                 </span>
                 <button onClick={handleGenerate} disabled={loading || !topic.trim()}
                   title="Regenerar"
-                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 disabled:opacity-40">
+                  className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--foreground)] disabled:opacity-40">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </button>
                 <button onClick={handleCopy}
-                  className="flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">
-                  {copied ? <><Check className="h-3 w-3 text-green-600" /> Copiado</> : <><ClipboardCopy className="h-3 w-3" /> Copiar</>}
+                  className="flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)] transition-colors">
+                  {copied ? <><Check className="h-3 w-3 text-[#10B981]" /> Copiado</> : <><ClipboardCopy className="h-3 w-3" /> Copiar</>}
                 </button>
               </div>
             )}
@@ -643,16 +647,18 @@ function GeneradorTab() {
                 ref={textareaRef}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                className="w-full min-h-[240px] resize-none bg-transparent px-5 py-4 text-sm leading-relaxed text-zinc-800 focus:outline-none"
+                className="w-full min-h-[240px] resize-none bg-[var(--background)] px-5 py-4 text-sm leading-relaxed text-[var(--foreground)] focus:outline-none"
                 style={{ overflow: "hidden" }}
               />
-              <div className="flex items-center gap-2 border-t border-zinc-100 bg-zinc-50/60 px-5 py-3">
+              <div className="flex items-center gap-2 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-3">
                 <button
                   onClick={handleSaveDraft}
                   disabled={!content.trim()}
                   className={[
                     "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-all",
-                    draftSaved ? "border-green-300 bg-green-50 text-green-700" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50",
+                    draftSaved
+                      ? "border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.1)] text-[#10B981]"
+                      : "border-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]",
                   ].join(" ")}
                 >
                   {draftSaved ? <><Check className="h-3 w-3" /> Guardado</> : "Guardar borrador"}
@@ -664,10 +670,10 @@ function GeneradorTab() {
                   className={[
                     "ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all",
                     publishStatus === "queued"
-                      ? "bg-green-50 border border-green-300 text-green-700"
+                      ? "bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] text-[#10B981]"
                       : publishStatus === "error"
-                        ? "bg-red-50 border border-red-300 text-red-600"
-                        : "bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40",
+                        ? "bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#EF4444]"
+                        : "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white hover:opacity-90 disabled:opacity-40",
                   ].join(" ")}
                 >
                   {publishing
@@ -681,32 +687,32 @@ function GeneradorTab() {
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-zinc-400">
-              <Sparkles className="h-10 w-10 opacity-20" />
-              <p className="text-sm font-medium">El contenido generado aparecerá aquí</p>
-              <p className="text-xs">Completa el formulario y haz clic en Generar</p>
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <Sparkles className="h-10 w-10 text-[var(--foreground-faint)] opacity-40" />
+              <p className="text-sm font-medium text-[var(--foreground-muted)]">El contenido generado aparecerá aquí</p>
+              <p className="text-xs text-[var(--foreground-faint)]">Completa el formulario y haz clic en Generar</p>
             </div>
           )}
         </div>
 
         {/* Draft history */}
         {drafts.length > 0 && (
-          <div className="rounded-2xl border border-border bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center gap-2 border-b border-zinc-100 px-5 py-3">
-              <History className="h-3.5 w-3.5 text-zinc-400" />
-              <p className="text-xs font-bold text-zinc-700">Últimos borradores</p>
-              <span className="ml-auto text-[10px] text-zinc-400">{drafts.length} guardados</span>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-[var(--border)] px-5 py-3">
+              <History className="h-3.5 w-3.5 text-[var(--foreground-muted)]" />
+              <p className="text-xs font-bold text-[var(--foreground)]">Últimos borradores</p>
+              <span className="ml-auto text-[10px] text-[var(--foreground-muted)]">{drafts.length} guardados</span>
             </div>
-            <div className="divide-y divide-zinc-50">
+            <div className="divide-y divide-[var(--border)]">
               {drafts.map((d) => (
-                <div key={d.id} className="flex items-center gap-3 px-5 py-3 hover:bg-zinc-50 transition-colors">
+                <div key={d.id} className="flex items-center gap-3 px-5 py-3 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-zinc-800">{d.topic || "(sin tema)"}</p>
-                    <p className="text-[10px] text-zinc-400 capitalize">{d.format} · {relDate(d.createdAt)}</p>
+                    <p className="truncate text-xs font-semibold text-[var(--foreground)]">{d.topic || "(sin tema)"}</p>
+                    <p className="text-[10px] text-[var(--foreground-muted)] capitalize">{d.format} · {relDate(d.createdAt)}</p>
                   </div>
                   <button
                     onClick={() => loadFromDraft(d)}
-                    className="flex-shrink-0 rounded-lg border border-zinc-200 px-2.5 py-1 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors"
+                    className="flex-shrink-0 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)] transition-colors"
                   >
                     Cargar
                   </button>
@@ -740,15 +746,15 @@ export function InboundView({ initialPosts, initialLeads }: InboundViewProps) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
       {/* Header */}
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-white px-6 py-4">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--background)] px-6 py-4">
         <div>
-          <h1 className="text-lg font-bold text-zinc-900">Inbound</h1>
-          <p className="text-xs text-zinc-400">Captura leads de posts de LinkedIn · Genera contenido con IA</p>
+          <h1 className="text-lg font-bold text-[var(--foreground)]">Inbound</h1>
+          <p className="text-xs text-[var(--foreground-muted)]">Captura leads de posts de LinkedIn · Genera contenido con IA</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-shrink-0 border-b border-border bg-white px-6">
+      <div className="flex flex-shrink-0 border-b border-[var(--border)] bg-[var(--background)] px-6">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -756,13 +762,13 @@ export function InboundView({ initialPosts, initialLeads }: InboundViewProps) {
             className={[
               "flex items-center gap-2 px-4 py-3 text-xs font-semibold transition-colors",
               tab === t.id
-                ? "border-b-2 border-indigo-600 text-indigo-700"
-                : "text-zinc-500 hover:text-zinc-700",
+                ? "border-b-2 border-[#2563EB] text-[#2563EB]"
+                : "text-[var(--foreground-muted)] hover:text-[var(--foreground)]",
             ].join(" ")}
           >
             {t.label}
             {t.badge != null && t.badge > 0 && (
-              <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700">
+              <span className="rounded-full bg-[rgba(16,185,129,0.15)] px-1.5 py-0.5 text-[9px] font-bold text-[#10B981]">
                 {t.badge}
               </span>
             )}
@@ -771,7 +777,7 @@ export function InboundView({ initialPosts, initialLeads }: InboundViewProps) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-6">
+      <div className="flex-1 overflow-y-auto bg-[var(--background)] p-6">
         {tab === "monitor" && (
           <MonitorTab posts={posts} leads={leads} onPostsChange={setPosts} />
         )}

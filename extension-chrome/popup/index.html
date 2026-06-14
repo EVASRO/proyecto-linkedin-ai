@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>cazary.ai</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0F172A;
+      color: #F8FAFC;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Tokens ────────────────────────────────────────────────── */
+    :root {
+      --surface:        #1E293B;
+      --surface-hover:  #263348;
+      --border:         #2D3F55;
+      --border-subtle:  #1E2D42;
+      --fg:             #F8FAFC;
+      --fg-muted:       #94A3B8;
+      --fg-faint:       #475569;
+      --primary:        #2563EB;
+      --cyan:           #06B6D4;
+      --green:          #10B981;
+      --amber:          #F59E0B;
+      --red:            #EF4444;
+      --violet:         #7C3AED;
+      --grad:           linear-gradient(135deg, #2563EB 0%, #06B6D4 100%);
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header img { width: 120px; height: auto; display: block; }
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    .version {
+      font-size: 10px;
+      color: var(--fg-faint);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+    .btn-logout {
+      background: none; border: none; cursor: pointer;
+      color: var(--fg-faint); font-size: 10px;
+      padding: 2px 6px; border-radius: 6px;
+      transition: color 0.15s;
+    }
+    .btn-logout:hover { color: var(--fg-muted); }
+
+    /* ── Login panel ─────────────────────────────────────────────── */
+    .login-panel {
+      padding: 20px 16px;
+      display: none;
+    }
+    .login-panel h3 {
+      font-size: 13px; font-weight: 700;
+      color: var(--fg); margin-bottom: 14px;
+    }
+    .login-panel input {
+      width: 100%; padding: 9px 12px; margin-bottom: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px; color: var(--fg); font-size: 12px;
+      outline: none; transition: border-color 0.15s;
+    }
+    .login-panel input:focus { border-color: var(--primary); }
+    .login-panel input::placeholder { color: var(--fg-faint); }
+    .btn-login {
+      width: 100%; padding: 10px;
+      background: var(--grad);
+      border: none; border-radius: 10px;
+      color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-login:hover { opacity: 0.9; }
+    .btn-login:disabled { opacity: 0.4; cursor: not-allowed; }
+    .login-error {
+      font-size: 11px; color: var(--red);
+      margin-top: 8px; text-align: center; display: none;
+    }
+
+    /* ── Engine status ───────────────────────────────────────────── */
+    .engine-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .indicator {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+      background: var(--fg-faint);
+    }
+    .indicator.active   { background: var(--green); animation: pulse 1.8s ease-in-out infinite; }
+    .indicator.paused   { background: var(--amber); }
+    .indicator.error    { background: var(--red); animation: pulse 0.9s ease-in-out infinite; }
+    .indicator.processing { background: var(--cyan); animation: pulse 0.7s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+      50%       { opacity: 0.6; }
+    }
+    .engine-info { flex: 1; min-width: 0; }
+    .engine-status-text {
+      font-size: 12px; font-weight: 600; color: var(--fg);
+    }
+    .engine-sub {
+      font-size: 10px; color: var(--fg-faint); margin-top: 1px;
+    }
+    .next-action-text {
+      font-size: 10px; font-weight: 600; color: var(--cyan);
+      text-align: right; white-space: nowrap; flex-shrink: 0;
+    }
+
+    /* ── Stats grid ──────────────────────────────────────────────── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 12px 16px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .stat-val {
+      font-size: 24px; font-weight: 800;
+      color: var(--fg); line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-val.error-val { color: var(--red); }
+    .stat-lbl {
+      font-size: 10px; color: var(--fg-faint); margin-top: 3px;
+      font-weight: 500;
+    }
+
+    /* ── Limits bars ─────────────────────────────────────────────── */
+    .limits-section {
+      padding: 0 16px 12px;
+    }
+    .limits-label {
+      font-size: 9px; font-weight: 700;
+      color: var(--fg-faint);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .limit-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 5px;
+    }
+    .limit-name { font-size: 10px; color: var(--fg-muted); width: 68px; flex-shrink: 0; }
+    .limit-bar-wrap {
+      flex: 1; height: 4px;
+      background: var(--border-subtle);
+      border-radius: 2px; overflow: hidden;
+    }
+    .limit-bar {
+      height: 100%; border-radius: 2px;
+      background: var(--grad);
+      transition: width 0.3s;
+    }
+    .limit-bar.warn  { background: var(--amber); }
+    .limit-bar.danger{ background: var(--red); }
+    .limit-count { font-size: 9px; color: var(--fg-faint); width: 32px; text-align: right; }
+
+    /* ── Divider ─────────────────────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0 16px;
+    }
+
+    /* ── Action buttons ──────────────────────────────────────────── */
+    .actions {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 12px 16px;
+    }
+    .btn-primary {
+      width: 100%; padding: 11px 14px;
+      background: var(--grad);
+      border: none; border-radius: 10px;
+      color: #fff; font-size: 13px; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center;
+      justify-content: center; gap: 7px;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:hover   { opacity: 0.9; }
+    .btn-primary:disabled{ opacity: 0.4; cursor: not-allowed; }
+
+    .btn-outline {
+      width: 100%; padding: 10px 14px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--fg-muted);
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center;
+      justify-content: center; gap: 7px;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .btn-outline:hover {
+      background: var(--surface-hover);
+      border-color: var(--fg-faint);
+      color: var(--fg);
+    }
+    .btn-outline.pausing {
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+    .btn-outline.paused-state {
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .btn-outline:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Current task banner ─────────────────────────────────────── */
+    .current-task-banner {
+      display: none;
+      margin: 0 16px 4px;
+      background: rgba(37,99,235,0.10);
+      border: 1px solid rgba(37,99,235,0.2);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 11px; color: #93C5FD;
+      font-weight: 600;
+    }
+    .current-task-banner.visible { display: block; }
+
+    /* ── Footer ──────────────────────────────────────────────────── */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px 10px;
+      border-top: 1px solid var(--border);
+    }
+    .footer-brand { font-size: 10px; color: var(--fg-faint); font-weight: 600; }
+    .footer-version { font-size: 10px; color: var(--fg-faint); }
+
+    /* ── Spinner ─────────────────────────────────────────────────── */
+    .spinner {
+      width: 13px; height: 13px;
+      border: 2px solid rgba(255,255,255,0.35);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Misc ────────────────────────────────────────────────────── */
+    #main-ui { display: none; }
+    .hidden  { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <div class="header">
+    <img src="../icons/logo-rect-navy.png" alt="cazary.ai" id="logo-img" />
+    <div class="header-right">
+      <span class="version" id="ext-version">v3.0</span>
+      <button class="btn-logout hidden" id="btn-logout">Salir</button>
+    </div>
+  </div>
+
+  <!-- ── Login panel ────────────────────────────────────────────── -->
+  <div class="login-panel" id="login-panel">
+    <h3>Iniciar sesión</h3>
+    <input type="email"    id="login-email"    placeholder="Email" autocomplete="email" />
+    <input type="password" id="login-password" placeholder="Contraseña" autocomplete="current-password" />
+    <button class="btn-login" id="btn-login">Entrar</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+
+  <!-- ── Main UI ────────────────────────────────────────────────── -->
+  <div id="main-ui">
+
+    <!-- Engine status row -->
+    <div class="engine-section">
+      <div class="indicator" id="indicator"></div>
+      <div class="engine-info">
+        <div class="engine-status-text" id="engine-status-text">Motor detenido</div>
+        <div class="engine-sub" id="engine-sub">—</div>
+      </div>
+      <div class="next-action-text hidden" id="next-action-text"></div>
+    </div>
+
+    <!-- Stats 2×2 grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-val" id="stat-connections">0</div>
+        <div class="stat-lbl">Conexiones hoy</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-messages">0</div>
+        <div class="stat-lbl">Mensajes hoy</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-queue">0</div>
+        <div class="stat-lbl">En proceso</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-errors">0</div>
+        <div class="stat-lbl">Errores</div>
+      </div>
+    </div>
+
+    <!-- Daily limits bars -->
+    <div class="limits-section">
+      <div class="limits-label">Límites diarios</div>
+      <div id="limits-rows"></div>
+    </div>
+
+    <!-- Current task banner -->
+    <div class="current-task-banner" id="current-task-banner"></div>
+
+    <div class="divider"></div>
+
+    <!-- Action buttons -->
+    <div class="actions">
+      <button class="btn-primary" id="btn-dashboard">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+        </svg>
+        Abrir Dashboard
+      </button>
+      <button class="btn-outline" id="btn-toggle">
+        <svg id="toggle-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+        </svg>
+        <span id="toggle-label">Pausar motor</span>
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span class="footer-brand">cazary.ai</span>
+      <span class="footer-version" id="footer-version">Ghost Engine v3.0</span>
+    </div>
+
+  </div><!-- /#main-ui -->
+
+  <script src="popup.js"></script>
+</body>
+</html>

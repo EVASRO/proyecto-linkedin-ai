@@ -34,6 +34,8 @@ function isLinkedInProfileUrl(url: string) {
   } catch { return false; }
 }
 
+const inputCls = "w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]";
+
 export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalProps) {
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [extracting, setExtracting]   = useState(false);
@@ -147,16 +149,16 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxHeight: "90vh" }}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-2xl" style={{ maxHeight: "90vh" }}>
 
         {/* Header */}
-        <div className="flex flex-shrink-0 items-center justify-between border-b border-zinc-100 px-6 py-4">
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <div>
-            <h2 className="text-base font-bold text-zinc-900">Nuevo lead</h2>
-            <p className="text-[11px] text-zinc-400">Pega el perfil de LinkedIn para autocompletar</p>
+            <h2 className="text-base font-bold text-[var(--foreground)]">Nuevo lead</h2>
+            <p className="text-[11px] text-[var(--foreground-muted)]">Pega el perfil de LinkedIn para autocompletar</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)]">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -166,12 +168,12 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
 
           {/* LinkedIn URL */}
           <div>
-            <label className="mb-1.5 block text-xs font-semibold text-zinc-700">
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--foreground-muted)]">
               URL del perfil LinkedIn
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Link2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <Link2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--foreground-faint)]" />
                 <input
                   autoFocus
                   value={linkedinUrl}
@@ -179,32 +181,31 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
                   onKeyDown={(e) => e.key === "Enter" && urlValid && !extracting && handleExtract()}
                   placeholder="https://linkedin.com/in/nombre-apellido"
                   className={[
-                    "w-full rounded-xl border pl-10 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition-colors",
+                    "w-full rounded-xl border pl-10 pr-3 py-2.5 text-sm bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:outline-none focus:ring-1 transition-colors",
                     urlTouched && !urlValid
-                      ? "border-red-300 focus:border-red-400 focus:ring-red-100"
+                      ? "border-[rgba(239,68,68,0.5)] focus:border-[#EF4444] focus:ring-[rgba(239,68,68,0.2)]"
                       : extracted
-                      ? "border-green-400 focus:border-green-400 focus:ring-green-100"
-                      : "border-zinc-200 focus:border-indigo-400 focus:ring-indigo-100",
+                      ? "border-[rgba(16,185,129,0.5)] focus:border-[#10B981] focus:ring-[rgba(16,185,129,0.2)]"
+                      : "border-[var(--border)] focus:border-[#2563EB] focus:ring-[rgba(37,99,235,0.3)]",
                   ].join(" ")}
                 />
               </div>
               <button
                 onClick={handleExtract}
                 disabled={!urlValid || extracting}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
               >
                 {extracting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                 {extracting ? "Procesando…" : "Usar URL"}
               </button>
             </div>
             {urlTouched && !urlValid && (
-              <p className="mt-1 text-[11px] text-red-500">Debe ser un perfil de LinkedIn (/in/...) o Sales Navigator (/sales/people/...)</p>
+              <p className="mt-1 text-[11px] text-[#EF4444]">Debe ser un perfil de LinkedIn (/in/...) o Sales Navigator (/sales/people/...)</p>
             )}
             {extractError && (
-              <p className="mt-1 text-[11px] text-amber-600">{extractError}</p>
+              <p className="mt-1 text-[11px] text-[#F59E0B]">{extractError}</p>
             )}
-            {/* Info sobre Ghost Engine */}
-            <p className="mt-1.5 text-[11px] text-zinc-400">
+            <p className="mt-1.5 text-[11px] text-[var(--foreground-faint)]">
               El Ghost Engine extraerá los datos completos del perfil (nombre, cargo, empresa) cuando procese la cola. Aparecerán en el CRM automáticamente.
             </p>
           </div>
@@ -212,89 +213,61 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
           {/* Divider */}
           {!extracted && (
             <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-zinc-100" />
-              <span className="text-[11px] text-zinc-400">o completa manualmente</span>
-              <div className="h-px flex-1 bg-zinc-100" />
+              <div className="h-px flex-1 bg-[var(--border)]" />
+              <span className="text-[11px] text-[var(--foreground-faint)]">o completa manualmente</span>
+              <div className="h-px flex-1 bg-[var(--border)]" />
             </div>
           )}
 
           {/* Name + company */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Nombre *</label>
-              <input
-                value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="Juan Pérez"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Nombre *</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Juan Pérez" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Empresa</label>
-              <input
-                value={company} onChange={(e) => setCompany(e.target.value)}
-                placeholder="Empresa SAC"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Empresa</label>
+              <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Empresa SAC" className={inputCls} />
             </div>
           </div>
 
           {/* Headline */}
           {(extracted || headline) && (
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Titular / Cargo</label>
-              <input
-                value={headline} onChange={(e) => setHeadline(e.target.value)}
-                placeholder="CEO en Empresa SAC"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Titular / Cargo</label>
+              <input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="CEO en Empresa SAC" className={inputCls} />
             </div>
           )}
 
           {/* Contact */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Email</label>
-              <input
-                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="juan@empresa.com"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="juan@empresa.com" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Teléfono</label>
-              <input
-                value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="+51 999 000 000"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Teléfono</label>
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+51 999 000 000" className={inputCls} />
             </div>
           </div>
 
           {/* Value + Source + Stage */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Valor (USD)</label>
-              <input
-                type="number" value={value} onChange={(e) => setValue(e.target.value)}
-                placeholder="5000"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Valor (USD)</label>
+              <input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder="5000" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Fuente</label>
-              <select
-                value={source} onChange={(e) => setSource(e.target.value as LeadSource)}
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none"
-              >
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Fuente</label>
+              <select value={source} onChange={(e) => setSource(e.target.value as LeadSource)}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none">
                 {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Etapa</label>
-              <select
-                value={selectedColumn} onChange={(e) => setSelectedColumn(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none"
-              >
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Etapa</label>
+              <select value={selectedColumn} onChange={(e) => setSelectedColumn(e.target.value)}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[#2563EB] focus:outline-none">
                 {columns.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
               </select>
             </div>
@@ -302,7 +275,7 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
 
           {/* Tags */}
           <div>
-            <label className="mb-2 block text-xs font-semibold text-zinc-700">Etiquetas</label>
+            <label className="mb-2 block text-xs font-semibold text-[var(--foreground-muted)]">Etiquetas</label>
             <div className="flex flex-wrap gap-1.5">
               {QUICK_TAGS.map((tag) => {
                 const active = selectedTags.some((t) => t.label === tag.label);
@@ -312,7 +285,9 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
                     onClick={() => toggleTag(tag)}
                     className={[
                       "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all",
-                      active ? "border-indigo-400 bg-indigo-100 text-indigo-700" : "border-zinc-200 text-zinc-600 hover:border-zinc-300",
+                      active
+                        ? "border-[#2563EB] bg-[rgba(37,99,235,0.12)] text-[#2563EB]"
+                        : "border-[var(--border)] text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)]",
                     ].join(" ")}
                   >
                     {active && <Check className="mr-1 inline h-3 w-3" />}
@@ -326,39 +301,34 @@ export function CreateLeadModal({ columns, onClose, onCreate }: CreateLeadModalP
                 value={customTag} onChange={(e) => setCustomTag(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addCustomTag()}
                 placeholder="Etiqueta personalizada..."
-                className="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-xs focus:border-indigo-400 focus:outline-none"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:border-[#2563EB] focus:outline-none"
               />
-              <button
-                onClick={addCustomTag}
-                className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
-              >
+              <button onClick={addCustomTag}
+                className="rounded-xl border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]">
                 + Add
               </button>
             </div>
           </div>
 
-          {/* Next task — solo si no hay LinkedIn URL */}
+          {/* Next task */}
           {!linkedinUrl.trim() && (
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">Próxima tarea</label>
-              <input
-                value={nextTask} onChange={(e) => setNextTask(e.target.value)}
-                placeholder="Ej: Llamar el lunes 10:00 AM"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <label className="mb-1 block text-xs font-semibold text-[var(--foreground-muted)]">Próxima tarea</label>
+              <input value={nextTask} onChange={(e) => setNextTask(e.target.value)}
+                placeholder="Ej: Llamar el lunes 10:00 AM" className={inputCls} />
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex flex-shrink-0 items-center justify-between border-t border-zinc-100 px-6 py-4">
-          <button onClick={onClose} className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
+        <div className="flex flex-shrink-0 items-center justify-between border-t border-[var(--border)] px-6 py-4">
+          <button onClick={onClose} className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]">
             Cancelar
           </button>
           <button
             onClick={handleCreate}
             disabled={!canCreate}
-            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-6 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Crear lead

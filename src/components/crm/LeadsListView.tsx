@@ -8,47 +8,36 @@ import {
 } from "lucide-react";
 import type { CrmLead, Column, TagColor } from "./types";
 
-// -- Constantes de diseño ------------------------------------------------------
+// -- Tag colors ----------------------------------------------------------------
 
 const TAG_CLS: Record<TagColor, string> = {
-  blue:   "bg-blue-50   text-blue-700   border border-blue-100",
-  violet: "bg-violet-50 text-violet-700 border border-violet-100",
-  green:  "bg-green-50  text-green-700  border border-green-100",
-  amber:  "bg-amber-50  text-amber-700  border border-amber-100",
-  red:    "bg-red-50    text-red-700    border border-red-100",
-  pink:   "bg-pink-50   text-pink-700   border border-pink-100",
-  sky:    "bg-sky-50    text-sky-700    border border-sky-100",
-  gray:   "bg-zinc-100  text-zinc-600   border border-zinc-200",
-  indigo: "bg-indigo-50 text-indigo-700 border border-indigo-100",
+  blue:   "bg-[rgba(59,130,246,0.12)]  text-blue-400   border border-[rgba(59,130,246,0.2)]",
+  violet: "bg-[rgba(139,92,246,0.12)]  text-violet-400 border border-[rgba(139,92,246,0.2)]",
+  green:  "bg-[rgba(16,185,129,0.12)]  text-emerald-400 border border-[rgba(16,185,129,0.2)]",
+  amber:  "bg-[rgba(245,158,11,0.12)]  text-amber-400  border border-[rgba(245,158,11,0.2)]",
+  red:    "bg-[rgba(239,68,68,0.12)]   text-red-400    border border-[rgba(239,68,68,0.2)]",
+  pink:   "bg-[rgba(236,72,153,0.12)]  text-pink-400   border border-[rgba(236,72,153,0.2)]",
+  sky:    "bg-[rgba(14,165,233,0.12)]  text-sky-400    border border-[rgba(14,165,233,0.2)]",
+  gray:   "bg-[var(--surface-hover)]   text-[var(--foreground-muted)] border border-[var(--border)]",
+  indigo: "bg-[rgba(99,102,241,0.12)]  text-indigo-400 border border-[rgba(99,102,241,0.2)]",
 };
 
 const CONN_STATUS = {
-  none:            { label: "Sin contactar", cls: "bg-zinc-100 text-zinc-500",           Icon: Circle        },
-  pending:         { label: "Inv. enviada",  cls: "bg-blue-50 text-blue-600",            Icon: Clock3        },
-  connected:       { label: "Conectado",     cls: "bg-violet-50 text-violet-700",        Icon: UserCheck     },
-  in_conversation: { label: "Conversando",   cls: "bg-amber-50 text-amber-700",          Icon: MessageSquare },
-  meeting:         { label: "Reunión",       cls: "bg-green-50 text-green-700",          Icon: CheckCircle2  },
+  none:            { label: "Sin contactar", cls: "bg-[var(--surface-hover)] text-[var(--foreground-faint)]",           Icon: Circle        },
+  pending:         { label: "Inv. enviada",  cls: "bg-[rgba(59,130,246,0.12)] text-blue-400",                           Icon: Clock3        },
+  connected:       { label: "Conectado",     cls: "bg-[rgba(139,92,246,0.12)] text-violet-400",                         Icon: UserCheck     },
+  in_conversation: { label: "Conversando",   cls: "bg-[rgba(245,158,11,0.12)] text-amber-400",                          Icon: MessageSquare },
+  meeting:         { label: "Reunión",       cls: "bg-[rgba(16,185,129,0.12)] text-emerald-400",                        Icon: CheckCircle2  },
 } as const;
 
 const STAGE_CLS: Record<string, string> = {
-  extraido:          "bg-blue-50   text-blue-700",
-  conexion_enviada:  "bg-indigo-50 text-indigo-700",
-  conexion_aceptada: "bg-violet-50 text-violet-700",
-  en_conversacion:   "bg-amber-50  text-amber-700",
-  reunion_agendada:  "bg-orange-50 text-orange-700",
-  cliente:           "bg-green-50  text-green-700",
+  extraido:          "bg-[rgba(59,130,246,0.12)]  text-blue-400",
+  conexion_enviada:  "bg-[rgba(99,102,241,0.12)]  text-indigo-400",
+  conexion_aceptada: "bg-[rgba(139,92,246,0.12)]  text-violet-400",
+  en_conversacion:   "bg-[rgba(245,158,11,0.12)]  text-amber-400",
+  reunion_agendada:  "bg-[rgba(249,115,22,0.12)]  text-orange-400",
+  cliente:           "bg-[rgba(16,185,129,0.12)]  text-emerald-400",
 };
-
-const AVATAR_PALETTE = [
-  "bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500",
-  "bg-pink-500",  "bg-indigo-600", "bg-sky-500",     "bg-orange-500",
-];
-
-function avatarColor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length];
-}
 
 function initials(name: string): string {
   return name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -65,7 +54,7 @@ function timeAgo(iso: string): string {
   return "ahora";
 }
 
-// -- Tipos de columnas ---------------------------------------------------------
+// -- Column definitions -------------------------------------------------------
 
 type SortField = "created_at" | "value" | "score" | "days_in_stage";
 
@@ -93,7 +82,7 @@ const COLS: ColDef[] = [
   { key: "actions",     label: "",                    width: "w-10"          },
 ];
 
-// -- Props ---------------------------------------------------------------------
+// -- Props --------------------------------------------------------------------
 
 interface LeadsListViewProps {
   leads:        CrmLead[];
@@ -104,7 +93,7 @@ interface LeadsListViewProps {
   onSort?:      (field: SortField) => void;
 }
 
-// -- Componente ----------------------------------------------------------------
+// -- Component ----------------------------------------------------------------
 
 export function LeadsListView({
   leads, columns, onLeadClick, sortBy, sortDir, onSort,
@@ -112,38 +101,44 @@ export function LeadsListView({
   const colMap = Object.fromEntries(columns.map((c) => [c.key ?? c.id, c.title]));
 
   function SortIcon({ field }: { field: SortField }) {
-    if (sortBy !== field) return <ArrowUpDown className="h-3 w-3 text-zinc-300 ml-1" />;
+    if (sortBy !== field) return <ArrowUpDown className="ml-1 h-3 w-3 text-[var(--foreground-faint)]" />;
     return sortDir === "asc"
-      ? <ArrowUp   className="h-3 w-3 text-indigo-500 ml-1" />
-      : <ArrowDown className="h-3 w-3 text-indigo-500 ml-1" />;
+      ? <ArrowUp   className="ml-1 h-3 w-3 text-[var(--primary)]" />
+      : <ArrowDown className="ml-1 h-3 w-3 text-[var(--primary)]" />;
   }
 
   if (leads.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
-        <Users className="h-10 w-10 mb-3 opacity-30" />
+      <div className="flex flex-col items-center justify-center py-20 text-[var(--foreground-faint)]">
+        <Users className="mb-3 h-10 w-10 opacity-30" />
         <p className="text-sm font-medium">No se encontraron leads</p>
-        <p className="text-xs mt-1">Intenta ajustar la búsqueda o los filtros</p>
+        <p className="mt-1 text-xs">Intenta ajustar la búsqueda o los filtros</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1400px] text-sm">
           <thead>
-            <tr className="border-b border-zinc-100 bg-zinc-50/80">
+            <tr className="border-b border-[var(--border)] bg-[var(--surface-hover)]">
               <th className="w-10 px-3 py-3">
-                <input type="checkbox" className="rounded border-zinc-300" />
+                <input
+                  type="checkbox"
+                  className="rounded border-[var(--border)] bg-[var(--surface-hover)]"
+                />
               </th>
               {COLS.map((col) => (
                 <th
                   key={col.key}
                   className={[
                     col.width,
-                    "px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-zinc-400",
-                    col.sortable ? "cursor-pointer select-none hover:text-zinc-600" : "",
+                    "px-3 py-3 text-left text-[11px] font-semibold uppercase",
+                    "tracking-wider text-[var(--foreground-faint)]",
+                    col.sortable
+                      ? "cursor-pointer select-none hover:text-[var(--foreground-muted)] transition-colors"
+                      : "",
                   ].join(" ")}
                   onClick={() => col.sortable && onSort?.(col.sortable)}
                 >
@@ -156,22 +151,25 @@ export function LeadsListView({
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-zinc-50">
+          <tbody className="divide-y divide-[var(--border)]">
             {leads.map((lead) => {
               const cs = CONN_STATUS[lead.connectionStatus ?? "none"];
               const ConnIcon = cs.Icon;
-              const stageCls   = STAGE_CLS[lead.crmColumn ?? ""] ?? "bg-zinc-100 text-zinc-600";
+              const stageCls   = STAGE_CLS[lead.crmColumn ?? ""] ?? "bg-[var(--surface-hover)] text-[var(--foreground-muted)]";
               const stageLabel = colMap[lead.crmColumn ?? ""] ?? lead.crmColumn ?? "—";
 
               return (
                 <tr
                   key={lead.id}
                   onClick={() => onLeadClick?.(lead)}
-                  className="group cursor-pointer transition-colors hover:bg-indigo-50/30"
+                  className="group cursor-pointer transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   {/* Checkbox */}
                   <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" className="rounded border-zinc-300" />
+                    <input
+                      type="checkbox"
+                      className="rounded border-[var(--border)] bg-[var(--surface-hover)]"
+                    />
                   </td>
 
                   {/* Contacto */}
@@ -182,21 +180,25 @@ export function LeadsListView({
                         <img
                           src={lead.avatarUrl}
                           alt={lead.name}
-                          className="h-8 w-8 rounded-full object-cover ring-1 ring-zinc-200 flex-shrink-0"
+                          className="h-8 w-8 flex-shrink-0 rounded-full object-cover ring-1 ring-[var(--border)]"
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                         />
                       ) : (
-                        <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center
-                          rounded-full text-[11px] font-bold text-white ${avatarColor(lead.name)}`}>
+                        <div
+                          className="flex h-8 w-8 flex-shrink-0 items-center justify-center
+                                     rounded-full text-[11px] font-bold text-white"
+                          style={{ background: "linear-gradient(135deg, #2563EB, #06B6D4)" }}
+                        >
                           {initials(lead.name)}
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-zinc-900 leading-tight">
+                        <p className="truncate text-sm font-semibold leading-tight text-[var(--foreground)]">
                           {lead.name}
                         </p>
                         {lead.headline && (
-                          <p className="truncate text-[10px] text-zinc-400 leading-tight mt-0.5 max-w-[180px]">
+                          <p className="mt-0.5 max-w-[180px] truncate text-[10px]
+                                        leading-tight text-[var(--foreground-faint)]">
                             {lead.headline}
                           </p>
                         )}
@@ -207,18 +209,19 @@ export function LeadsListView({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          className="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
                         >
-                          <ExternalLink className="h-3 w-3 text-zinc-400 hover:text-indigo-500" />
+                          <ExternalLink className="h-3 w-3 text-[var(--foreground-faint)]
+                                                   hover:text-[var(--primary)]" />
                         </a>
                       )}
                     </div>
                   </td>
 
-                  {/* Estado de conexión */}
+                  {/* Conexión */}
                   <td className="px-3 py-3">
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5
-                      text-[10px] font-medium ${cs.cls}`}>
+                                      text-[10px] font-medium ${cs.cls}`}>
                       <ConnIcon className="h-3 w-3 flex-shrink-0" />
                       {cs.label}
                     </span>
@@ -226,11 +229,11 @@ export function LeadsListView({
 
                   {/* Empresa */}
                   <td className="px-3 py-3">
-                    <div className="flex items-center gap-1.5 text-zinc-700">
-                      <Building2 className="h-3.5 w-3.5 flex-shrink-0 text-zinc-300" />
-                      <span className="truncate text-xs max-w-[120px]">
+                    <div className="flex items-center gap-1.5 text-[var(--foreground-muted)]">
+                      <Building2 className="h-3.5 w-3.5 flex-shrink-0 text-[var(--foreground-faint)]" />
+                      <span className="max-w-[120px] truncate text-xs">
                         {lead.company !== "—" ? lead.company : (
-                          <span className="text-zinc-300">—</span>
+                          <span className="text-[var(--foreground-faint)]">—</span>
                         )}
                       </span>
                     </div>
@@ -247,31 +250,32 @@ export function LeadsListView({
                   <td className="px-3 py-3">
                     {lead.automationStep ? (
                       <div className="flex items-center gap-1">
-                        <Zap className="h-3 w-3 flex-shrink-0 text-indigo-400" />
-                        <span className="truncate text-[10px] text-zinc-600 max-w-[160px]">
+                        <Zap className="h-3 w-3 flex-shrink-0 text-[var(--primary)]" />
+                        <span className="max-w-[160px] truncate text-[10px] text-[var(--foreground-muted)]">
                           {lead.automationStep}
                         </span>
                       </div>
                     ) : (
-                      <span className="text-[10px] text-zinc-300">Sin automatización</span>
+                      <span className="text-[10px] text-[var(--foreground-faint)]">Sin automatización</span>
                     )}
                   </td>
 
-                  {/* Campaña / Segmento */}
+                  {/* Campaña */}
                   <td className="px-3 py-3">
                     {lead.campaignName ? (
                       <div className="flex flex-col gap-0.5">
-                        <span className="truncate text-[10px] font-medium text-zinc-700 max-w-[155px]">
+                        <span className="max-w-[155px] truncate text-[10px] font-medium
+                                         text-[var(--foreground-muted)]">
                           {lead.campaignName}
                         </span>
                         {lead.segmentName && (
-                          <span className="truncate text-[9px] text-zinc-400 max-w-[155px]">
+                          <span className="max-w-[155px] truncate text-[9px] text-[var(--foreground-faint)]">
                             {lead.segmentName}
                           </span>
                         )}
                       </div>
                     ) : (
-                      <span className="text-[10px] text-zinc-300">—</span>
+                      <span className="text-[10px] text-[var(--foreground-faint)]">—</span>
                     )}
                   </td>
 
@@ -281,14 +285,14 @@ export function LeadsListView({
                       <a
                         href={`mailto:${lead.email}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 text-[10px] text-zinc-600
-                                   hover:text-indigo-600 transition-colors"
+                        className="flex items-center gap-1 text-[10px] text-[var(--foreground-muted)]
+                                   transition-colors hover:text-[var(--primary)]"
                       >
                         <Mail className="h-3 w-3 flex-shrink-0" />
-                        <span className="truncate max-w-[145px]">{lead.email}</span>
+                        <span className="max-w-[145px] truncate">{lead.email}</span>
                       </a>
                     ) : (
-                      <span className="text-[10px] text-zinc-300">—</span>
+                      <span className="text-[10px] text-[var(--foreground-faint)]">—</span>
                     )}
                   </td>
 
@@ -298,14 +302,14 @@ export function LeadsListView({
                       <a
                         href={`tel:${lead.phone}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 text-[10px] text-zinc-600
-                                   hover:text-indigo-600 transition-colors"
+                        className="flex items-center gap-1 text-[10px] text-[var(--foreground-muted)]
+                                   transition-colors hover:text-[var(--primary)]"
                       >
                         <Phone className="h-3 w-3 flex-shrink-0" />
                         <span>{lead.phone}</span>
                       </a>
                     ) : (
-                      <span className="text-[10px] text-zinc-300">—</span>
+                      <span className="text-[10px] text-[var(--foreground-faint)]">—</span>
                     )}
                   </td>
 
@@ -314,27 +318,29 @@ export function LeadsListView({
                     {(lead.score ?? 0) > 0 ? (
                       <div className="flex items-center gap-1">
                         <Star className={`h-3 w-3 flex-shrink-0 ${
-                          (lead.score ?? 0) >= 80 ? "text-amber-400" :
-                          (lead.score ?? 0) >= 50 ? "text-zinc-400"  : "text-zinc-200"
+                          (lead.score ?? 0) >= 80 ? "text-[var(--warning)]" :
+                          (lead.score ?? 0) >= 50 ? "text-[var(--foreground-faint)]" :
+                                                    "text-[var(--foreground-faint)] opacity-40"
                         }`} />
                         <span className={`text-xs font-bold ${
-                          (lead.score ?? 0) >= 80 ? "text-amber-600" :
-                          (lead.score ?? 0) >= 50 ? "text-zinc-600"  : "text-zinc-400"
+                          (lead.score ?? 0) >= 80 ? "text-[var(--warning)]" :
+                          (lead.score ?? 0) >= 50 ? "text-[var(--foreground-muted)]" :
+                                                    "text-[var(--foreground-faint)]"
                         }`}>{lead.score}</span>
                       </div>
                     ) : (
-                      <span className="text-[10px] text-zinc-300">—</span>
+                      <span className="text-[10px] text-[var(--foreground-faint)]">—</span>
                     )}
                   </td>
 
                   {/* Valor */}
                   <td className="px-3 py-3">
-                    <span className="text-xs font-bold text-zinc-900 tabular-nums">
+                    <span className="text-xs font-bold tabular-nums text-[var(--foreground)]">
                       {lead.value >= 1000
                         ? `$${(lead.value / 1000).toFixed(1)}K`
                         : lead.value > 0
                           ? `$${lead.value}`
-                          : <span className="font-normal text-zinc-300">$0</span>}
+                          : <span className="font-normal text-[var(--foreground-faint)]">$0</span>}
                     </span>
                   </td>
 
@@ -343,22 +349,24 @@ export function LeadsListView({
                     {(lead.daysInStage ?? 0) > 0 ? (
                       <div className="flex items-center gap-1">
                         <Clock className={`h-3 w-3 flex-shrink-0 ${
-                          (lead.daysInStage ?? 0) > 7 ? "text-red-400"   :
-                          (lead.daysInStage ?? 0) > 3 ? "text-amber-400" : "text-zinc-300"
+                          (lead.daysInStage ?? 0) > 7 ? "text-[var(--danger)]"  :
+                          (lead.daysInStage ?? 0) > 3 ? "text-[var(--warning)]" :
+                                                        "text-[var(--foreground-faint)]"
                         }`} />
                         <span className={`text-[10px] font-medium tabular-nums ${
-                          (lead.daysInStage ?? 0) > 7 ? "text-red-600"   :
-                          (lead.daysInStage ?? 0) > 3 ? "text-amber-600" : "text-zinc-500"
+                          (lead.daysInStage ?? 0) > 7 ? "text-[var(--danger)]"  :
+                          (lead.daysInStage ?? 0) > 3 ? "text-[var(--warning)]" :
+                                                        "text-[var(--foreground-faint)]"
                         }`}>{lead.daysInStage}d</span>
                       </div>
                     ) : (
-                      <span className="text-[10px] text-zinc-300">Hoy</span>
+                      <span className="text-[10px] text-[var(--foreground-faint)]">Hoy</span>
                     )}
                   </td>
 
                   {/* Etiquetas */}
                   <td className="px-3 py-3">
-                    <div className="flex flex-wrap gap-1 max-w-[140px]">
+                    <div className="flex max-w-[140px] flex-wrap gap-1">
                       {lead.tags.slice(0, 2).map((t) => (
                         <span
                           key={t.label}
@@ -368,7 +376,9 @@ export function LeadsListView({
                         </span>
                       ))}
                       {lead.tags.length > 2 && (
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] text-zinc-500">
+                        <span className="rounded-full border border-[var(--border)]
+                                         bg-[var(--surface-hover)] px-2 py-0.5 text-[9px]
+                                         text-[var(--foreground-faint)]">
                           +{lead.tags.length - 2}
                         </span>
                       )}
@@ -379,25 +389,25 @@ export function LeadsListView({
                   <td className="px-3 py-3">
                     {lead.nextPendingTask ? (
                       <div className="flex items-center gap-1">
-                        <Zap className="h-3 w-3 text-amber-400 flex-shrink-0" />
-                        <span className="text-[10px] font-medium text-amber-600 truncate max-w-[120px]">
+                        <Zap className="h-3 w-3 flex-shrink-0 text-[var(--warning)]" />
+                        <span className="max-w-[120px] truncate text-[10px] font-medium text-[var(--warning)]">
                           {lead.nextPendingTask}
                         </span>
                       </div>
                     ) : lead.createdAt ? (
-                      <div className="flex items-center gap-1 text-zinc-400">
+                      <div className="flex items-center gap-1 text-[var(--foreground-faint)]">
                         <Calendar className="h-3 w-3 flex-shrink-0" />
                         <span className="text-[10px]">{timeAgo(lead.createdAt)}</span>
                       </div>
                     ) : (
-                      <span className="text-[10px] italic text-zinc-300">Sin tareas</span>
+                      <span className="text-[10px] italic text-[var(--foreground-faint)]">Sin tareas</span>
                     )}
                   </td>
 
                   {/* Flecha hover */}
                   <td className="px-2 py-3">
-                    <ChevronRight className="h-3.5 w-3.5 text-zinc-300 opacity-0
-                      group-hover:opacity-100 transition-opacity" />
+                    <ChevronRight className="h-3.5 w-3.5 text-[var(--foreground-faint)] opacity-0
+                                             transition-opacity group-hover:opacity-100" />
                   </td>
                 </tr>
               );
@@ -407,13 +417,14 @@ export function LeadsListView({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-zinc-100 bg-zinc-50/50 px-4 py-2.5 flex items-center justify-between">
-        <span className="text-[11px] text-zinc-400">
+      <div className="flex items-center justify-between border-t border-[var(--border)]
+                      bg-[var(--surface-hover)] px-4 py-2.5">
+        <span className="text-[11px] text-[var(--foreground-faint)]">
           {leads.length} contacto{leads.length !== 1 ? "s" : ""}
         </span>
-        <span className="text-[11px] text-zinc-400">
+        <span className="text-[11px] text-[var(--foreground-faint)]">
           Valor total:{" "}
-          <span className="font-semibold text-zinc-700">
+          <span className="font-semibold text-[var(--foreground-muted)]">
             ${leads.reduce((s, l) => s + l.value, 0).toLocaleString()}
           </span>
         </span>

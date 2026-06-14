@@ -66,10 +66,10 @@ export function CampaignStatusBanner({ campaign, leadsQueued, leadsTotal }: Camp
 
   // draft (default)
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5">
-      <span className="h-2 w-2 rounded-full bg-zinc-400" />
-      <span className="text-xs font-semibold text-zinc-600">Borrador</span>
-      <span className="ml-auto text-[10px] text-zinc-400">Lanza la campaña para empezar a procesar leads.</span>
+    <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5">
+      <span className="h-2 w-2 rounded-full bg-[var(--foreground-faint)]" />
+      <span className="text-xs font-semibold text-[var(--foreground-muted)]">Borrador</span>
+      <span className="ml-auto text-[10px] text-[var(--foreground-faint)]">Lanza la campaña para empezar a procesar leads.</span>
     </div>
   );
 }

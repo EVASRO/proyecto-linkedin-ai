@@ -35,14 +35,14 @@ export function SettingsLayout({ defaultTab = "profile", children }: Props) {
               className={cn(
                 "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all text-left",
                 active === id
-                  ? "bg-gradient-to-r from-emerald-600/90 to-green-600/90 text-white shadow-md shadow-emerald-900/30"
-                  : "text-zinc-400 hover:bg-zinc-800/80 hover:text-white"
+                  ? "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white shadow-md shadow-[rgba(37,99,235,0.3)]"
+                  : "text-[var(--foreground-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
               )}
             >
               <Icon
                 className={cn(
                   "h-4 w-4 shrink-0",
-                  active === id ? "text-white" : "text-zinc-500"
+                  active === id ? "text-white" : "text-[var(--foreground-faint)]"
                 )}
                 strokeWidth={active === id ? 2.25 : 2}
               />

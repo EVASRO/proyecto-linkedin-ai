@@ -26,6 +26,7 @@ export type WizardData = {
   automationName: string;
   selectedTemplateId: string | null;
   estimatedLeads: number;
+  _selectedTemplate?: Template | null;
 };
 
 // -- Flow Node Types -----------------------------------------------------------
@@ -62,6 +63,7 @@ export type NodeData = {
   label: string;
   // connect
   addNote?: boolean;
+  requirePageView?: boolean;
   connectionNote?: string;        // primary note field
   messageA?: string;              // legacy / A/B variant A
   messageB?: string;              // A/B variant B

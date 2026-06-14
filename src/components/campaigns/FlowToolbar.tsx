@@ -54,11 +54,11 @@ export interface FlowToolbarProps {
 // -- Status badge map ----------------------------------------------------------
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  draft:     { label: "Borrador",   cls: "bg-zinc-100 text-zinc-500"    },
-  active:    { label: "Activa",     cls: "bg-green-100 text-green-700"  },
-  paused:    { label: "Pausada",    cls: "bg-amber-100 text-amber-700"  },
-  completed: { label: "Completada", cls: "bg-blue-100 text-blue-700"    },
-  archived:  { label: "Archivada",  cls: "bg-zinc-100 text-zinc-400"    },
+  draft:     { label: "Borrador",   cls: "bg-[var(--border)] text-[var(--foreground-muted)]"          },
+  active:    { label: "Activa",     cls: "bg-[rgba(16,185,129,0.12)] text-[#10B981]"                  },
+  paused:    { label: "Pausada",    cls: "bg-[rgba(245,158,11,0.12)] text-[#F59E0B]"                  },
+  completed: { label: "Completada", cls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]"                   },
+  archived:  { label: "Archivada",  cls: "bg-[var(--border)] text-[var(--foreground-muted)]"          },
 };
 
 // -- Component -----------------------------------------------------------------
@@ -80,21 +80,21 @@ export function FlowToolbar({
   const badge = STATUS_BADGE[campaignStatus] ?? STATUS_BADGE.draft;
 
   return (
-    <div className="flex flex-shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-4 py-2.5">
+    <div className="flex flex-shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2.5">
       {/* Back */}
       <button
         onClick={onBack}
-        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition-colors"
+        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--foreground)] transition-colors"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
         Campañas
       </button>
 
-      <div className="h-4 w-px bg-zinc-200" />
+      <div className="h-4 w-px bg-[var(--border)]" />
 
       {/* Campaign name + status */}
       <div className="flex items-center gap-2">
-        <span className="text-sm font-bold text-zinc-900 max-w-[180px] truncate" title={campaignName}>
+        <span className="text-sm font-bold text-[var(--foreground)] max-w-[180px] truncate" title={campaignName}>
           {campaignName}
         </span>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${badge.cls}`}>
@@ -103,7 +103,7 @@ export function FlowToolbar({
       </div>
 
       {/* Node count */}
-      <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] text-zinc-500">
+      <div className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[11px] text-[var(--foreground-muted)]">
         <Layers className="h-3.5 w-3.5" />
         {nodeCount} nodo{nodeCount !== 1 ? "s" : ""}
       </div>
@@ -112,13 +112,13 @@ export function FlowToolbar({
       <div className="flex items-center gap-1 text-[10px]">
         {dirty ? (
           <>
-            <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
-            <span className="text-orange-500 font-medium">Sin guardar</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
+            <span className="text-[#F59E0B] font-medium">Sin guardar</span>
           </>
         ) : (
           <>
-            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-            <span className="text-green-600 font-medium">Guardado</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" />
+            <span className="text-[#10B981] font-medium">Guardado</span>
           </>
         )}
       </div>
@@ -131,8 +131,8 @@ export function FlowToolbar({
           className={[
             "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
             abEnabled
-              ? "border-violet-300 bg-violet-50 text-violet-700 font-semibold"
-              : "border-zinc-200 text-zinc-600 hover:bg-zinc-50",
+              ? "border-[rgba(6,182,212,0.3)] bg-[rgba(6,182,212,0.12)] text-[#06B6D4] font-semibold"
+              : "border-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)]",
           ].join(" ")}
           title="Activar/desactivar A/B test"
         >
@@ -143,7 +143,7 @@ export function FlowToolbar({
         {/* Preview */}
         <button
           onClick={onPreview}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
         >
           <Eye className="h-3.5 w-3.5" />
           Vista previa
@@ -152,7 +152,7 @@ export function FlowToolbar({
         {/* Validate */}
         <button
           onClick={onValidate}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
         >
           {<CheckCircle2 className="h-3.5 w-3.5" />}
           Validar
@@ -162,7 +162,7 @@ export function FlowToolbar({
         <button
           onClick={onSave}
           disabled={saving}
-          className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-zinc-700 disabled:opacity-60 transition-all"
+          className="flex items-center gap-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] px-3 py-1.5 text-xs font-bold text-[var(--foreground)] hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-60 transition-all"
         >
           {saving
             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -173,7 +173,7 @@ export function FlowToolbar({
         {/* Launch */}
         <button
           onClick={onLaunch}
-          className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-1.5 text-xs font-bold text-white shadow-md shadow-indigo-200 hover:from-indigo-700 hover:to-violet-700 transition-all"
+          className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-1.5 text-xs font-bold text-white shadow-md shadow-[rgba(37,99,235,0.25)] hover:opacity-90 transition-all"
         >
           <Rocket className="h-3.5 w-3.5" />
           Lanzar
@@ -190,12 +190,12 @@ export type ToastState = { type: "success" | "error" | "info"; msg: string } | n
 export function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void }) {
   if (!toast) return null;
   const styles = {
-    success: "border-green-200 bg-green-50 text-green-800",
-    error:   "border-red-200   bg-red-50   text-red-800",
-    info:    "border-blue-200  bg-blue-50  text-blue-800",
+    success: "border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.12)] text-[#10B981]",
+    error:   "border-[rgba(239,68,68,0.3)]  bg-[rgba(239,68,68,0.12)]  text-[#EF4444]",
+    info:    "border-[rgba(37,99,235,0.3)]   bg-[rgba(37,99,235,0.12)]  text-[#2563EB]",
   }[toast.type];
   const Icon = toast.type === "success" ? CheckCircle2 : XCircle;
-  const iconCls = toast.type === "success" ? "text-green-500" : "text-red-500";
+  const iconCls = toast.type === "success" ? "text-[#10B981]" : "text-[#EF4444]";
 
   return (
     <div
@@ -252,19 +252,19 @@ export function PreviewModal({ nodes, edges, onClose }: PreviewModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <div>
-            <p className="text-xs text-zinc-500 font-medium">Vista previa de secuencia</p>
-            <p className="text-sm font-bold text-zinc-900">Timeline del flujo</p>
+            <p className="text-xs text-[var(--foreground-muted)] font-medium">Vista previa de secuencia</p>
+            <p className="text-sm font-bold text-[var(--foreground)]">Timeline del flujo</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100">✕</button>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--foreground-faint)] hover:bg-[rgba(255,255,255,0.06)]">✕</button>
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
           {ordered.length === 0 ? (
-            <p className="text-sm text-zinc-400 text-center py-8">No hay nodos para mostrar.</p>
+            <p className="text-sm text-[var(--foreground-faint)] text-center py-8">No hay nodos para mostrar.</p>
           ) : (
             <ol className="space-y-0">
               {ordered.map((n, i) => {
@@ -274,14 +274,14 @@ export function PreviewModal({ nodes, edges, onClose }: PreviewModalProps) {
                 return (
                   <li key={n.id} className="flex gap-3">
                     <div className="flex flex-col items-center">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-zinc-100 text-sm">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--background)] text-sm">
                         {emoji}
                       </div>
-                      {!isLast && <div className="w-px flex-1 bg-zinc-200 mt-1 mb-1 min-h-[16px]" />}
+                      {!isLast && <div className="w-px flex-1 bg-[var(--border)] mt-1 mb-1 min-h-[16px]" />}
                     </div>
                     <div className="pb-4 min-w-0">
-                      <p className="text-xs font-bold text-zinc-900">{n.data.label}</p>
-                      {summary && <p className="mt-0.5 text-[11px] text-zinc-500 leading-relaxed">{summary}</p>}
+                      <p className="text-xs font-bold text-[var(--foreground)]">{n.data.label}</p>
+                      {summary && <p className="mt-0.5 text-[11px] text-[var(--foreground-muted)] leading-relaxed">{summary}</p>}
                     </div>
                   </li>
                 );
@@ -290,10 +290,10 @@ export function PreviewModal({ nodes, edges, onClose }: PreviewModalProps) {
           )}
         </div>
 
-        <div className="border-t border-zinc-100 bg-zinc-50 px-6 py-3 text-right">
+        <div className="border-t border-[var(--border)] bg-[var(--background)] px-6 py-3 text-right">
           <button
             onClick={onClose}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-700"
+            className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-xs font-bold text-white hover:opacity-90"
           >
             Cerrar
           </button>
@@ -337,28 +337,30 @@ interface ValidationModalProps {
 export function ValidationModal({ result, onClose }: ValidationModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
         <div className={[
           "flex items-center gap-3 px-6 py-4",
-          result.ok ? "bg-green-50 border-b border-green-200" : "bg-red-50 border-b border-red-200",
+          result.ok
+            ? "bg-[rgba(16,185,129,0.08)] border-b border-[rgba(16,185,129,0.2)]"
+            : "bg-[rgba(239,68,68,0.08)] border-b border-[rgba(239,68,68,0.2)]",
         ].join(" ")}>
           {result.ok
-            ? <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0" />
-            : <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />}
-          <p className={`text-sm font-bold ${result.ok ? "text-green-800" : "text-red-800"}`}>
+            ? <CheckCircle2 className="h-5 w-5 text-[#10B981] flex-shrink-0" />
+            : <XCircle className="h-5 w-5 text-[#EF4444] flex-shrink-0" />}
+          <p className={`text-sm font-bold ${result.ok ? "text-[#10B981]" : "text-[#EF4444]"}`}>
             {result.ok ? "Flujo válido" : "Flujo inválido"}
           </p>
         </div>
         <div className="px-6 py-5">
-          <p className="text-sm text-zinc-700">
+          <p className="text-sm text-[var(--foreground-muted)]">
             {result.ok
               ? "El flujo cumple todos los requisitos mínimos para lanzarse. ✓"
               : result.reason}
           </p>
         </div>
-        <div className="border-t border-zinc-100 bg-zinc-50 px-6 py-3 text-right">
-          <button onClick={onClose} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-700">
+        <div className="border-t border-[var(--border)] bg-[var(--background)] px-6 py-3 text-right">
+          <button onClick={onClose} className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-xs font-bold text-white hover:opacity-90">
             Cerrar
           </button>
         </div>

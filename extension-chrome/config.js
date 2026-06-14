@@ -1,5 +1,5 @@
 // ── Dashboard URL (para webhook autopilot) ────────────────────────────────────
-const DASHBOARD_URL = 'https://proyecto-linkedin-ai.vercel.app';
+const DASHBOARD_URL = 'https://cazary.ai';
 
 // ── Supabase config — mismas keys que .env.local ─────────────────────────────
 const SUPABASE_URL      = 'https://qamqcygybwrlbsylkxyo.supabase.co';

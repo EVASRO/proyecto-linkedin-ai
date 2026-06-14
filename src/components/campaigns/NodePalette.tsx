@@ -18,82 +18,20 @@ type PaletteItem = {
 };
 
 const ITEMS: PaletteItem[] = [
-  // Inicio
-  {
-    nodeType: "start", rfType: "start",
-    label: "Inicio", description: "Punto de entrada",
-    Icon: Play, iconCls: "bg-green-100 text-green-700", group: "Inicio",
-  },
-  // LinkedIn
-  {
-    nodeType: "connect", rfType: "connect",
-    label: "Enviar Conexión", description: "Solicitud + nota opcional",
-    Icon: UserPlus, iconCls: "bg-indigo-100 text-indigo-700", group: "LinkedIn",
-  },
-  {
-    nodeType: "message", rfType: "message",
-    label: "Enviar Mensaje", description: "Texto con variables dinámicas",
-    Icon: MessageSquare, iconCls: "bg-emerald-100 text-emerald-700", group: "LinkedIn",
-  },
-  {
-    nodeType: "visit", rfType: "visit",
-    label: "Visitar Perfil", description: "Abre el perfil del lead",
-    Icon: Globe, iconCls: "bg-cyan-100 text-cyan-700", group: "LinkedIn",
-  },
-  {
-    nodeType: "like", rfType: "like",
-    label: "Like Post", description: "Dar like a publicación",
-    Icon: Heart, iconCls: "bg-pink-100 text-pink-700", group: "LinkedIn",
-  },
-  {
-    nodeType: "withdraw", rfType: "withdraw",
-    label: "Quitar Conexión", description: "Retira solicitud o desconecta",
-    Icon: UserMinus, iconCls: "bg-red-100 text-red-600", group: "LinkedIn",
-  },
-  // Email
-  {
-    nodeType: "email", rfType: "email",
-    label: "Enviar Email", description: "Email con asunto y cuerpo",
-    Icon: Mail, iconCls: "bg-blue-100 text-blue-700", group: "Email",
-  },
-  // Especiales
-  {
-    nodeType: "find_email", rfType: "find_email",
-    label: "Buscar Email", description: "Extrae email → guarda en BD",
-    Icon: AtSign, iconCls: "bg-teal-100 text-teal-700", group: "Especiales",
-  },
-  {
-    nodeType: "find_phone", rfType: "find_phone",
-    label: "Buscar Teléfono", description: "Extrae teléfono → guarda en BD",
-    Icon: Phone, iconCls: "bg-teal-100 text-teal-700", group: "Especiales",
-  },
-  {
-    nodeType: "connect_email", rfType: "connect_email",
-    label: "Conexión via Email", description: "Invitar usando correo del lead",
-    Icon: MailPlus, iconCls: "bg-violet-100 text-violet-700", group: "Especiales",
-  },
-  // IA
-  {
-    nodeType: "autopilot", rfType: "autopilot",
-    label: "Autopilot IA", description: "IA negocia y cierra la cita",
-    Icon: Bot, iconCls: "bg-purple-100 text-purple-700", group: "IA",
-  },
-  // Flujo
-  {
-    nodeType: "delay", rfType: "delay",
-    label: "Esperar N días", description: "Pausa antes del siguiente paso",
-    Icon: Clock, iconCls: "bg-amber-100 text-amber-700", group: "Flujo",
-  },
-  {
-    nodeType: "condition", rfType: "condition",
-    label: "Condición IF", description: "Ramifica según respuesta",
-    Icon: GitBranch, iconCls: "bg-orange-100 text-orange-700", group: "Flujo",
-  },
-  {
-    nodeType: "end", rfType: "end",
-    label: "Fin del flujo", description: "Cierra la secuencia del lead",
-    Icon: Flag, iconCls: "bg-slate-100 text-slate-600", group: "Flujo",
-  },
+  { nodeType: "start",        rfType: "start",        label: "Inicio",             description: "Punto de entrada",               Icon: Play,         iconCls: "bg-[rgba(16,185,129,0.12)] text-[#10B981]", group: "Inicio"     },
+  { nodeType: "connect",      rfType: "connect",      label: "Enviar Conexión",    description: "Solicitud + nota opcional",       Icon: UserPlus,     iconCls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]",  group: "LinkedIn"   },
+  { nodeType: "message",      rfType: "message",      label: "Enviar Mensaje",     description: "Texto con variables dinámicas",   Icon: MessageSquare, iconCls: "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",  group: "LinkedIn"   },
+  { nodeType: "visit",        rfType: "visit",        label: "Visitar Perfil",     description: "Abre el perfil del lead",         Icon: Globe,        iconCls: "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",  group: "LinkedIn"   },
+  { nodeType: "like",         rfType: "like",         label: "Like Post",          description: "Dar like a publicación",          Icon: Heart,        iconCls: "bg-[rgba(239,68,68,0.12)] text-[#EF4444]",  group: "LinkedIn"   },
+  { nodeType: "withdraw",     rfType: "withdraw",     label: "Quitar Conexión",    description: "Retira solicitud o desconecta",   Icon: UserMinus,    iconCls: "bg-[rgba(239,68,68,0.12)] text-[#EF4444]",  group: "LinkedIn"   },
+  { nodeType: "email",        rfType: "email",        label: "Enviar Email",       description: "Email con asunto y cuerpo",       Icon: Mail,         iconCls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]",  group: "Email"      },
+  { nodeType: "find_email",   rfType: "find_email",   label: "Buscar Email",       description: "Extrae email → guarda en BD",     Icon: AtSign,       iconCls: "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",  group: "Especiales" },
+  { nodeType: "find_phone",   rfType: "find_phone",   label: "Buscar Teléfono",    description: "Extrae teléfono → guarda en BD",  Icon: Phone,        iconCls: "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",  group: "Especiales" },
+  { nodeType: "connect_email", rfType: "connect_email", label: "Conexión via Email", description: "Invitar usando correo del lead", Icon: MailPlus,    iconCls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]",  group: "Especiales" },
+  { nodeType: "autopilot",    rfType: "autopilot",    label: "Autopilot IA",       description: "IA negocia y cierra la cita",     Icon: Bot,          iconCls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]",  group: "IA"         },
+  { nodeType: "delay",        rfType: "delay",        label: "Esperar N días",     description: "Pausa antes del siguiente paso",  Icon: Clock,        iconCls: "bg-[rgba(245,158,11,0.12)] text-[#F59E0B]", group: "Flujo"      },
+  { nodeType: "condition",    rfType: "condition",    label: "Condición IF",       description: "Ramifica según respuesta",        Icon: GitBranch,    iconCls: "bg-[rgba(245,158,11,0.12)] text-[#F59E0B]", group: "Flujo"      },
+  { nodeType: "end",          rfType: "end",          label: "Fin del flujo",      description: "Cierra la secuencia del lead",    Icon: Flag,         iconCls: "bg-[rgba(239,68,68,0.12)] text-[#EF4444]",  group: "Flujo"      },
 ];
 
 const GROUPS = ["Inicio", "LinkedIn", "Email", "Especiales", "IA", "Flujo"];
@@ -107,10 +45,10 @@ export function NodePalette() {
   }
 
   return (
-    <aside className="flex w-56 flex-shrink-0 flex-col overflow-y-auto border-r border-zinc-200 bg-white">
-      <div className="border-b border-zinc-100 px-4 py-3">
-        <h2 className="text-xs font-bold text-zinc-900">Nodos</h2>
-        <p className="mt-0.5 text-[10px] text-zinc-400">Arrastra al lienzo</p>
+    <aside className="flex w-56 flex-shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)]">
+      <div className="border-b border-[var(--border)] px-4 py-3">
+        <h2 className="text-xs font-bold text-[var(--foreground)]">Nodos</h2>
+        <p className="mt-0.5 text-[10px] text-[var(--foreground-faint)]">Arrastra al lienzo</p>
       </div>
 
       <div className="flex-1 space-y-4 p-2.5 pb-8">
@@ -119,7 +57,7 @@ export function NodePalette() {
           if (!items.length) return null;
           return (
             <div key={group}>
-              <p className="mb-1.5 px-1 text-[9px] font-bold uppercase tracking-widest text-zinc-400">
+              <p className="mb-1.5 px-1 text-[9px] font-bold uppercase tracking-widest text-[var(--foreground-faint)]">
                 {group}
               </p>
               <div className="space-y-0.5">
@@ -130,14 +68,14 @@ export function NodePalette() {
                       key={`${item.rfType}-${item.label}`}
                       draggable
                       onDragStart={(e) => onDragStart(e, item)}
-                      className="flex cursor-grab items-center gap-2.5 rounded-lg border border-transparent px-2 py-2 transition-all select-none hover:border-zinc-200 hover:bg-zinc-50 active:cursor-grabbing active:scale-95"
+                      className="flex cursor-grab items-center gap-2.5 rounded-lg border border-transparent px-2 py-2 transition-all select-none hover:border-[var(--border)] hover:bg-[rgba(255,255,255,0.04)] active:cursor-grabbing active:scale-95"
                     >
                       <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md ${item.iconCls}`}>
                         <Icon className="h-3.5 w-3.5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-[11px] font-semibold text-zinc-800">{item.label}</p>
-                        <p className="truncate text-[9px] text-zinc-400">{item.description}</p>
+                        <p className="truncate text-[11px] font-semibold text-[var(--foreground)]">{item.label}</p>
+                        <p className="truncate text-[9px] text-[var(--foreground-faint)]">{item.description}</p>
                       </div>
                     </div>
                   );
@@ -148,8 +86,7 @@ export function NodePalette() {
         })}
       </div>
 
-      {/* Empty state hint */}
-      <div className="border-t border-zinc-100 px-4 py-3 text-[10px] text-zinc-400 leading-relaxed">
+      <div className="border-t border-[var(--border)] px-4 py-3 text-[10px] text-[var(--foreground-faint)] leading-relaxed">
         Haz clic en cualquier nodo del lienzo para configurarlo en el panel derecho.
       </div>
     </aside>

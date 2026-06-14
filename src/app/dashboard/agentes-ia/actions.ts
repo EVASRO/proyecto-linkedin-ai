@@ -1,7 +1,7 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { supabase as adminSupabase } from "@/lib/supabase";
+import { getAuthContext } from "@/lib/auth-context";
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -26,33 +26,6 @@ export type AgentRow = {
   workspace_id: string;
   created_at: string;
 };
-
-async function getAuthContext() {
-  const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) throw new Error("No autenticado");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("workspace_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.workspace_id || profile.workspace_id === "") {
-    const { data: ws } = await supabase
-      .from("workspaces")
-      .insert({ name: "Mi Workspace", plan_type: "growth" })
-      .select("id")
-      .single();
-    if (ws?.id) {
-      await supabase.from("profiles").update({ workspace_id: ws.id }).eq("id", user.id);
-      await supabase.from("workspace_settings").insert({ workspace_id: ws.id });
-    }
-    return { supabase, userId: user.id, workspaceId: ws?.id ?? "" };
-  }
-
-  return { supabase, userId: user.id, workspaceId: profile.workspace_id as string };
-}
 
 // -- Map DB row → AgentRow -----------------------------------------------------
 
@@ -210,6 +183,9 @@ export async function assignAgentToConversation(
       .eq("workspace_id", workspaceId);
 
     if (error) return { success: false, error: error.message };
+
+    await supabase.rpc("increment_agent_conversations", { agent_id });
+
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
@@ -277,25 +253,69 @@ async function runAutopilotCore(
 
     const response = await client.messages.create({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 150,
+      max_tokens: 300,
       system: [
-        `Eres ${agent.name}, un agente de ventas con tono ${agent.tone}.`,
-        `Objetivo: ${agent.objective}.`,
-        `Propuesta de valor: ${agent.value_proposition}.`,
-        objList ? `Objeciones entrenadas:\n${objList}` : "",
-        "Responde en máx 2 oraciones. Solo devuelve el texto de la respuesta, sin explicaciones.",
+        `Eres ${String(agent.name)}, un agente de ventas B2B con tono ${String(agent.tone)}.`,
+        `Tu objetivo es: ${String(agent.objective)}.`,
+        `Propuesta de valor: ${String(agent.value_proposition)}.`,
+        objList ? `Cuando el prospecto plantee estas objeciones, responde así:\n${objList}` : "",
+        `Contexto: estás conversando con ${String(lead.full_name ?? "el prospecto")} en LinkedIn.`,
+        `Reglas estrictas:`,
+        `- Responde SIEMPRE en el mismo idioma que usó el prospecto en su último mensaje.`,
+        `- Máximo 3 oraciones por respuesta. Natural, no robótico.`,
+        `- Si el prospecto ya agendó reunión o dice "sí agendo", "nos vemos", "perfecto", `,
+        `  "ya quedamos" o equivalente → responde confirmando y termina con [OBJETIVO_CUMPLIDO].`,
+        `- Si el prospecto dice "no me interesa", "no gracias", "por favor no" → `,
+        `  responde con respeto, cierra la conversación y termina con [DESACTIVAR_AUTOPILOT].`,
+        `- Nunca menciones que eres una IA. Si te preguntan, di que eres del equipo de ventas.`,
+        `- Solo devuelve el texto de la respuesta, nada más.`,
       ].filter(Boolean).join("\n"),
       messages: history,
     });
 
     const replyText = (response.content[0] as Anthropic.TextBlock).text.trim();
 
+    // Detectar señales especiales en la respuesta
+    const objetivoCumplido = replyText.includes("[OBJETIVO_CUMPLIDO]");
+    const desactivarPilot  = replyText.includes("[DESACTIVAR_AUTOPILOT]");
+    const cleanReply = replyText
+      .replace("[OBJETIVO_CUMPLIDO]", "")
+      .replace("[DESACTIVAR_AUTOPILOT]", "")
+      .trim();
+
+    // Contar turnos del agente IA en esta conversación
+    const aiTurns = msgs.filter((m) => m.sender === "ai").length;
+    const maxTurns = 8;
+
+    const shouldDeactivate = objetivoCumplido || desactivarPilot || aiTurns >= maxTurns;
+
+    if (shouldDeactivate) {
+      await supabase
+        .from("conversations")
+        .update({
+          autopilot_active: false,
+          status:           "human",
+          autopilot_mode:   "review",
+        })
+        .eq("id", conv.id);
+
+      if (objetivoCumplido) {
+        await supabase
+          .from("leads")
+          .update({ crm_column: "reunion_agendada", status: "meeting_booked" })
+          .eq("id", conv.lead_id);
+      }
+
+      const reason = objetivoCumplido ? "OBJETIVO_CUMPLIDO" : desactivarPilot ? "DESACTIVAR" : "MAX_TURNOS";
+      console.log(`[cazary.ai][Autopilot] ${reason} → conv ${conv.id}`);
+    }
+
     await supabase.from("messages").insert({
       workspace_id:    workspaceId,
       lead_id:         conv.lead_id,
       conversation_id: conv.id,
       sender:          "ai",
-      message_text:    replyText,
+      message_text:    cleanReply,
       status:          "sending",
       timestamp:       new Date().toISOString(),
     });
@@ -304,10 +324,11 @@ async function runAutopilotCore(
       workspace_id: workspaceId,
       lead_id:      conv.lead_id,
       task_type:    "message",
+      action_type:  "message",
       status:       "pending",
       priority:     1,
       payload: {
-        message_text: replyText,
+        message_text: cleanReply,
         profile_url:  lead.linkedin_url ?? "",
         lead_id:      conv.lead_id,
       },

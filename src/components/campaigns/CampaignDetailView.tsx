@@ -35,9 +35,9 @@ const TYPE_ICON: Record<CampaignType, React.ElementType> = {
 };
 
 const TYPE_COLOR: Record<CampaignType, string> = {
-  linkedin:        "text-blue-600 bg-blue-50",
-  sales_navigator: "text-violet-600 bg-violet-50",
-  email:           "text-sky-600 bg-sky-50",
+  linkedin:        "text-[#2563EB] bg-[rgba(37,99,235,0.12)]",
+  sales_navigator: "text-[#06B6D4] bg-[rgba(6,182,212,0.12)]",
+  email:           "text-[#2563EB] bg-[rgba(37,99,235,0.08)]",
 };
 
 const TYPE_LABEL: Record<CampaignType, string> = {
@@ -47,27 +47,27 @@ const TYPE_LABEL: Record<CampaignType, string> = {
 };
 
 const SEG_STATUS: Record<SegmentStatus, { label: string; dot: string; text: string }> = {
-  active:    { label: "Activo",    dot: "bg-green-400",  text: "text-green-700"  },
-  paused:    { label: "Pausado",   dot: "bg-amber-400",  text: "text-amber-700"  },
-  closed:    { label: "Cerrado",   dot: "bg-zinc-400",   text: "text-zinc-600"   },
-  completed: { label: "Completado",dot: "bg-blue-400",   text: "text-blue-700"   },
-  draft:     { label: "Borrador",  dot: "bg-zinc-300",   text: "text-zinc-500"   },
+  active:    { label: "Activo",    dot: "bg-[#10B981]",               text: "text-[#10B981]"                },
+  paused:    { label: "Pausado",   dot: "bg-[#F59E0B]",               text: "text-[#F59E0B]"                },
+  closed:    { label: "Cerrado",   dot: "bg-[var(--foreground-faint)]", text: "text-[var(--foreground-muted)]" },
+  completed: { label: "Completado",dot: "bg-[#2563EB]",               text: "text-[#2563EB]"                },
+  draft:     { label: "Borrador",  dot: "bg-[var(--foreground-faint)]", text: "text-[var(--foreground-muted)]" },
 };
 
 // -- Metric chip ---------------------------------------------------------------
 
-function Chip({ icon: Icon, label, value, sub, color = "text-zinc-700" }: {
+function Chip({ icon: Icon, label, value, sub, color = "text-[var(--foreground)]" }: {
   icon: React.ElementType; label: string; value: string | number;
   sub?: string; color?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5">
-      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-white shadow-sm">
+    <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
+      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--background)]">
         <Icon className={`h-3.5 w-3.5 ${color}`} />
       </div>
       <div>
         <p className={`text-sm font-bold tabular-nums ${color}`}>{typeof value === "number" ? fmtN(value) : value}</p>
-        <p className="text-[10px] text-zinc-400">{sub ?? label}</p>
+        <p className="text-[10px] text-[var(--foreground-faint)]">{sub ?? label}</p>
       </div>
     </div>
   );
@@ -75,9 +75,9 @@ function Chip({ icon: Icon, label, value, sub, color = "text-zinc-700" }: {
 
 // -- Progress bar --------------------------------------------------------------
 
-function ProgressBar({ value, color = "bg-indigo-500" }: { value: number; color?: string }) {
+function ProgressBar({ value, color = "bg-[#2563EB]" }: { value: number; color?: string }) {
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--border)]">
       <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(value, 100)}%` }} />
     </div>
   );
@@ -86,11 +86,11 @@ function ProgressBar({ value, color = "bg-indigo-500" }: { value: number; color?
 // -- Pipeline Status -----------------------------------------------------------
 
 const PIPELINE_STAGES = [
-  { key: "extraido"          as keyof LeadCountsByCrm, label: "Extraídos",   color: "bg-blue-400"   },
-  { key: "conexion_enviada"  as keyof LeadCountsByCrm, label: "Contactados", color: "bg-indigo-500" },
-  { key: "conexion_aceptada" as keyof LeadCountsByCrm, label: "Aceptados",   color: "bg-violet-500" },
-  { key: "en_conversacion"   as keyof LeadCountsByCrm, label: "Conversando", color: "bg-amber-500"  },
-  { key: "reunion_agendada"  as keyof LeadCountsByCrm, label: "Reunión",     color: "bg-green-500"  },
+  { key: "extraido"          as keyof LeadCountsByCrm, label: "Extraídos",   color: "bg-[var(--border)]" },
+  { key: "conexion_enviada"  as keyof LeadCountsByCrm, label: "Contactados", color: "bg-[#2563EB]"       },
+  { key: "conexion_aceptada" as keyof LeadCountsByCrm, label: "Aceptados",   color: "bg-[#2563EB]"       },
+  { key: "en_conversacion"   as keyof LeadCountsByCrm, label: "Conversando", color: "bg-[#06B6D4]"       },
+  { key: "reunion_agendada"  as keyof LeadCountsByCrm, label: "Reunión",     color: "bg-[#10B981]"       },
 ];
 
 function PipelineStatus({ campaignId }: { campaignId: string }) {
@@ -113,10 +113,10 @@ function PipelineStatus({ campaignId }: { campaignId: string }) {
     : 0;
 
   return (
-    <div className="rounded-2xl border border-zinc-100 bg-zinc-50 p-4">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-bold text-zinc-700">Pipeline de automatización</p>
-        <p className="text-[10px] text-zinc-400">{total} leads en total</p>
+        <p className="text-xs font-bold text-[var(--foreground)]">Pipeline de automatización</p>
+        <p className="text-[10px] text-[var(--foreground-muted)]">{total} leads en total</p>
       </div>
       <div className="grid grid-cols-5 gap-2">
         {PIPELINE_STAGES.map((stage) => {
@@ -124,16 +124,16 @@ function PipelineStatus({ campaignId }: { campaignId: string }) {
           const pctVal = total > 0 ? Math.round((count / total) * 100) : 0;
           return (
             <div key={stage.key} className="flex flex-col items-center gap-1.5">
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--border)]">
                 <div
-                  className={`h-full rounded-full transition-all ${count > 0 ? stage.color : "bg-zinc-200"}`}
+                  className={`h-full rounded-full transition-all ${count > 0 ? stage.color : "bg-[var(--border)]"}`}
                   style={{ width: `${pctVal}%` }}
                 />
               </div>
-              <span className={`text-sm font-bold tabular-nums ${count > 0 ? "text-zinc-900" : "text-zinc-300"}`}>
+              <span className={`text-sm font-bold tabular-nums ${count > 0 ? "text-[var(--foreground)]" : "text-[var(--foreground-faint)]"}`}>
                 {count}
               </span>
-              <span className="text-center text-[10px] text-zinc-400 leading-tight">{stage.label}</span>
+              <span className="text-center text-[10px] text-[var(--foreground-muted)] leading-tight">{stage.label}</span>
             </div>
           );
         })}
@@ -167,9 +167,9 @@ function AutomationSequence({ wf }: { wf: WfJson }) {
     {
       id:     1,
       icon:   UserPlus,
-      color:  "text-blue-600",
-      bg:     "bg-blue-50",
-      border: "border-blue-200",
+      color:  "text-[#2563EB]",
+      bg:     "bg-[rgba(37,99,235,0.12)]",
+      border: "border-[rgba(37,99,235,0.3)]",
       title:  "Enviar solicitud de conexión",
       detail: connectionNote
         ? `Con nota: "${connectionNote.slice(0, 60)}${connectionNote.length > 60 ? "…" : ""}"`
@@ -179,9 +179,9 @@ function AutomationSequence({ wf }: { wf: WfJson }) {
     {
       id:     2,
       icon:   Clock,
-      color:  "text-zinc-500",
-      bg:     "bg-zinc-50",
-      border: "border-zinc-200",
+      color:  "text-[var(--foreground-muted)]",
+      bg:     "bg-[var(--surface)]",
+      border: "border-[var(--border)]",
       title:  "Esperar aceptación",
       detail: "Detección automática cada 2 horas",
       status: "waiting",
@@ -189,9 +189,9 @@ function AutomationSequence({ wf }: { wf: WfJson }) {
     {
       id:     3,
       icon:   MessageSquare,
-      color:  followUpMessage ? "text-indigo-600" : "text-zinc-400",
-      bg:     followUpMessage ? "bg-indigo-50"    : "bg-zinc-50",
-      border: followUpMessage ? "border-indigo-200" : "border-zinc-200",
+      color:  followUpMessage ? "text-[#2563EB]"         : "text-[var(--foreground-faint)]",
+      bg:     followUpMessage ? "bg-[rgba(37,99,235,0.12)]" : "bg-[var(--surface)]",
+      border: followUpMessage ? "border-[rgba(37,99,235,0.3)]" : "border-[var(--border)]",
       title:  "Mensaje de seguimiento",
       detail: followUpMessage
         ? `En ${followUpDays} día(s): "${followUpMessage.slice(0, 60)}${followUpMessage.length > 60 ? "…" : ""}"`
@@ -201,9 +201,9 @@ function AutomationSequence({ wf }: { wf: WfJson }) {
     {
       id:     4,
       icon:   RefreshCw,
-      color:  "text-amber-600",
-      bg:     "bg-amber-50",
-      border: "border-amber-200",
+      color:  "text-[#F59E0B]",
+      bg:     "bg-[rgba(245,158,11,0.12)]",
+      border: "border-[rgba(245,158,11,0.3)]",
       title:  "Detectar respuesta",
       detail: "Verificación cada 15 minutos",
       status: "active",
@@ -211,9 +211,9 @@ function AutomationSequence({ wf }: { wf: WfJson }) {
     {
       id:     5,
       icon:   Bot,
-      color:  autopilotOn ? "text-violet-600" : "text-zinc-400",
-      bg:     autopilotOn ? "bg-violet-50"    : "bg-zinc-50",
-      border: autopilotOn ? "border-violet-200" : "border-zinc-200",
+      color:  autopilotOn ? "text-[#06B6D4]"               : "text-[var(--foreground-faint)]",
+      bg:     autopilotOn ? "bg-[rgba(6,182,212,0.12)]"    : "bg-[var(--surface)]",
+      border: autopilotOn ? "border-[rgba(6,182,212,0.3)]" : "border-[var(--border)]",
       title:  "Autopilot IA",
       detail: autopilotOn
         ? "Claude responde automáticamente"
@@ -230,39 +230,39 @@ function AutomationSequence({ wf }: { wf: WfJson }) {
 
   return (
     <div className="mt-4">
-      <p className="mb-2 text-[11px] font-bold text-zinc-500 uppercase tracking-wide">Secuencia</p>
+      <p className="mb-2 text-[11px] font-bold text-[var(--foreground-muted)] uppercase tracking-wide">Secuencia</p>
       <div className="space-y-0">
         {steps.map((step, i) => {
           const Icon = step.icon;
           return (
             <div key={step.id} className="relative">
               {i < steps.length - 1 && (
-                <div className="absolute left-[17px] top-[44px] h-2 w-px bg-zinc-200 z-0" />
+                <div className="absolute left-[17px] top-[44px] h-2 w-px bg-[var(--border)] z-0" />
               )}
               <div className={`relative z-10 flex items-center gap-2.5 rounded-xl border p-2.5 mb-2
                                ${step.border} ${STATUS_STYLES[step.status]}
-                               ${step.status !== "disabled" ? "bg-white" : "bg-zinc-50"}`}>
+                               ${step.status !== "disabled" ? "bg-[var(--surface)]" : "bg-[var(--background)]"}`}>
                 <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center
                                  rounded-full border-2 ${step.border} ${step.bg}`}>
                   <Icon className={`h-3.5 w-3.5 ${step.color}`} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <p className="text-[11px] font-semibold text-zinc-800 leading-snug">{step.title}</p>
+                    <p className="text-[11px] font-semibold text-[var(--foreground)] leading-snug">{step.title}</p>
                     {step.status === "active" && (
-                      <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700 flex-shrink-0">
+                      <span className="rounded-full bg-[rgba(16,185,129,0.15)] px-1.5 py-0.5 text-[9px] font-bold text-[#10B981] flex-shrink-0">
                         ACTIVO
                       </span>
                     )}
                     {step.status === "disabled" && (
-                      <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[9px] font-medium text-zinc-500 flex-shrink-0">
+                      <span className="rounded-full bg-[var(--border)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--foreground-faint)] flex-shrink-0">
                         INACTIVO
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-zinc-400 truncate">{step.detail}</p>
+                  <p className="text-[10px] text-[var(--foreground-faint)] truncate">{step.detail}</p>
                 </div>
-                <span className="flex-shrink-0 text-[10px] font-bold text-zinc-300">#{step.id}</span>
+                <span className="flex-shrink-0 text-[10px] font-bold text-[var(--foreground-faint)]">#{step.id}</span>
               </div>
             </div>
           );
@@ -308,10 +308,10 @@ function SegmentCard({
   }
 
   return (
-    <div className={`overflow-hidden rounded-2xl border transition-all ${isClosed ? "border-zinc-200 opacity-75" : "border-zinc-200 bg-white shadow-sm"}`}>
+    <div className={`overflow-hidden rounded-2xl border transition-all ${isClosed ? "border-[var(--border)] opacity-75" : "border-[var(--border)] bg-[var(--surface)] shadow-sm"}`}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3">
-        <button onClick={() => setExpanded((e) => !e)} className="text-zinc-400 hover:text-zinc-600">
+        <button onClick={() => setExpanded((e) => !e)} className="text-[var(--foreground-muted)] hover:text-[var(--foreground)]">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
         <div className="min-w-0 flex-1">
@@ -323,40 +323,40 @@ function SegmentCard({
                 onChange={(e) => setEditName(e.target.value)}
                 onBlur={commitRename}
                 onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditing(false); }}
-                className="rounded-lg border border-indigo-300 px-2 py-0.5 text-sm font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                className="rounded-lg border border-[#2563EB] px-2 py-0.5 text-sm font-semibold text-[var(--foreground)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[rgba(37,99,235,0.3)]"
               />
             ) : (
-              <p className="truncate text-sm font-semibold text-zinc-900">{segment.name}</p>
+              <p className="truncate text-sm font-semibold text-[var(--foreground)]">{segment.name}</p>
             )}
-            <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${status.text} bg-zinc-50`}>
+            <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${status.text} bg-[var(--surface)]`}>
               <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
               {status.label}
             </span>
             {m.duplicates > 0 && (
-              <span className="flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
+              <span className="flex items-center gap-1 rounded-full bg-[rgba(239,68,68,0.12)] px-2 py-0.5 text-[10px] font-bold text-[#EF4444]">
                 <AlertTriangle className="h-3 w-3" />
                 {m.duplicates} dup.
               </span>
             )}
             {/* Tamaño real o estado de extracción */}
             {m.totalLeads > 0 ? (
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
+              <span className="rounded-full bg-[rgba(37,99,235,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#2563EB]">
                 {fmtN(m.totalLeads)} leads
               </span>
             ) : segment.searchUrl && campaignActive && segment.status === "active" ? (
-              <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-600">
+              <span className="rounded-full bg-[rgba(16,185,129,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#10B981]">
                 Extrayendo leads...
               </span>
             ) : segment.searchUrl && segment.status === "draft" ? (
-              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
+              <span className="rounded-full bg-[rgba(245,158,11,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#F59E0B]">
                 Pendiente de extracción
               </span>
             ) : null}
           </div>
           <div className="mt-1">
-            <ProgressBar value={progressPct} color={isClosed ? "bg-zinc-400" : "bg-indigo-500"} />
+            <ProgressBar value={progressPct} color={isClosed ? "bg-[var(--foreground-faint)]" : "bg-[#2563EB]"} />
           </div>
-          <p className="mt-0.5 text-[10px] text-zinc-400">
+          <p className="mt-0.5 text-[10px] text-[var(--foreground-muted)]">
             {m.totalLeads > 0
               ? `${progressPct}% contactados · ${fmtN(m.contacted)}/${fmtN(m.totalLeads)} leads`
               : segment.searchUrl
@@ -371,7 +371,7 @@ function SegmentCard({
           <button
             onClick={() => { setEditing(true); setEditName(segment.name); }}
             title="Renombrar segmento"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--foreground-muted)] hover:bg-[var(--border)] hover:text-[var(--foreground)] transition-colors"
           >
             <Edit2 className="h-3.5 w-3.5" />
           </button>
@@ -380,7 +380,7 @@ function SegmentCard({
             <>
               <button
                 onClick={() => setImportOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] transition-colors"
                 title="Importar leads desde CSV"
               >
                 <Upload className="h-3 w-3" />
@@ -388,7 +388,7 @@ function SegmentCard({
               </button>
               <button
                 onClick={() => onOpenFlow(segment)}
-                className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90 transition-opacity"
               >
                 <Zap className="h-3 w-3" />
                 Automatización
@@ -396,14 +396,14 @@ function SegmentCard({
               <button
                 onClick={() => onStatusChange(segment.id, segment.status === "active" ? "paused" : "active")}
                 title={segment.status === "active" ? "Pausar" : "Reanudar"}
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-600 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(245,158,11,0.08)] hover:border-[rgba(245,158,11,0.4)] hover:text-[#F59E0B] transition-colors"
               >
                 {segment.status === "active" ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
               </button>
               <button
                 onClick={() => onStatusChange(segment.id, "closed")}
                 title="Cerrar segmento"
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-green-50 hover:border-green-300 hover:text-green-600 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(16,185,129,0.08)] hover:border-[rgba(16,185,129,0.4)] hover:text-[#10B981] transition-colors"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
               </button>
@@ -414,14 +414,14 @@ function SegmentCard({
           <button
             onClick={() => { if (confirm(`¿Eliminar el segmento "${segment.name}"?`)) onDelete(segment.id); }}
             title="Eliminar segmento"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--foreground-muted)] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444] transition-colors"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
           {isClosed && (
             <button
               onClick={() => onStatusChange(segment.id, "active")}
-              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-[11px] text-zinc-500 hover:bg-zinc-50"
+              className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]"
             >
               Reabrir
             </button>
@@ -437,15 +437,15 @@ function SegmentCard({
             onClick={() => setImportOpen(false)}
           />
           <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-xl -translate-x-1/2 -translate-y-1/2
-                          rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
+                          rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
               <div>
-                <p className="text-sm font-bold text-zinc-900">Importar leads desde CSV / Excel</p>
-                <p className="mt-0.5 text-xs text-zinc-400">Segmento: {segment.name}</p>
+                <p className="text-sm font-bold text-[var(--foreground)]">Importar leads desde CSV / Excel</p>
+                <p className="mt-0.5 text-xs text-[var(--foreground-muted)]">Segmento: {segment.name}</p>
               </div>
               <button
                 onClick={() => setImportOpen(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] transition-colors"
               >
                 <XCircle className="h-4 w-4" />
               </button>
@@ -468,24 +468,24 @@ function SegmentCard({
 
       {/* Expanded metrics */}
       {expanded && (
-        <div className="border-t border-zinc-100 bg-zinc-50/50 px-4 py-3">
+        <div className="border-t border-[var(--border)] bg-[var(--background)] px-4 py-3">
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             <Chip icon={Users}              label="Total"       value={m.totalLeads}  />
-            <Chip icon={UserPlus}           label="Conectados"  value={m.connected}   color="text-blue-600"   sub={pct(m.connected, m.totalLeads)}  />
-            <Chip icon={MessageSquareText}  label="Respondieron"value={m.replied}     color="text-violet-600" sub={pct(m.replied, m.contacted)}      />
-            <Chip icon={CalendarCheck}      label="Reuniones"   value={m.meetings}    color="text-green-600"  sub={pct(m.meetings, m.replied)}       />
-            <Chip icon={Copy}               label="Duplicados"  value={m.duplicates}  color="text-red-500"    sub="en otras camp."                   />
-            <Chip icon={XCircle}            label="Rebotados"   value={m.bounced}     color="text-zinc-500"   sub="no entregados"                    />
+            <Chip icon={UserPlus}           label="Conectados"  value={m.connected}   color="text-[#2563EB]"   sub={pct(m.connected, m.totalLeads)}  />
+            <Chip icon={MessageSquareText}  label="Respondieron"value={m.replied}     color="text-[#06B6D4]" sub={pct(m.replied, m.contacted)}      />
+            <Chip icon={CalendarCheck}      label="Reuniones"   value={m.meetings}    color="text-[#10B981]"  sub={pct(m.meetings, m.replied)}       />
+            <Chip icon={Copy}               label="Duplicados"  value={m.duplicates}  color="text-[#EF4444]"    sub="en otras camp."                   />
+            <Chip icon={XCircle}            label="Rebotados"   value={m.bounced}     color="text-[var(--foreground-muted)]"   sub="no entregados"                    />
           </div>
 
           {/* Secuencia de automatización */}
           <div className="mt-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Zap className="h-3.5 w-3.5 text-amber-500" />
-              <span className="text-[11px] font-semibold text-zinc-700">{segment.automationName}</span>
+              <span className="text-[11px] font-semibold text-[var(--foreground-muted)]">{segment.automationName}</span>
             </div>
             {segment.searchUrl && (
-              <a href={segment.searchUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-indigo-500 hover:underline">
+              <a href={segment.searchUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-[#2563EB] hover:underline">
                 Ver búsqueda <ExternalLink className="h-3 w-3" />
               </a>
             )}
@@ -533,7 +533,7 @@ function TemplateLibrary({
     if (tab === "creadas" && saved.length === 0) {
       setLoadingSaved(true);
       try {
-        const stored = JSON.parse(localStorage.getItem("nexusai_custom_templates") ?? "[]");
+        const stored = JSON.parse(localStorage.getItem("cazary_custom_templates") ?? "[]");
         setSaved(Array.isArray(stored) ? stored : []);
       } catch { /* ignore */ }
       setLoadingSaved(false);
@@ -552,8 +552,8 @@ function TemplateLibrary({
   function handleDeleteSaved(id: string) {
     setSaved((prev) => prev.filter((a) => a.id !== id));
     try {
-      const stored = JSON.parse(localStorage.getItem("nexusai_custom_templates") ?? "[]");
-      localStorage.setItem("nexusai_custom_templates",
+      const stored = JSON.parse(localStorage.getItem("cazary_custom_templates") ?? "[]");
+      localStorage.setItem("cazary_custom_templates",
         JSON.stringify((stored as SavedAutomation[]).filter((a) => a.id !== id))
       );
     } catch { /* ignore */ }
@@ -570,11 +570,11 @@ function TemplateLibrary({
   };
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
       {/* Header + tabs */}
-      <div className="flex items-center gap-2 border-b border-zinc-100 px-5 py-3.5">
-        <BookOpen className="h-4 w-4 text-indigo-500" />
-        <h3 className="text-sm font-bold text-zinc-900">Biblioteca de Automatizaciones</h3>
+      <div className="flex items-center gap-2 border-b border-[var(--border)] px-5 py-3.5">
+        <BookOpen className="h-4 w-4 text-[#2563EB]" />
+        <h3 className="text-sm font-bold text-[var(--foreground)]">Biblioteca de Automatizaciones</h3>
         <div className="ml-auto flex gap-1">
           {(["predefinidas", "creadas", "por_campana"] as LibTab[]).map((t) => (
             <button
@@ -583,8 +583,8 @@ function TemplateLibrary({
               className={[
                 "rounded-lg px-3 py-1 text-[11px] font-semibold transition-colors",
                 tab === t
-                  ? "bg-indigo-600 text-white"
-                  : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200",
+                  ? "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white"
+                  : "bg-[var(--border)] text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.1)]",
               ].join(" ")}
             >
               {TAB_LABELS[t]}
@@ -603,22 +603,22 @@ function TemplateLibrary({
                 key={tpl.id}
                 className={`relative flex flex-col gap-2 rounded-xl border p-4 transition-all ${
                   isCompatible
-                    ? "border-zinc-200 bg-white hover:border-indigo-200 hover:shadow-sm"
-                    : "border-zinc-100 bg-zinc-50/50 opacity-60"
+                    ? "border-[var(--border)] bg-[var(--background)] hover:border-[rgba(37,99,235,0.4)] hover:shadow-sm"
+                    : "border-[var(--border)] bg-[var(--background)] opacity-60"
                 }`}
               >
                 {isCompatible && (
-                  <span className="absolute right-3 top-3 rounded-full bg-green-50 px-1.5 py-0.5 text-[9px] font-bold text-green-600">
+                  <span className="absolute right-3 top-3 rounded-full bg-[rgba(16,185,129,0.12)] px-1.5 py-0.5 text-[9px] font-bold text-[#10B981]">
                     Compatible
                   </span>
                 )}
                 <div className="flex items-start gap-2">
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-                    <Bot className="h-4 w-4 text-indigo-600" />
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)]">
+                    <Bot className="h-4 w-4 text-[#2563EB]" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-zinc-900 leading-snug">{tpl.name}</p>
-                    <p className="mt-0.5 text-[10px] text-zinc-500 leading-snug">{tpl.description}</p>
+                    <p className="text-xs font-bold text-[var(--foreground)] leading-snug">{tpl.name}</p>
+                    <p className="mt-0.5 text-[10px] text-[var(--foreground-muted)] leading-snug">{tpl.description}</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
@@ -628,14 +628,14 @@ function TemplateLibrary({
                         {TYPE_LABEL[t]}
                       </span>
                     ))}
-                    <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[9px] text-zinc-500">
+                    <span className="rounded-full bg-[var(--border)] px-1.5 py-0.5 text-[9px] text-[var(--foreground-muted)]">
                       {tpl.nodeCount} nodos
                     </span>
                   </div>
                   {isCompatible && (
                     <button
                       onClick={() => onUse(tpl)}
-                      className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-zinc-700 transition-colors"
+                      className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-2.5 py-1 text-[10px] font-bold text-white hover:opacity-90 transition-opacity"
                     >
                       Usar
                     </button>
@@ -651,9 +651,9 @@ function TemplateLibrary({
       {tab === "creadas" && (
         <div className="p-4">
           {loadingSaved ? (
-            <p className="text-center text-xs text-zinc-400 py-6">Cargando automatizaciones...</p>
+            <p className="text-center text-xs text-[var(--foreground-muted)] py-6">Cargando automatizaciones...</p>
           ) : saved.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-8 text-zinc-400">
+            <div className="flex flex-col items-center gap-2 py-8 text-[var(--foreground-muted)]">
               <Bot className="h-8 w-8 opacity-30" />
               <p className="text-xs font-medium">No hay automatizaciones guardadas</p>
               <p className="text-[11px] text-center">Guarda un flujo desde el Flow Builder para verlo aquí</p>
@@ -661,30 +661,30 @@ function TemplateLibrary({
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {saved.map((auto) => (
-                <div key={auto.id} className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-4 hover:border-indigo-200 hover:shadow-sm transition-all">
+                <div key={auto.id} className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 hover:border-[rgba(37,99,235,0.4)] hover:shadow-sm transition-all">
                   <div className="flex items-start gap-2">
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-violet-50">
-                      <Bot className="h-4 w-4 text-violet-600" />
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[rgba(6,182,212,0.12)]">
+                      <Bot className="h-4 w-4 text-[#06B6D4]" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-zinc-900 leading-snug">{auto.name}</p>
-                      <p className="text-[10px] text-zinc-400">{auto.created_at?.slice(0, 10)}</p>
+                      <p className="text-xs font-bold text-[var(--foreground)] leading-snug">{auto.name}</p>
+                      <p className="text-[10px] text-[var(--foreground-faint)]">{auto.created_at?.slice(0, 10)}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-1">
-                    <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-600">
+                    <span className="rounded-full bg-[rgba(6,182,212,0.12)] px-1.5 py-0.5 text-[9px] font-semibold text-[#06B6D4]">
                       Plantilla guardada
                     </span>
                     <div className="flex gap-1">
                       <button
                         onClick={() => onUse({ id: auto.id, name: auto.name, description: "", types: [campaignType], nodeCount: 0, flowConfig: auto.flow_config as unknown as import("./types").FlowConfig })}
-                        className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-zinc-700 transition-colors"
+                        className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-2.5 py-1 text-[10px] font-bold text-white hover:opacity-90 transition-opacity"
                       >
                         Usar
                       </button>
                       <button
                         onClick={() => handleDeleteSaved(auto.id)}
-                        className="flex h-6 w-6 items-center justify-center rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        className="flex h-6 w-6 items-center justify-center rounded-lg text-[var(--foreground-muted)] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444] transition-colors"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -701,9 +701,9 @@ function TemplateLibrary({
       {tab === "por_campana" && (
         <div className="p-4">
           {loadingCampaign ? (
-            <p className="text-center text-xs text-zinc-400 py-6">Cargando automatizaciones de esta campaña...</p>
+            <p className="text-center text-xs text-[var(--foreground-muted)] py-6">Cargando automatizaciones de esta campaña...</p>
           ) : byCampaign.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-8 text-zinc-400">
+            <div className="flex flex-col items-center gap-2 py-8 text-[var(--foreground-muted)]">
               <Zap className="h-8 w-8 opacity-30" />
               <p className="text-xs font-medium">Sin automatizaciones en esta campaña</p>
               <p className="text-[11px] text-center">Las automatizaciones activas de esta campaña aparecerán aquí</p>
@@ -711,33 +711,33 @@ function TemplateLibrary({
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {byCampaign.map((auto) => (
-                <div key={auto.id} className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-4 hover:border-indigo-200 hover:shadow-sm transition-all">
+                <div key={auto.id} className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 hover:border-[rgba(37,99,235,0.4)] hover:shadow-sm transition-all">
                   <div className="flex items-start gap-2">
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50">
-                      <Zap className="h-4 w-4 text-blue-600" />
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)]">
+                      <Zap className="h-4 w-4 text-[#2563EB]" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-zinc-900 leading-snug">{auto.name}</p>
-                      <p className="text-[10px] text-zinc-400">{auto.created_at?.slice(0, 10)}</p>
+                      <p className="text-xs font-bold text-[var(--foreground)] leading-snug">{auto.name}</p>
+                      <p className="text-[10px] text-[var(--foreground-faint)]">{auto.created_at?.slice(0, 10)}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className={[
                       "rounded-full px-1.5 py-0.5 text-[9px] font-semibold",
-                      auto.status === "active" ? "bg-green-50 text-green-600" : "bg-zinc-100 text-zinc-500",
+                      auto.status === "active" ? "bg-[rgba(16,185,129,0.12)] text-[#10B981]" : "bg-[var(--border)] text-[var(--foreground-muted)]",
                     ].join(" ")}>
                       {auto.status === "active" ? "Activa" : auto.status === "draft" ? "Borrador" : auto.status}
                     </span>
                     <div className="flex gap-1">
                       <button
                         onClick={() => onUse({ id: auto.id, name: auto.name, description: "", types: [campaignType], nodeCount: 0, flowConfig: auto.flow_config as unknown as import("./types").FlowConfig })}
-                        className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-zinc-700 transition-colors"
+                        className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-2.5 py-1 text-[10px] font-bold text-white hover:opacity-90 transition-opacity"
                       >
                         Editar
                       </button>
                       <button
                         onClick={() => handleDeleteByCampaign(auto.id)}
-                        className="flex h-6 w-6 items-center justify-center rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        className="flex h-6 w-6 items-center justify-center rounded-lg text-[var(--foreground-muted)] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444] transition-colors"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -759,16 +759,16 @@ function AutopilotBanner({ segmentCount }: { segmentCount: number }) {
   const [active, setActive] = useState(false);
   return (
     <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all ${
-      active ? "border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50" : "border-zinc-200 bg-white"
+      active ? "border-[rgba(37,99,235,0.2)] bg-[rgba(37,99,235,0.06)]" : "border-[var(--border)] bg-[var(--surface)]"
     }`}>
-      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${active ? "bg-purple-600" : "bg-zinc-100"}`}>
-        <Bot className={`h-4 w-4 ${active ? "text-white" : "text-zinc-500"}`} />
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${active ? "bg-[#2563EB]" : "bg-[var(--border)]"}`}>
+        <Bot className={`h-4 w-4 ${active ? "text-white" : "text-[var(--foreground-muted)]"}`} />
       </div>
       <div className="flex-1">
-        <p className={`text-xs font-bold ${active ? "text-purple-800" : "text-zinc-700"}`}>
+        <p className={`text-xs font-bold ${active ? "text-[#2563EB]" : "text-[var(--foreground)]"}`}>
           Autopilot IA {active ? "— Activado" : "— Desactivado"}
         </p>
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-[10px] text-[var(--foreground-muted)]">
           {active
             ? `Claude está gestionando conversaciones en ${segmentCount} segmento${segmentCount !== 1 ? "s" : ""}`
             : "Activa el Autopilot para que Claude negocie y agende reuniones de forma autónoma"}
@@ -776,7 +776,7 @@ function AutopilotBanner({ segmentCount }: { segmentCount: number }) {
       </div>
       <button
         onClick={() => setActive((a) => !a)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${active ? "bg-purple-600" : "bg-zinc-300"}`}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${active ? "bg-[#2563EB]" : "bg-[var(--border)]"}`}
       >
         <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${active ? "translate-x-6" : "translate-x-1"}`} />
       </button>
@@ -788,7 +788,7 @@ function AutopilotBanner({ segmentCount }: { segmentCount: number }) {
 
 function GhostEngineProgress({ campaignId: _ }: { campaignId: string }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-[11px] text-zinc-500 flex items-center gap-2">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[11px] text-[var(--foreground-muted)] flex items-center gap-2">
       <Zap className="h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
       Ghost Engine procesa los leads en segundo plano via la extensión de Chrome. El progreso se actualiza cada 30 segundos.
     </div>
@@ -868,29 +868,29 @@ export function CampaignDetailView({
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
       {/* -- Header -- */}
-      <div className="flex flex-shrink-0 items-center gap-3 border-b border-border bg-white px-5 py-3.5">
+      <div className="flex flex-shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3.5">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--foreground)] transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Campañas
         </button>
-        <div className="h-4 w-px bg-zinc-200" />
+        <div className="h-4 w-px bg-[var(--border)]" />
         <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${TYPE_COLOR[campaign.type]}`}>
           <TypeIcon className="h-4 w-4" />
         </div>
         <div>
-          <p className="text-sm font-bold text-zinc-900">{campaign.name}</p>
-          <p className="text-[10px] text-zinc-400">{TYPE_LABEL[campaign.type]}</p>
+          <p className="text-sm font-bold text-[var(--foreground)]">{campaign.name}</p>
+          <p className="text-[10px] text-[var(--foreground-muted)]">{TYPE_LABEL[campaign.type]}</p>
         </div>
         {onLaunch && campaign.status !== "paused" && campaign.status !== "completed" && (
           <button
             onClick={() => onLaunch(campaign.id)}
-            className={`ml-auto flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white transition-colors ${
+            className={`ml-auto flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white transition-opacity ${
               campaign.status === "active"
-                ? "bg-green-500 hover:bg-green-600 cursor-default opacity-80"
-                : "bg-green-600 hover:bg-green-700"
+                ? "bg-[#10B981] cursor-default opacity-80"
+                : "bg-[#10B981] hover:opacity-90"
             }`}
           >
             <Play className="h-4 w-4" />
@@ -901,7 +901,7 @@ export function CampaignDetailView({
 
       {/* -- Toast -- */}
       {toast && (
-        <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs font-semibold text-amber-800">
+        <div className="flex items-center gap-2 border-b border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] px-5 py-2 text-xs font-semibold text-[#F59E0B]">
           <span className="flex-1">{toast}</span>
           <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">✕</button>
         </div>
@@ -918,25 +918,25 @@ export function CampaignDetailView({
 
         {/* Summary row */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div className="rounded-xl border border-zinc-100 bg-white p-3.5 shadow-sm">
-            <p className="text-2xl font-bold tabular-nums text-zinc-900">{fmtN(displayLeads)}</p>
-            <p className="mt-0.5 text-[11px] text-zinc-400">Leads totales</p>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5 shadow-sm">
+            <p className="text-2xl font-bold tabular-nums text-[var(--foreground)]">{fmtN(displayLeads)}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--foreground-muted)]">Leads totales</p>
           </div>
-          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3.5">
-            <p className="text-2xl font-bold tabular-nums text-blue-700">{fmtN(totals.connected)}</p>
-            <p className="mt-0.5 text-[11px] text-blue-500">{pct(totals.connected, displayLeads)} conectados</p>
+          <div className="rounded-xl border border-[rgba(37,99,235,0.25)] bg-[rgba(37,99,235,0.08)] p-3.5">
+            <p className="text-2xl font-bold tabular-nums text-[#2563EB]">{fmtN(totals.connected)}</p>
+            <p className="mt-0.5 text-[11px] text-[rgba(37,99,235,0.7)]">{pct(totals.connected, displayLeads)} conectados</p>
           </div>
-          <div className="rounded-xl border border-violet-100 bg-violet-50 p-3.5">
-            <p className="text-2xl font-bold tabular-nums text-violet-700">{fmtN(totals.replied)}</p>
-            <p className="mt-0.5 text-[11px] text-violet-500">{pct(totals.replied, totals.connected)} respondieron</p>
+          <div className="rounded-xl border border-[rgba(6,182,212,0.25)] bg-[rgba(6,182,212,0.08)] p-3.5">
+            <p className="text-2xl font-bold tabular-nums text-[#06B6D4]">{fmtN(totals.replied)}</p>
+            <p className="mt-0.5 text-[11px] text-[rgba(6,182,212,0.7)]">{pct(totals.replied, totals.connected)} respondieron</p>
           </div>
-          <div className="rounded-xl border border-green-100 bg-green-50 p-3.5">
-            <p className="text-2xl font-bold tabular-nums text-green-700">{fmtN(totals.meetings)}</p>
-            <p className="mt-0.5 text-[11px] text-green-500">{pct(totals.meetings, totals.replied)} reuniones</p>
+          <div className="rounded-xl border border-[rgba(16,185,129,0.25)] bg-[rgba(16,185,129,0.08)] p-3.5">
+            <p className="text-2xl font-bold tabular-nums text-[#10B981]">{fmtN(totals.meetings)}</p>
+            <p className="mt-0.5 text-[11px] text-[rgba(16,185,129,0.7)]">{pct(totals.meetings, totals.replied)} reuniones</p>
           </div>
-          <div className="rounded-xl border border-red-100 bg-red-50 p-3.5">
-            <p className="text-2xl font-bold tabular-nums text-red-600">{totals.dupes}</p>
-            <p className="mt-0.5 text-[11px] text-red-400">duplicados totales</p>
+          <div className="rounded-xl border border-[rgba(239,68,68,0.25)] bg-[rgba(239,68,68,0.08)] p-3.5">
+            <p className="text-2xl font-bold tabular-nums text-[#EF4444]">{totals.dupes}</p>
+            <p className="mt-0.5 text-[11px] text-[rgba(239,68,68,0.7)]">duplicados totales</p>
           </div>
         </div>
 
@@ -958,13 +958,13 @@ export function CampaignDetailView({
         {/* Segments */}
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-zinc-900">
+            <h2 className="text-sm font-bold text-[var(--foreground)]">
               Segmentos
-              <span className="ml-2 text-xs font-normal text-zinc-400">({segments.length})</span>
+              <span className="ml-2 text-xs font-normal text-[var(--foreground-muted)]">({segments.length})</span>
             </h2>
             <button
               onClick={() => setAddingSegment((v) => !v)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--foreground-muted)] hover:border-[rgba(37,99,235,0.4)] hover:text-[#2563EB] transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
               Nuevo segmento
@@ -973,25 +973,25 @@ export function CampaignDetailView({
 
           {/* Formulario inline — sin prompt() */}
           {addingSegment && (
-            <div className="mb-3 flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+            <div className="mb-3 flex items-center gap-2 rounded-xl border border-[rgba(37,99,235,0.3)] bg-[rgba(37,99,235,0.06)] p-3">
               <input
                 autoFocus
                 value={newSegName}
                 onChange={(e) => setNewSegName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleAddSegment(); if (e.key === "Escape") setAddingSegment(false); }}
                 placeholder="Nombre del segmento (ej: CEOs Lima SaaS)"
-                className="flex-1 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-faint)] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.4)] focus:border-[#2563EB]"
               />
               <button
                 onClick={handleAddSegment}
                 disabled={!newSegName.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40"
+                className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
               >
                 Crear
               </button>
               <button
                 onClick={() => setAddingSegment(false)}
-                className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:bg-white"
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)]"
               >
                 Cancelar
               </button>

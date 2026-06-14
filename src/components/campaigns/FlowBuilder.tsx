@@ -22,6 +22,37 @@ import type {
 } from "./types";
 import { updateCampaignWorkflow } from "@/app/dashboard/campanas/actions";
 
+// -- Condition edge normalizer -------------------------------------------------
+
+function normalizeEdge(edge: FlowEdge, allNodes: FlowNode[]): FlowEdge {
+  const sourceNode = allNodes.find((n) => n.id === edge.source);
+  if (sourceNode?.data?.nodeType !== "condition") return edge;
+
+  if (edge.sourceHandle === "yes" && !edge.label) {
+    return {
+      ...edge,
+      label: "✓ Sí",
+      labelStyle: { fill: "#16a34a", fontWeight: 700, fontSize: 11 },
+      labelBgStyle: { fill: "#dcfce7", fillOpacity: 0.9 },
+      labelBgPadding: [4, 6] as [number, number],
+      labelBgBorderRadius: 4,
+      style: { stroke: "#16a34a", strokeWidth: 2 },
+    };
+  }
+  if (edge.sourceHandle === "no" && !edge.label) {
+    return {
+      ...edge,
+      label: "✗ No",
+      labelStyle: { fill: "#dc2626", fontWeight: 700, fontSize: 11 },
+      labelBgStyle: { fill: "#fee2e2", fillOpacity: 0.9 },
+      labelBgPadding: [4, 6] as [number, number],
+      labelBgBorderRadius: 4,
+      style: { stroke: "#dc2626", strokeWidth: 2 },
+    };
+  }
+  return edge;
+}
+
 // -- UID factory ---------------------------------------------------------------
 
 function makeUidFactory(existingNodes: FlowNode[]) {
@@ -110,20 +141,20 @@ function LaunchModal({ campaign, segments, onClose, onConfirm }: LaunchModalProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <div className="flex items-center gap-2">
-            <Rocket className="h-4 w-4 text-indigo-600" />
-            <h2 className="text-sm font-bold text-zinc-900">Finalizar campaña</h2>
+            <Rocket className="h-4 w-4 text-[#2563EB]" />
+            <h2 className="text-sm font-bold text-[var(--foreground)]">Finalizar campaña</h2>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[var(--background)] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          <p className="text-sm text-zinc-600">Revisa el resumen antes de lanzar:</p>
-          <div className="rounded-xl border border-zinc-100 bg-zinc-50 divide-y divide-zinc-100">
+          <p className="text-sm text-[var(--foreground-muted)]">Revisa el resumen antes de lanzar:</p>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] divide-y divide-[var(--border)]">
             {([
               ["Campaña",      campaign.name],
               ["Tipo",         campaign.type.replace("_", " ")],
@@ -131,19 +162,23 @@ function LaunchModal({ campaign, segments, onClose, onConfirm }: LaunchModalProp
               ["Leads totales", totalLeads > 0 ? totalLeads.toLocaleString("es-PE") : "Pendiente"],
             ] as [string, string | number][]).map(([label, value]) => (
               <div key={label} className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-xs text-zinc-500">{label}</span>
-                <span className="text-xs font-semibold text-zinc-900 capitalize">{value}</span>
+                <span className="text-xs text-[var(--foreground-faint)]">{label}</span>
+                <span className="text-xs font-semibold text-[var(--foreground)] capitalize">{value}</span>
               </div>
             ))}
           </div>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 border border-red-200">{error}</p>}
+          {error && (
+            <p className="rounded-lg bg-[rgba(239,68,68,0.12)] px-3 py-2 text-xs text-[#EF4444] border border-[rgba(239,68,68,0.25)]">
+              {error}
+            </p>
+          )}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-zinc-100 bg-zinc-50/60 px-6 py-4">
+        <div className="flex items-center gap-3 border-t border-[var(--border)] bg-[var(--background)] px-6 py-4">
           <button
             disabled={loading}
             onClick={() => submit("draft")}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground-muted)] hover:bg-[var(--background)] disabled:opacity-50 transition-colors"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Guardar borrador
@@ -151,7 +186,7 @@ function LaunchModal({ campaign, segments, onClose, onConfirm }: LaunchModalProp
           <button
             disabled={loading}
             onClick={() => submit("active")}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-200 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 transition-all"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2.5 text-sm font-bold text-white shadow-md disabled:opacity-50 transition-all"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
             Lanzar campaña
@@ -167,9 +202,9 @@ function LaunchModal({ campaign, segments, onClose, onConfirm }: LaunchModalProp
 function EmptyHint() {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <div className="rounded-2xl border-2 border-dashed border-zinc-300 bg-white/80 backdrop-blur-sm px-8 py-6 text-center shadow-sm">
-        <p className="text-sm font-semibold text-zinc-500">Arrastra un nodo para empezar tu secuencia</p>
-        <p className="mt-1 text-xs text-zinc-400">O usa los nodos del panel izquierdo</p>
+      <div className="rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-sm px-8 py-6 text-center shadow-sm">
+        <p className="text-sm font-semibold text-[var(--foreground-muted)]">Arrastra un nodo para empezar tu secuencia</p>
+        <p className="mt-1 text-xs text-[var(--foreground-faint)]">O usa los nodos del panel izquierdo</p>
       </div>
     </div>
   );
@@ -196,7 +231,8 @@ function FlowCanvas({ campaign, segments, initialFlow, abStats, onBack, onLaunch
     const df  = buildDefaultFlow();
 
     const sNodes: FlowNode[] = (initialFlow?.nodes ?? wf?.nodes ?? df.nodes) as FlowNode[];
-    const sEdges: FlowEdge[] = (initialFlow?.edges ?? wf?.edges ?? df.edges) as FlowEdge[];
+    const rawEdges = (initialFlow?.edges ?? wf?.edges ?? df.edges) as FlowEdge[];
+    const sEdges: FlowEdge[] = rawEdges.map((e) => normalizeEdge(e, sNodes));
 
     const varA: ABVariant = (wf?.variant_a) ?? emptyVariant(50);
     const varB: ABVariant = (wf?.variant_b) ?? emptyVariant(50);
@@ -289,11 +325,38 @@ function FlowCanvas({ campaign, segments, initialFlow, abStats, onBack, onLaunch
   // -- Handlers ------------------------------------------------------------------
 
   const onConnect = useCallback(
-    (conn: Connection) =>
-      setEdges((eds) =>
-        addEdge({ ...conn, animated: true, style: { stroke: "#6366f1", strokeWidth: 2 } }, eds)
-      ),
-    [setEdges]
+    (conn: Connection) => {
+      const sourceNode = (nodes as FlowNode[]).find((n) => n.id === conn.source);
+      const isCondition = sourceNode?.data?.nodeType === "condition";
+
+      let extraProps: Partial<FlowEdge> = {};
+      if (isCondition && conn.sourceHandle === "yes") {
+        extraProps = {
+          label: "✓ Sí",
+          labelStyle: { fill: "#16a34a", fontWeight: 700, fontSize: 11 },
+          labelBgStyle: { fill: "#dcfce7", fillOpacity: 0.9 },
+          labelBgPadding: [4, 6],
+          labelBgBorderRadius: 4,
+          style: { stroke: "#16a34a", strokeWidth: 2 },
+          animated: true,
+        };
+      } else if (isCondition && conn.sourceHandle === "no") {
+        extraProps = {
+          label: "✗ No",
+          labelStyle: { fill: "#dc2626", fontWeight: 700, fontSize: 11 },
+          labelBgStyle: { fill: "#fee2e2", fillOpacity: 0.9 },
+          labelBgPadding: [4, 6],
+          labelBgBorderRadius: 4,
+          style: { stroke: "#dc2626", strokeWidth: 2 },
+          animated: false,
+        };
+      } else {
+        extraProps = { animated: true, style: { stroke: "#2563EB", strokeWidth: 2 } };
+      }
+
+      setEdges((eds) => addEdge({ ...conn, ...extraProps }, eds));
+    },
+    [setEdges, nodes]
   );
 
   function onNodeClick(_: React.MouseEvent, node: Node) { setSelectedId(node.id); }
@@ -416,7 +479,7 @@ function FlowCanvas({ campaign, segments, initialFlow, abStats, onBack, onLaunch
           ) : (
             <div className="flex flex-1 min-h-0 relative">
               {/* Main canvas */}
-              <div className="flex-1 min-h-0 relative" style={{ background: "#0f0f0f" }}>
+              <div className="flex-1 min-h-0 relative" style={{ background: "var(--background)" }}>
                 <ReactFlow
                   nodes={nodes}
                   edges={edges}
@@ -434,37 +497,43 @@ function FlowCanvas({ campaign, segments, initialFlow, abStats, onBack, onLaunch
                   proOptions={{ hideAttribution: true }}
                   defaultEdgeOptions={{
                     animated: true,
-                    style: { stroke: "#818cf8", strokeWidth: 2 },
+                    style: { stroke: "#2563EB", strokeWidth: 2 },
                   }}
                 >
                   <Background
                     variant={BackgroundVariant.Dots}
-                    gap={28}
-                    size={1}
-                    color="#2a2a2a"
+                    gap={20}
+                    size={1.5}
+                    color="var(--border)"
                   />
                   <Controls
                     showInteractive={false}
-                    style={{ bottom: 16, right: 16, left: "auto", top: "auto" }}
+                    style={{
+                      bottom: 16, right: 16, left: "auto", top: "auto",
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 10,
+                    }}
                   />
                   <MiniMap
                     nodeColor={(n) => {
                       const t = n.type ?? "";
-                      if (t === "start")     return "#22c55e";
-                      if (t === "end")       return "#64748b";
-                      if (t === "delay" || t === "wait") return "#f59e0b";
-                      if (t === "condition") return "#f97316";
-                      if (t === "email" || t === "email_node") return "#3b82f6";
-                      if (t === "message")   return "#10b981";
-                      if (t === "autopilot") return "#9333ea";
-                      return "#6366f1";
+                      if (t === "start")                    return "#10B981";
+                      if (t === "end")                      return "#10B981";
+                      if (t === "delay" || t === "wait")    return "#F59E0B";
+                      if (t === "condition")                return "#06B6D4";
+                      if (t === "email" || t === "email_node") return "#3B82F6";
+                      if (t === "message")                  return "#10B981";
+                      if (t === "autopilot")                return "#8B5CF6";
+                      return "#2563EB";
                     }}
                     style={{
                       bottom: 16, left: 16, top: "auto", right: "auto",
-                      borderRadius: 8, border: "1px solid #2a2a2a",
-                      background: "#1a1a1a",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
                     }}
-                    maskColor="rgba(0,0,0,0.5)"
+                    maskColor="rgba(0,0,0,0.25)"
                   />
                 </ReactFlow>
 

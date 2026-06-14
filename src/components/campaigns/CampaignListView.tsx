@@ -14,17 +14,17 @@ import {
 // -- Helpers -------------------------------------------------------------------
 
 const TYPE_META: Record<CampaignType, { icon: React.ElementType; color: string; bg: string; label: string }> = {
-  linkedin:        { icon: Link2,    color: "text-blue-700",   bg: "bg-blue-50",   label: "LinkedIn"        },
-  sales_navigator: { icon: Sparkles, color: "text-violet-700", bg: "bg-violet-50", label: "Sales Navigator" },
-  email:           { icon: Mail,     color: "text-sky-700",    bg: "bg-sky-50",    label: "Email"           },
+  linkedin:        { icon: Link2,    color: "text-[#2563EB]",  bg: "bg-[rgba(37,99,235,0.12)]",  label: "LinkedIn"        },
+  sales_navigator: { icon: Sparkles, color: "text-[#06B6D4]",  bg: "bg-[rgba(6,182,212,0.12)]",  label: "Sales Navigator" },
+  email:           { icon: Mail,     color: "text-[#2563EB]",  bg: "bg-[rgba(37,99,235,0.08)]",  label: "Email"           },
 };
 
-const STATUS_META: Record<string, { label: string; dot: string; text: string }> = {
-  active:    { label: "Activa",     dot: "bg-green-400",  text: "text-green-700"  },
-  draft:     { label: "Borrador",   dot: "bg-zinc-400",   text: "text-zinc-600"   },
-  paused:    { label: "Pausada",    dot: "bg-amber-400",  text: "text-amber-700"  },
-  completed: { label: "Completada", dot: "bg-blue-400",   text: "text-blue-700"   },
-  archived:  { label: "Archivada",  dot: "bg-zinc-300",   text: "text-zinc-400"   },
+const STATUS_META: Record<string, { label: string; dot: string; text: string; badge: string }> = {
+  active:    { label: "Activa",     dot: "bg-[#10B981]",  text: "text-[#10B981]",                badge: "bg-[rgba(16,185,129,0.15)]"  },
+  draft:     { label: "Borrador",   dot: "bg-[var(--foreground-faint)]", text: "text-[var(--foreground-muted)]", badge: "bg-[var(--border)]"          },
+  paused:    { label: "Pausada",    dot: "bg-[#F59E0B]",  text: "text-[#F59E0B]",                badge: "bg-[rgba(245,158,11,0.15)]"  },
+  completed: { label: "Completada", dot: "bg-[#2563EB]",  text: "text-[#2563EB]",                badge: "bg-[rgba(37,99,235,0.15)]"   },
+  archived:  { label: "Archivada",  dot: "bg-[var(--foreground-faint)]", text: "text-[var(--foreground-faint)]", badge: "bg-[var(--border)]"           },
 };
 
 function fmtDate(d: string): string {
@@ -47,18 +47,18 @@ function ConfirmModal({ title, body, confirmLabel, confirmCls, loading, onConfir
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
-          <h3 className="text-sm font-bold text-zinc-900">{title}</h3>
-          <button onClick={onCancel} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100">
+      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+          <h3 className="text-sm font-bold text-[var(--foreground)]">{title}</h3>
+          <button onClick={onCancel} className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[var(--border)] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-5 py-4">
-          <p className="text-sm text-zinc-600">{body}</p>
+          <p className="text-sm text-[var(--foreground-muted)]">{body}</p>
         </div>
-        <div className="flex gap-3 border-t border-zinc-100 bg-zinc-50/60 px-5 py-4">
-          <button onClick={onCancel} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50">
+        <div className="flex gap-3 border-t border-[var(--border)] bg-[var(--background)] px-5 py-4">
+          <button onClick={onCancel} className="flex-1 rounded-xl border border-[var(--border)] py-2.5 text-xs font-semibold text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] transition-colors">
             Cancelar
           </button>
           <button
@@ -102,13 +102,13 @@ function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignC
   }, [menuOpen]);
 
   return (
-    <div className="group relative rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-all hover:border-zinc-300 hover:shadow-md">
+    <div className="group relative rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 transition-all hover:border-[rgba(37,99,235,0.4)] hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${type.bg}`}>
           <Icon className={`h-5 w-5 ${type.color}`} />
         </div>
         <div className="flex items-center gap-1.5">
-          <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${status.text} bg-zinc-50`}>
+          <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${status.text} ${status.badge}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${status.dot} ${isActive ? "animate-pulse" : ""}`} />
             {status.label}
           </span>
@@ -117,7 +117,7 @@ function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignC
           {(campaign.status === "active" || campaign.status === "paused") && (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleStatus(campaign.id, campaign.status); }}
-              className={["rounded-lg p-1.5 transition-colors", isActive ? "text-amber-500 hover:bg-amber-50" : "text-green-600 hover:bg-green-50"].join(" ")}
+              className={["rounded-lg p-1.5 transition-colors", isActive ? "text-[#F59E0B] hover:bg-[rgba(245,158,11,0.12)]" : "text-[#10B981] hover:bg-[rgba(16,185,129,0.12)]"].join(" ")}
               title={isActive ? "Pausar" : "Activar"}
             >
               {isActive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
@@ -126,7 +126,7 @@ function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignC
           {campaign.status === "draft" && (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleStatus(campaign.id, "draft"); }}
-              className="rounded-lg bg-green-50 px-2.5 py-1 text-[11px] font-bold text-green-700 hover:bg-green-100 transition-colors"
+              className="rounded-lg bg-[rgba(16,185,129,0.12)] px-2.5 py-1 text-[11px] font-bold text-[#10B981] hover:bg-[rgba(16,185,129,0.2)] transition-colors"
             >
               Activar
             </button>
@@ -136,32 +136,32 @@ function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignC
           <div ref={menuRef} className="relative">
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
-              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+              className="rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[var(--border)] hover:text-[var(--foreground)] transition-colors"
             >
               <MoreVertical className="h-3.5 w-3.5" />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+              <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-xl">
                 <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onOpen(campaign); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.05)]"
                 >
-                  <Play className="h-3.5 w-3.5 text-zinc-400" />
+                  <Play className="h-3.5 w-3.5 text-[var(--foreground-faint)]" />
                   Editar flujo
                 </button>
                 {(campaign.status === "active" || campaign.status === "paused") && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onToggleStatus(campaign.id, campaign.status); }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.05)]"
                   >
-                    {isActive ? <Pause className="h-3.5 w-3.5 text-zinc-400" /> : <Play className="h-3.5 w-3.5 text-zinc-400" />}
+                    {isActive ? <Pause className="h-3.5 w-3.5 text-[var(--foreground-faint)]" /> : <Play className="h-3.5 w-3.5 text-[var(--foreground-faint)]" />}
                     {isActive ? "Pausar" : "Activar"}
                   </button>
                 )}
-                <div className="my-1 h-px bg-zinc-100" />
+                <div className="my-1 h-px bg-[var(--border)]" />
                 <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onArchive(campaign.id, campaign.name); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-amber-600 hover:bg-amber-50"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-[#F59E0B] hover:bg-[rgba(245,158,11,0.08)]"
                 >
                   <Archive className="h-3.5 w-3.5" />
                   Archivar
@@ -173,24 +173,24 @@ function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignC
       </div>
 
       <button onClick={() => onOpen(campaign)} className="mt-3 block w-full text-left">
-        <h3 className="text-sm font-bold text-zinc-900 group-hover:text-indigo-700 transition-colors">
+        <h3 className="text-sm font-bold text-[var(--foreground)] group-hover:text-[#2563EB] transition-colors">
           {campaign.name}
         </h3>
         <p className={`mt-0.5 text-[11px] font-medium ${type.color}`}>{type.label}</p>
 
-        <div className="mt-4 flex items-center gap-4 border-t border-zinc-100 pt-3">
+        <div className="mt-4 flex items-center gap-4 border-t border-[var(--border)] pt-3">
           <div className="text-center">
-            <p className="text-sm font-bold text-zinc-900">
+            <p className="text-sm font-bold text-[var(--foreground)]">
               {campaign.totalLeads >= 1000 ? `${(campaign.totalLeads / 1000).toFixed(0)}K` : campaign.totalLeads}
             </p>
-            <p className="text-[10px] text-zinc-400">leads</p>
+            <p className="text-[10px] text-[var(--foreground-muted)]">leads</p>
           </div>
-          <div className="h-6 w-px bg-zinc-200" />
+          <div className="h-6 w-px bg-[var(--border)]" />
           <div className="text-center">
-            <p className="text-sm font-bold text-zinc-900">{campaign.segmentCount}</p>
-            <p className="text-[10px] text-zinc-400">segmento{campaign.segmentCount !== 1 ? "s" : ""}</p>
+            <p className="text-sm font-bold text-[var(--foreground)]">{campaign.segmentCount}</p>
+            <p className="text-[10px] text-[var(--foreground-muted)]">segmento{campaign.segmentCount !== 1 ? "s" : ""}</p>
           </div>
-          <div className="ml-auto flex items-center gap-1 text-[10px] text-zinc-400">
+          <div className="ml-auto flex items-center gap-1 text-[10px] text-[var(--foreground-faint)]">
             <Clock className="h-3 w-3" />
             {fmtDate(campaign.createdAt)}
           </div>
@@ -209,9 +209,11 @@ function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void 
   return (
     <div className={[
       "fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-xl border",
-      toast.type === "success" ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-800",
+      toast.type === "success"
+        ? "border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.12)] text-[#10B981]"
+        : "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.12)] text-[#EF4444]",
     ].join(" ")}>
-      {toast.type === "success" ? <Check className="h-4 w-4 text-green-500" /> : <X className="h-4 w-4 text-red-500" />}
+      {toast.type === "success" ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
       {toast.msg}
       <button onClick={onDismiss} className="ml-2 opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
     </div>
@@ -251,7 +253,6 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
   }
 
   function toggleCampaignStatus(id: string, current: CampaignStatus) {
-    // Bug 4: draft → active must go through launchCampaign (activates segments + queues tasks)
     if (current === "draft") {
       onCampaignsChange(campaigns.map((c) => c.id === id ? { ...c, status: "active" } : c));
       startTransition(async () => {
@@ -315,10 +316,10 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
       {/* -- Header -- */}
-      <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-6 py-4">
+      <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-6 py-4">
         <div>
-          <h1 className="text-lg font-bold text-zinc-900">Campañas de Automatización</h1>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <h1 className="text-lg font-bold text-[var(--foreground)]">Campañas de Automatización</h1>
+          <p className="mt-0.5 text-xs text-[var(--foreground-muted)]">
             {campaigns.length} campaña{campaigns.length !== 1 ? "s" : ""}&nbsp;·&nbsp;
             {activeCount} activa{activeCount !== 1 ? "s" : ""}&nbsp;·&nbsp;
             {totalLeads >= 1000 ? `${(totalLeads / 1000).toFixed(0)}K` : totalLeads} leads totales
@@ -329,17 +330,17 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
           {activeCount > 0 && !emergencyBrakeUsed && (
             <div className="relative">
               {showBrakeConfirm ? (
-                <div className="flex items-center gap-2 rounded-xl border-2 border-red-300 bg-red-50 px-3 py-2">
-                  <p className="text-xs font-medium text-red-700">
+                <div className="flex items-center gap-2 rounded-xl border-2 border-red-500/40 bg-[rgba(239,68,68,0.08)] px-3 py-2">
+                  <p className="text-xs font-medium text-[#EF4444]">
                     ¿Pausar <strong>{activeCount}</strong> campaña{activeCount !== 1 ? "s" : ""} activa{activeCount !== 1 ? "s" : ""}?
                   </p>
-                  <button onClick={activateEmergencyBrake} className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-red-700">Confirmar</button>
-                  <button onClick={() => setShowBrakeConfirm(false)} className="text-[11px] font-medium text-red-500 hover:text-red-700">Cancelar</button>
+                  <button onClick={activateEmergencyBrake} className="rounded-lg bg-[#EF4444] px-2.5 py-1 text-[11px] font-bold text-white hover:opacity-90">Confirmar</button>
+                  <button onClick={() => setShowBrakeConfirm(false)} className="text-[11px] font-medium text-[#EF4444] hover:opacity-70">Cancelar</button>
                 </div>
               ) : (
                 <button
                   onClick={() => setShowBrakeConfirm(true)}
-                  className="flex items-center gap-1.5 rounded-xl border-2 border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-600 transition-all hover:bg-red-50 hover:border-red-400"
+                  className="flex items-center gap-1.5 rounded-xl border-2 border-[rgba(239,68,68,0.4)] bg-[var(--surface)] px-3 py-2 text-xs font-bold text-[#EF4444] transition-all hover:bg-[rgba(239,68,68,0.08)] hover:border-[rgba(239,68,68,0.6)]"
                 >
                   <AlertOctagon className="h-4 w-4" />
                   🛑 Freno de emergencia
@@ -349,7 +350,7 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
           )}
 
           {emergencyBrakeUsed && (
-            <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+            <div className="flex items-center gap-1.5 rounded-xl border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] px-3 py-2 text-xs font-bold text-[#F59E0B]">
               <AlertOctagon className="h-3.5 w-3.5" />
               Todas las campañas pausadas
             </div>
@@ -357,7 +358,7 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
 
           <button
             onClick={onNew}
-            className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-zinc-700"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_16px_rgba(37,99,235,0.3)] transition-opacity hover:opacity-90"
           >
             <Plus className="h-4 w-4" />
             Nueva Campaña
@@ -369,12 +370,12 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-100">
-              <Play className="h-7 w-7 text-zinc-400" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--border)]">
+              <Play className="h-7 w-7 text-[var(--foreground-muted)]" />
             </div>
-            <p className="text-sm font-semibold text-zinc-700">Sin campañas todavía</p>
-            <p className="mt-1 text-xs text-zinc-400">Crea tu primera campaña para empezar a prospectar.</p>
-            <button onClick={onNew} className="mt-4 flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700">
+            <p className="text-sm font-semibold text-[var(--foreground)]">Sin campañas todavía</p>
+            <p className="mt-1 text-xs text-[var(--foreground-muted)]">Crea tu primera campaña para empezar a prospectar.</p>
+            <button onClick={onNew} className="mt-4 flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
               <Plus className="h-4 w-4" /> Crear campaña
             </button>
           </div>
@@ -391,9 +392,9 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
             ))}
             <button
               onClick={onNew}
-              className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-zinc-300 p-8 text-zinc-400 transition-all hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-600"
+              className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[var(--border)] p-8 text-[var(--foreground-muted)] transition-all hover:border-[rgba(37,99,235,0.4)] hover:bg-[rgba(37,99,235,0.03)] hover:text-[var(--foreground)]"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--border)]">
                 <Plus className="h-5 w-5" />
               </div>
               <p className="text-sm font-medium">Nueva campaña</p>
@@ -407,7 +408,7 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
           title="Archivar campaña"
           body={`¿Archivar campaña "${confirm.name}"? Se cancelarán las acciones pendientes. Los datos y métricas se conservan. Podrás recuperarla desde Archivadas.`}
           confirmLabel="Archivar"
-          confirmCls="bg-amber-500 hover:bg-amber-600"
+          confirmCls="bg-[#F59E0B] hover:opacity-90"
           loading={isPending}
           onConfirm={handleConfirmAction}
           onCancel={() => setConfirm(EMPTY_CONFIRM)}

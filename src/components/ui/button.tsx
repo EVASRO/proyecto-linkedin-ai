@@ -5,12 +5,13 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "outline";
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary text-white hover:bg-primary-hover shadow-sm",
+    "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white shadow-[var(--shadow-glow-primary)] hover:opacity-90 hover:shadow-[var(--shadow-glow-accent)]",
   secondary:
-    "bg-slate-900 text-white hover:bg-slate-800 shadow-sm",
-  ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+    "bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-hover)]",
+  ghost:
+    "text-[var(--foreground-muted)] hover:bg-[var(--surface)] hover:text-[var(--foreground)]",
   outline:
-    "border border-border bg-surface text-foreground hover:bg-slate-50",
+    "border border-[var(--border)] bg-transparent text-[var(--foreground-muted)] hover:border-[var(--primary)]/50 hover:text-[var(--foreground)]",
 };
 
 type ButtonProps = {
@@ -33,7 +34,7 @@ export function Button({
   onClick,
 }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-50";
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cazary-cobalt)] disabled:pointer-events-none disabled:opacity-50";
 
   const classes = cn(base, variants[variant], className);
 

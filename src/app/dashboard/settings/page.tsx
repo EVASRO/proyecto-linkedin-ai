@@ -47,9 +47,9 @@ export default async function SettingsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-zinc-800 px-6 py-5">
-        <h1 className="text-xl font-semibold text-zinc-100">Configuración</h1>
-        <p className="text-sm text-zinc-400">Gestiona tu cuenta, workspace, LinkedIn, email y webhooks</p>
+      <div className="border-b border-[var(--border)] px-6 py-5">
+        <h1 className="text-xl font-semibold text-[var(--foreground)]">Configuración</h1>
+        <p className="text-sm text-[var(--foreground-muted)]">Gestiona tu cuenta, workspace, LinkedIn, email y webhooks</p>
       </div>
 
       <div className="flex-1 overflow-auto p-6">

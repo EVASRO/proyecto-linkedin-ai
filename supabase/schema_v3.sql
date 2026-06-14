@@ -1,13 +1,13 @@
 -- ============================================================
--- NEXUSAI — SCHEMA COMPLETO V3.0
+-- cazary.ai — SCHEMA COMPLETO V3.1
 -- Ejecutar en: Supabase → SQL Editor → New Query
--- Versión: 2026-05-30
--- Cambios vs V2.1:
---   + tabla inbound_posts (calendario editorial Inbound)
---   + tabla email_connections (servidores SMTP / OAuth email)
---   + tabla ghost_engine_sessions (historial de sesiones del motor)
---   + campo `session_cookie` en oauth_connections ahora `encrypted_token`
---   + índices adicionales para inbound y email
+-- Versión: 2026-06-14
+-- Cambios vs V3.0:
+--   + tabla blacklist (perfiles/emails bloqueados)
+--   + tabla segments (segmentos de leads para campañas)
+--   + tabla settings_events (sync plataforma → extensión)
+--   + eliminados duplicados de engine_queue, email_queue,
+--     email_providers, selector_failures, selector_overrides
 -- ============================================================
 
 -- ============================================================
@@ -537,4 +537,238 @@ create trigger on_auth_user_created
 alter table conversations
   add column if not exists assigned_agent_id uuid references agents(id) on delete set null;
 
+-- ============================================================
+-- V3.1 — TABLAS FALTANTES (engine_queue, email, selectors)
+-- ============================================================
+
+-- ENGINE QUEUE — acciones encoladas para el Ghost Engine
+create table if not exists engine_queue (
+  id              uuid         primary key default gen_random_uuid(),
+  workspace_id    uuid         not null references workspaces(id) on delete cascade,
+  campaign_id     uuid         references campaigns(id) on delete set null,
+  lead_id         uuid         references leads(id) on delete cascade,
+  task_type       text         not null,
+  action_type     text         not null,
+  status          text         not null default 'pending',
+  priority        integer      not null default 5,
+  payload         jsonb        not null default '{}',
+  result          jsonb,
+  error_message   text,
+  retry_count     integer      default 0,
+  scheduled_at    timestamptz  not null default now(),
+  started_at      timestamptz,
+  executed_at     timestamptz,
+  created_at      timestamptz  default now() not null
+);
+
+-- EMAIL PROVIDERS — configuración SMTP / Resend / Mailgun / Sendgrid
+create table if not exists email_providers (
+  id              uuid         primary key default gen_random_uuid(),
+  workspace_id    uuid         not null references workspaces(id) on delete cascade,
+  provider_type   text         not null,
+  config          jsonb        not null default '{}',
+  is_active       boolean      default true,
+  created_at      timestamptz  default now() not null,
+  unique (workspace_id)
+);
+
+-- EMAIL QUEUE — emails pendientes de envío
+create table if not exists email_queue (
+  id              uuid         primary key default gen_random_uuid(),
+  workspace_id    uuid         not null references workspaces(id) on delete cascade,
+  campaign_id     uuid         references campaigns(id) on delete set null,
+  lead_id         uuid         references leads(id) on delete cascade,
+  to_email        text         not null,
+  to_name         text,
+  subject         text         not null,
+  body_html       text         not null,
+  body_text       text,
+  status          text         not null default 'pending',
+  message_id      text,
+  last_error      text,
+  sent_at         timestamptz,
+  scheduled_at    timestamptz  not null default now(),
+  created_at      timestamptz  default now() not null
+);
+
+-- SELECTOR FAILURES — selectores CSS de la extensión que fallaron
+create table if not exists selector_failures (
+  id                uuid         primary key default gen_random_uuid(),
+  workspace_id      uuid         not null references workspaces(id) on delete cascade,
+  platform          text         not null,
+  action            text         not null,
+  selector_key      text         not null,
+  selector_tried    text         not null,
+  html_context      text,
+  proposed_selector text,
+  confidence        numeric(4,3),
+  status            text         not null default 'pending',
+  approved_at       timestamptz,
+  approved_by       text,
+  created_at        timestamptz  default now() not null
+);
+
+-- SELECTOR OVERRIDES — selectores corregidos y activos
+create table if not exists selector_overrides (
+  id              uuid         primary key default gen_random_uuid(),
+  workspace_id    uuid         not null references workspaces(id) on delete cascade,
+  platform        text         not null,
+  action          text         not null,
+  selector_key    text         not null,
+  selector_value  text         not null,
+  active          boolean      default true,
+  created_at      timestamptz  default now() not null,
+  unique (workspace_id, platform, action, selector_key)
+);
+
+-- Índices de performance
+create index if not exists idx_engine_queue_workspace_status on engine_queue(workspace_id, status);
+create index if not exists idx_engine_queue_scheduled        on engine_queue(scheduled_at) where status = 'pending';
+create index if not exists idx_email_queue_workspace_status  on email_queue(workspace_id, status);
+create index if not exists idx_selector_failures_workspace   on selector_failures(workspace_id, status);
+
+-- RLS
+alter table engine_queue       enable row level security;
+alter table email_providers    enable row level security;
+alter table email_queue        enable row level security;
+alter table selector_failures  enable row level security;
+alter table selector_overrides enable row level security;
+
+create policy "workspace members engine_queue"
+  on engine_queue for all
+  using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+create policy "workspace members email_providers"
+  on email_providers for all
+  using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+create policy "workspace members email_queue"
+  on email_queue for all
+  using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+create policy "workspace members selector_failures"
+  on selector_failures for all
+  using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+create policy "workspace members selector_overrides"
+  on selector_overrides for all
+  using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+-- Función para incrementar contador de conversaciones de un agente
+create or replace function increment_agent_conversations(agent_id uuid)
+returns void language plpgsql as $$
+begin
+  update agents set conversations_count = conversations_count + 1 where id = agent_id;
+end;
+$$;
+
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- TABLAS ADICIONALES V3.1 — 2026-06-14
+-- blacklist, segments, settings_events
+-- oauth_connections (documentación — ya existe en Supabase)
+-- onboarding_progress (documentación — ya existe en Supabase)
+-- ============================================================
+
+-- oauth_connections: conexiones OAuth (LinkedIn cookie, SMTP email)
+-- NOTA: Esta tabla YA EXISTE en Supabase. Este bloque es solo documentación.
+create table if not exists oauth_connections (
+  id              uuid                     primary key default uuid_generate_v4(),
+  workspace_id    uuid                     references workspaces(id) on delete cascade,
+  provider        character varying        not null,   -- 'linkedin' | 'gmail' | 'smtp'
+  account_email   character varying,
+  account_name    character varying,
+  li_at_cookie    text,                               -- cookie li_at de LinkedIn (encriptada)
+  access_token    text,
+  refresh_token   text,
+  expires_at      timestamptz,
+  smtp_host       character varying,
+  smtp_port       integer,
+  smtp_user       character varying,
+  smtp_from       character varying,
+  metadata        jsonb,
+  created_at      timestamptz              default now() not null
+);
+
+create index if not exists idx_oauth_connections_workspace on oauth_connections(workspace_id);
+
+alter table oauth_connections enable row level security;
+create policy "workspace members oauth_connections" on oauth_connections
+  for all using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+-- onboarding_progress: pasos del wizard de onboarding por workspace
+-- NOTA: Esta tabla YA EXISTE en Supabase. Este bloque es solo documentación.
+create table if not exists onboarding_progress (
+  id              uuid         primary key default uuid_generate_v4(),
+  workspace_id    uuid         references workspaces(id) on delete cascade,
+  step            integer,
+  completed_at    timestamptz,
+  skipped         boolean,
+  created_at      timestamptz  default now() not null,
+  updated_at      timestamptz  default now() not null
+);
+
+create index if not exists idx_onboarding_progress_workspace on onboarding_progress(workspace_id);
+
+alter table onboarding_progress enable row level security;
+create policy "workspace members onboarding_progress" on onboarding_progress
+  for all using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+-- Blacklist: perfiles y emails que nunca serán contactados
+create table if not exists blacklist (
+  id            uuid         primary key default uuid_generate_v4(),
+  workspace_id  uuid         not null references workspaces(id) on delete cascade,
+  linkedin_url  text,
+  email         text,
+  reason        text,
+  created_at    timestamptz  default now() not null,
+  constraint blacklist_has_target check (linkedin_url is not null or email is not null),
+  unique (workspace_id, linkedin_url),
+  unique (workspace_id, email)
+);
+
+create index if not exists idx_blacklist_workspace on blacklist(workspace_id);
+
+alter table blacklist enable row level security;
+create policy "workspace members" on blacklist
+  for all using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+-- Segments: segmentos de leads para campañas (SalesNav / búsquedas)
+create table if not exists segments (
+  id            uuid         primary key default uuid_generate_v4(),
+  workspace_id  uuid         not null references workspaces(id) on delete cascade,
+  campaign_id   uuid         references campaigns(id) on delete cascade,
+  name          text         not null,
+  source        text         default 'manual',     -- 'salesnav' | 'search' | 'manual' | 'csv'
+  search_url    text,
+  filters       jsonb        default '{}',
+  lead_count    int          default 0,
+  status        text         default 'active',     -- 'active' | 'paused' | 'completed'
+  created_at    timestamptz  default now() not null,
+  updated_at    timestamptz  default now() not null
+);
+
+create index if not exists idx_segments_workspace on segments(workspace_id);
+create index if not exists idx_segments_campaign  on segments(campaign_id);
+
+alter table segments enable row level security;
+create policy "workspace members" on segments
+  for all using (workspace_id = (select workspace_id from profiles where id = auth.uid()));
+
+-- Settings events: canal de sincronización plataforma → extensión
+create table if not exists settings_events (
+  id            uuid         primary key default uuid_generate_v4(),
+  workspace_id  uuid         not null references workspaces(id) on delete cascade,
+  event_type    text         not null,             -- 'SAVE_SETTINGS' | 'PAUSE_ENGINE' | 'RESUME_ENGINE'
+  payload       jsonb        default '{}',
+  consumed      boolean      default false,
+  created_at    timestamptz  default now() not null
+);
+
+create index if not exists idx_settings_events_workspace_consumed
+  on settings_events(workspace_id, consumed, created_at desc);
+
+alter table settings_events enable row level security;
+create policy "workspace members" on settings_events
+  for all using (workspace_id = (select workspace_id from profiles where id = auth.uid()));

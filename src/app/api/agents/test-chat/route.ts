@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
 
   const system = `Eres un agente de ventas B2B con tono ${toneMap[tone] ?? "consultivo"}.
 Tu objetivo es ${objMap[objective] ?? "agendar una reunión"}.
-Propuesta de valor: ${value_proposition || "NexusAI automatiza la prospección en LinkedIn con IA."}
+Propuesta de valor: ${value_proposition || "cazary.ai automatiza la prospección en LinkedIn con IA."}
 
 Manejo de objeciones:
 ${objText || "- Sé empático y ofrece más información."}

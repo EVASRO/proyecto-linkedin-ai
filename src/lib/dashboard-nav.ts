@@ -9,6 +9,7 @@ import {
   PenLine,
   Settings,
   Users,
+  Wrench,
 } from "lucide-react";
 
 export type DashboardNavItem = {
@@ -81,6 +82,13 @@ export const dashboardNavItems: DashboardNavItem[] = [
     href: "/dashboard/settings",
     icon: Settings,
     description: "Cuenta, workspace, LinkedIn, email y webhooks",
+    section: "account",
+  },
+  {
+    label: "Selectores IA",
+    href: "/dashboard/configuracion/selectores",
+    icon: Wrench,
+    description: "Auto-reparación de selectores CSS de LinkedIn",
     section: "account",
   },
 ];

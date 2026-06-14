@@ -329,7 +329,7 @@ export async function testAutopilotWebhook(): Promise<Result<{ draftText?: strin
     if (!msg) return { success: false, error: "No se pudo crear mensaje de prueba" };
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-    const secret = process.env.AUTOPILOT_WEBHOOK_SECRET ?? "nexusai-autopilot-2024";
+    const secret = process.env.AUTOPILOT_WEBHOOK_SECRET ?? "cazary-autopilot-2025";
 
     const res = await fetch(`${appUrl}/api/autopilot/trigger`, {
       method: "POST",

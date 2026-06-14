@@ -14,6 +14,18 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const apiToken = authHeader.replace("Bearer ", "");
+  const validToken = process.env.INTERNAL_API_SECRET ?? "cazary-internal";
+  if (apiToken !== validToken) {
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+  }
+
   const { lead_profile, tone = "consultivo", objective = "agendar_reunion" } = await req.json();
 
   const toneGuide: Record<string, string> = {
