@@ -1103,14 +1103,141 @@
   }
 
   function isSalesNavDialogOpen() {
-    if (document.querySelector('.connect-cta-form__send')) return true;
-    if (document.querySelector('[data-test-modal-container][aria-hidden="false"]')) return true;
-    const dialog = document.querySelector('[data-test-modal][role="dialog"]');
-    if (dialog && dialog.getBoundingClientRect().height > 0) return true;
-    return false;
+    return isSalesNavDialogOpenRobust();
   }
 
   // ── ACCIÓN 2: CONNECT ─────────────────────────────────────────────────────
+
+  // ── Extraer memberId de la página actual (múltiples métodos) ─────────────
+  function extractMemberIdFromPage(profileUrl) {
+    // Método 1: URL de SalesNav → /sales/lead/<memberId>,<instanceId>
+    const url = profileUrl || window.location.href;
+    const snMatch = url.match(/\/sales\/(?:lead|people)\/([A-Za-z0-9_%-]+)/);
+    if (snMatch) {
+      const raw = decodeURIComponent(snMatch[1]).split(',')[0];
+      if (/^ACoA[A-Za-z0-9_-]{10,}$/.test(raw)) return raw;
+    }
+
+    // Método 2: Atributos data-entity-urn en el DOM (Waalaxy: getMemberIdByProfileUrn)
+    const urnEls = document.querySelectorAll('[data-entity-urn*="fsd_profile"],[data-urn*="fsd_profile"],[data-member-urn*="fsd_profile"]');
+    for (const el of urnEls) {
+      const urn = el.getAttribute('data-entity-urn') || el.getAttribute('data-urn') || el.getAttribute('data-member-urn') || '';
+      const m = urn.match(/fsd_profile:([A-Za-z0-9_-]+)/);
+      if (m && /^ACoA/.test(m[1])) return m[1];
+    }
+
+    // Método 3: Links con profileUrn (técnica Waalaxy)
+    for (const link of document.querySelectorAll('a[href*="profileUrn"]')) {
+      const m = (link.getAttribute('href') || '').match(/profileUrn=urn%3Ali%3Afsd_profile%3A([A-Za-z0-9_-]+)/);
+      if (m) return m[1];
+    }
+
+    // Método 4: Link "Ver todas las conexiones" en perfil LinkedIn estándar
+    const connLink = document.querySelector('a[href*="facetConnectionOf"]');
+    if (connLink) {
+      const m = (connLink.getAttribute('href') || '').match(/facetConnectionOf=%22([^%]+)%22/);
+      if (m) return m[1];
+    }
+
+    return null;
+  }
+
+  // ── Enviar conexión via Voyager API (no requiere DOM — más fiable) ────────
+  async function connectViaVoyagerAPI(profileUrl, note) {
+    try {
+      const csrfMatch = document.cookie.match(/JSESSIONID="?([^";]+)/);
+      const csrf = csrfMatch ? csrfMatch[1] : '';
+      if (!csrf) return { ok: false, reason: 'no_csrf' };
+
+      const memberId = extractMemberIdFromPage(profileUrl);
+      if (!memberId) return { ok: false, reason: 'no_member_id' };
+
+      // trackingId aleatorio requerido por la API
+      const trackingId = btoa(
+        Array.from({ length: 16 }, () => String.fromCharCode(Math.floor(Math.random() * 256))).join('')
+      );
+
+      const body = {
+        trackingId,
+        invitee: {
+          'com.linkedin.voyager.growth.invitation.InviteeProfile': { profileId: memberId }
+        }
+      };
+      if (note && note.trim()) body.message = note.trim().slice(0, 300);
+
+      const res = await fetch('https://www.linkedin.com/voyager/api/growth/normInvitations', {
+        method:      'POST',
+        credentials: 'include',
+        headers: {
+          'accept':                    'application/vnd.linkedin.normalized+json+2.1',
+          'content-type':              'application/json',
+          'csrf-token':                csrf,
+          'x-restli-protocol-version': '2.0.0',
+          'x-li-lang':                 'es_ES',
+        },
+        body: JSON.stringify(body),
+      });
+
+      console.log(`[cazary.ai] connectViaVoyagerAPI: status=${res.status} memberId=${memberId.slice(0,8)}...`);
+
+      if (res.status === 201 || res.status === 200) return { ok: true, reason: 'sent' };
+      if (res.status === 429 || res.status === 403) return { ok: false, reason: 'daily_limit_reached' };
+      if (res.status === 400) {
+        const data = await res.json().catch(() => null);
+        const msg  = JSON.stringify(data || '').toLowerCase();
+        if (msg.includes('pending') || msg.includes('already') || msg.includes('pendiente'))
+          return { ok: false, reason: 'already_pending' };
+        if (msg.includes('connected') || msg.includes('conectado'))
+          return { ok: false, reason: 'already_connected' };
+        return { ok: false, reason: 'api_400', raw: msg.slice(0, 200) };
+      }
+      return { ok: false, reason: `api_${res.status}` };
+    } catch (err) {
+      console.warn('[cazary.ai] connectViaVoyagerAPI error:', err.message);
+      return { ok: false, reason: 'exception' };
+    }
+  }
+
+  // ── isSalesNavDialogOpen con selectores actualizados ─────────────────────
+  function isSalesNavDialogOpenRobust() {
+    // Selectores ordenados de más a menos específicos
+    if (document.querySelector('.connect-cta-form__send'))                         return true;
+    if (document.querySelector('[data-test-modal-container][aria-hidden="false"]')) return true;
+    const d1 = document.querySelector('[data-test-modal][role="dialog"]');
+    if (d1 && d1.getBoundingClientRect().height > 0)                               return true;
+    // Nuevos selectores SalesNav 2025
+    const d2 = document.querySelector('[role="dialog"][aria-modal="true"]');
+    if (d2 && d2.getBoundingClientRect().height > 0)                               return true;
+    const d3 = document.querySelector('[class*="connect-cta"], [class*="send-invite"]');
+    if (d3 && d3.getBoundingClientRect().height > 0)                               return true;
+    return false;
+  }
+
+  // ── Buscar botón Send en cualquier dialog de invitación ──────────────────
+  function findDialogSendButton() {
+    const selectors = [
+      '.connect-cta-form__send',
+      'button[data-sn-modal-btn]',
+      '[role="dialog"] button[type="submit"]',
+      '[data-test-modal] button[type="submit"]',
+      '[aria-modal="true"] button[type="submit"]',
+    ];
+    for (const sel of selectors) {
+      const btn = document.querySelector(sel);
+      if (btn) return btn;
+    }
+    // Fallback: cualquier botón visible con texto "enviar" o "send" dentro de un dialog
+    const dialogs = document.querySelectorAll('[role="dialog"],[data-test-modal],[class*="connect-cta"]');
+    for (const dialog of dialogs) {
+      const found = Array.from(dialog.querySelectorAll('button')).find(b => {
+        if (!b.offsetParent || b.disabled) return false;
+        const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+        return t === 'enviar' || t === 'send' || t.includes('enviar invit') || t.includes('send invit') || t === 'conectar' || t === 'connect';
+      });
+      if (found) return found;
+    }
+    return null;
+  }
 
   async function detectConnectionState() {
     const platform = getPlatform();
@@ -1271,6 +1398,38 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
       await sleep(800);
 
+      // ── PASO 0: Voyager API (más fiable que DOM, no depende de selectores UI) ──
+      const apiResult = await connectViaVoyagerAPI(window.location.href, note);
+      console.log('[cazary.ai] SalesNav Voyager API connect result:', apiResult);
+
+      if (apiResult.ok) {
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: true, reason: 'sent', method: 'voyager_api',
+          lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
+        }});
+      }
+      if (apiResult.reason === 'daily_limit_reached') {
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: false, reason: 'daily_limit_reached',
+          lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+      if (apiResult.reason === 'already_pending') {
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: true, reason: 'already_pending',
+          crm_target: 'conexion_enviada', lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+      if (apiResult.reason === 'already_connected') {
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'connect', success: true, reason: 'already_connected',
+          crm_target: 'conexion_aceptada', lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+      // Si API falla (no_member_id, no_csrf, exception, api_400) → continuar con DOM como fallback
+      console.warn(`[cazary.ai] SalesNav: Voyager API falló (${apiResult.reason}) → fallback DOM`);
+      await sleep(500);
+
       // ── HELPER: botón "Conectar" directo en topcard (no en dropdown) ────────
       function findDirectConnectBtn() {
         const connectSelectors = [
@@ -1417,10 +1576,10 @@
       }
 
       // ── PASO 4: Enviar invitación via dialog ─────────────────────────────────
-      console.log('[cazary.ai] SalesNav: dialog detectado → buscando .connect-cta-form__send');
-      const sendBtn = document.querySelector('.connect-cta-form__send');
+      console.log('[cazary.ai] SalesNav: dialog detectado → buscando botón enviar');
+      const sendBtn = findDialogSendButton();
       if (!sendBtn) {
-        console.warn('[cazary.ai] SalesNav: .connect-cta-form__send no encontrado en dialog');
+        console.warn('[cazary.ai] SalesNav: botón send no encontrado en dialog');
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: false, reason: 'dialog_send_button_not_found',
           lead_id: leadId, campaign_id: campaignId,
@@ -1468,7 +1627,7 @@
       }
 
       // Reintento único
-      const sendBtn2 = document.querySelector('.connect-cta-form__send');
+      const sendBtn2 = findDialogSendButton();
       if (sendBtn2) {
         sendBtn2.click();
         await sleep(2000);
@@ -1809,8 +1968,28 @@
 
     } else {
       // ── SalesNav MODO RÁPIDO ──────────────────────────────────────────────
+      // PASO 0: Intentar Voyager API si tenemos la URL del perfil del lead
+      const leadProfileUrl = lead?.salesnav_url ?? lead?.linkedin_url ?? '';
+      if (leadProfileUrl) {
+        const apiRes = await connectViaVoyagerAPI(leadProfileUrl, note);
+        console.log('[cazary.ai] connect mode=fast SalesNav Voyager API:', apiRes);
+        if (apiRes.ok) {
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: true, reason: 'sent', method: 'voyager_api_fast',
+            lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
+          }});
+        }
+        if (apiRes.reason === 'daily_limit_reached') {
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: false, reason: 'daily_limit_reached',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        // Si falla pero no es límite → continuar con DOM
+        console.warn(`[cazary.ai] connect mode=fast SalesNav: API falló (${apiRes.reason}) → DOM fallback`);
+      }
       // Buscar card del lead en la lista/búsqueda actual de SalesNav
-      const snUrl = lead?.salesnav_url ?? lead?.linkedin_url ?? '';
+      const snUrl = leadProfileUrl;
       const snSlug = snUrl ? String(snUrl).split('?')[0].split('/').filter(Boolean).pop() : null;
       const leadName = (lead?.full_name || lead?.name || '').trim().toLowerCase();
 
@@ -1854,7 +2033,7 @@
       // ── Dialog de nota SalesNav ───────────────────────────────────────────
       const dialogOpen = isSalesNavDialogOpen();
       if (dialogOpen) {
-        const sendBtn = document.querySelector('.connect-cta-form__send');
+        const sendBtn = findDialogSendButton();
         if (!sendBtn) {
           console.log('[cazary.ai] connect mode=fast SalesNav → fallback (sin send btn en dialog)');
           return executeConnect(taskId, note, leadId, campaignId, lead);
