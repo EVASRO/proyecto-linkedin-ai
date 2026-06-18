@@ -483,7 +483,7 @@
       const actionContainers = [
         '[data-x--lead-actions-bar]', '[class*="lead-actions-bar"]',
         '.profile-topcard__actions', '[class*="profile-topcard__actions"]',
-        '.artdeco-dropdown', 'header',
+        '[class*="profile-topcard"]', '.artdeco-dropdown',
       ];
       for (const containerSel of actionContainers) {
         const container = document.querySelector(containerSel);
@@ -1357,100 +1357,24 @@
     await sleep(1000);
 
     if (platform === 'salesnav') {
-      // PASO 1: Badge de grado (el más fiable — no requiere abrir dropdown)
+      // PASO 1: Badge de grado (rápido, no requiere abrir dropdown)
       if (isFirstDegreeConnection()) {
-        console.log('[cazary.ai] detectConnectionState: 1st degree badge → connected');
+        console.log('[cazary.ai] detectConnectionState SalesNav: 1er grado → connected');
         return 'connected';
       }
 
-      // PASO 2: Abrir overflow y leer items DIRECTAMENTE del container
-      let menuOpened = false;
-      try { menuOpened = await clickMoreButton(); } catch(_) {}
-
-      if (menuOpened) {
-        await sleep(700);
-
-        const container = getDropdownContainer();
-
-        if (!container) {
-          console.warn('[cazary.ai] detectConnectionState: no se encontró dropdown container → SAFE DEFAULT none');
-          const btn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
-          if (btn) btn.click();
-          return 'none';
-        }
-
-        const menuItems = Array.from(container.querySelectorAll(
-          'li, a, button, .eah-menu-item__action, [role="menuitem"]'
-        )).filter(el =>
-          el.offsetParent !== null || el.getBoundingClientRect().height > 0
-        );
-        const menuTexts = menuItems
-          .map(el => (el.innerText || el.textContent || '').trim())
-          .filter(t => t.length > 0);
-
-        const containerRect = container.getBoundingClientRect();
-        console.log(
-          `[cazary.ai] detectConnectionState: container en (${Math.round(containerRect.left)},${Math.round(containerRect.top)}), ` +
-          `items: ${menuTexts.length}:`, menuTexts
-        );
-
-        const hasWithdraw = menuTexts.some(t => {
-          const lower = t.toLowerCase();
-          return lower.includes('retirar') ||
-                 lower.includes('withdraw') ||
-                 lower.includes('cancelar invitación') ||
-                 lower.includes('pendiente');
-        });
-        const hasConnect = menuTexts.some(t => {
-          const lower = t.toLowerCase().trim();
-          return (lower === 'conectar' || lower === 'connect') && !lower.includes('pendiente');
-        });
-
-        // Cerrar dropdown ANTES de retornar
-        const overflowBtn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
-        if (overflowBtn && overflowBtn.getAttribute('aria-expanded') === 'true') {
-          overflowBtn.click();
-          await sleep(400);
-        }
-
-        if (hasWithdraw) {
-          console.log('[cazary.ai] detectConnectionState: "Retirar" encontrado → pending');
-          return 'pending';
-        }
-        if (hasConnect) {
-          console.log('[cazary.ai] detectConnectionState: "Conectar" encontrado → none');
-          return 'none';
-        }
-
-        // Dropdown correcto sin Conectar ni Retirar: verificar topcard
-        const topcardConnectBtn = Array.from(document.querySelectorAll(
-          '[class*="lead-actions"] button, [data-x--lead-actions-bar] button, .profile-topcard__actions button'
-        )).find(btn => {
-          const txt = (btn.innerText || btn.textContent || '').toLowerCase().trim();
-          return txt === 'conectar' || txt === 'connect';
-        });
-        if (topcardConnectBtn) {
-          console.log('[cazary.ai] detectConnectionState: "Conectar" en topcard → none');
-          return 'none';
-        }
-
-        // "Añadir nota" en el dropdown → el lead ya está conectado (solo aparece para 1er grado)
-        const hasAddNote = menuTexts.some(t => {
-          const lower = t.toLowerCase();
-          return lower.includes('añadir nota') || lower.includes('add note') ||
-                 lower.includes('add a note')  || lower.includes('add note (optional)');
-        });
-        if (hasAddNote) {
-          console.log('[cazary.ai] detectConnectionState: "Añadir nota" encontrado → connected (ya conectado)');
-          return 'connected';
-        }
-
-        console.warn('[cazary.ai] detectConnectionState: dropdown correcto sin Conectar/Retirar/AñadirNota → SAFE DEFAULT none');
-        return 'none';
+      // PASO 2: Verificar botones VISIBLES en la topcard
+      // "Pendiente"/"Retirar" aparece como botón directo cuando ya enviaste una invitación
+      // NO abrimos el dropdown aquí — eso se hace en _executeConnectInner cuando realmente
+      // queremos conectar. Abrir y cerrar el dropdown causa falsos positivos ("Añadir nota"
+      // aparece en el dropdown de TODOS los contactos SalesNav, no solo 1er grado).
+      if (isPendingConnection()) {
+        console.log('[cazary.ai] detectConnectionState SalesNav: botón Pendiente/Retirar visible → pending');
+        return 'pending';
       }
 
-      // No se pudo abrir dropdown → safe default
-      console.warn('[cazary.ai] detectConnectionState: no se pudo abrir dropdown → none');
+      // Sin evidencia de conexión o pendiente → asumir 'none', intentar conectar
+      console.log('[cazary.ai] detectConnectionState SalesNav: sin evidencia → none (proceder a conectar)');
       return 'none';
     }
 
