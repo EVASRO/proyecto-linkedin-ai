@@ -812,44 +812,130 @@
     return null;
   }
 
-  // ── Detectar perfil propio ────────────────────────────────────────────────
+  // ── Detectar perfil propio vía LinkedIn Voyager API (más confiable que DOM) ──
+
+  async function detectOwnProfileFromVoyager() {
+    try {
+      // Leer CSRF token de la cookie JSESSIONID (LinkedIn lo requiere)
+      const csrfMatch = document.cookie.match(/JSESSIONID="?([^";]+)/);
+      const csrf = csrfMatch ? csrfMatch[1] : '';
+      if (!csrf) return false;
+
+      const res = await fetch('https://www.linkedin.com/voyager/api/me', {
+        headers: {
+          'accept': 'application/vnd.linkedin.normalized+json+2.1',
+          'csrf-token': csrf,
+          'x-restli-protocol-version': '2.0.0',
+          'x-li-lang': 'es_ES',
+        },
+        credentials: 'include',
+      });
+
+      if (!res.ok) return false;
+      const data = await res.json();
+
+      // El perfil puede estar en data.included o data.data
+      const included = data?.included ?? [];
+      const miniProfile = included.find(
+        (item) => item?.$type?.includes('MiniProfile') || item?.$type?.includes('com.linkedin.voyager.identity.shared.MiniProfile')
+      );
+
+      // Fallback: buscar directo en data si included está vacío
+      const profileData = miniProfile ?? data?.data;
+      if (!profileData) return false;
+
+      const firstName = profileData.firstName ?? profileData.localizedFirstName ?? '';
+      const lastName  = profileData.lastName  ?? profileData.localizedLastName  ?? '';
+      const name      = `${firstName} ${lastName}`.trim();
+      if (!name || name.length < 2) return false;
+
+      const vanityName = profileData.publicIdentifier ?? profileData.vanityName ?? 'me';
+      const headline   = profileData.occupation ?? profileData.localizedHeadline ?? '';
+
+      // Extraer avatar — múltiples estructuras posibles en la respuesta de LinkedIn
+      let avatar_url = '';
+      try {
+        const pic = profileData.picture ?? profileData.profilePicture ?? profileData.miniProfile?.picture;
+        if (pic) {
+          // Estructura 1: vectorImage con rootUrl + artifacts (más común en Voyager /me)
+          const vectorImg = pic?.displayImageReference?.vectorImage
+            ?? pic?.['com.linkedin.voyager.dash.common.image.ImageViewModel']?.vectorImage
+            ?? pic;
+          if (vectorImg?.rootUrl && Array.isArray(vectorImg?.artifacts)) {
+            const art = vectorImg.artifacts[vectorImg.artifacts.length - 1];
+            avatar_url = vectorImg.rootUrl + (art?.fileIdentifyingUrlPathSegment ?? '');
+          }
+          // Estructura 2: rootUrl directo
+          if (!avatar_url && typeof pic?.rootUrl === 'string') {
+            avatar_url = pic.rootUrl;
+          }
+        }
+        // Fallback DOM: usar el alt del global-nav__me-photo para confirmar nombre y src para avatar
+        if (!avatar_url) {
+          const navImg = document.querySelector('.global-nav__me-photo');
+          if (navImg?.src) avatar_url = navImg.src;
+        }
+      } catch (_) {}
+
+      const profile = {
+        name,
+        profile_url: `https://www.linkedin.com/in/${vanityName}/`,
+        headline,
+        avatar_url,
+        detected_at: new Date().toISOString(),
+      };
+
+      safeStorageSet({ linkedin_profile: profile });
+      safeSendMessage({ type: 'LINKEDIN_PROFILE_DETECTED', profile });
+      console.log('[cazary.ai] Perfil detectado vía Voyager API:', name);
+      return true;
+    } catch (err) {
+      console.warn('[cazary.ai] Voyager API falló, intentando DOM scraping:', err?.message);
+      return false;
+    }
+  }
+
+  // Detectar perfil: Voyager API primero, DOM scraping como fallback
+  async function detectOwnProfileAuto() {
+    const ok = await detectOwnProfileFromVoyager();
+    if (!ok) detectOwnProfile();
+  }
+
+  // ── Detectar perfil propio (DOM scraping - fallback) ──────────────────────
+  // APRENDIZAJE DE WAALAXY: usan el atributo `alt` de `.global-nav__me-photo`
+  // para obtener el nombre — es el más confiable porque LinkedIn siempre lo pone ahí
 
   function detectOwnProfile() {
-    // Multi-selector para el nombre del usuario logueado (nav sidebar + feed + global nav)
+    // ── Nombre: estrategia Waalaxy primero ────────────────────────────────
+    // `.global-nav__me-photo` tiene alt="Nombre Completo" — siempre presente en el nav
+    const navPhoto = document.querySelector('.global-nav__me-photo');
+    const nameFromAlt = navPhoto?.getAttribute('alt')?.trim();
+
+    // Fallbacks progresivos si el alt no está disponible
     const nameEl =
       document.querySelector('.profile-nav-card-mini__title') ||
       document.querySelector('.scaffold-layout-toolbar__profile-details-title') ||
       document.querySelector('.feed-identity-module__actor-meta .t-bold') ||
       document.querySelector('[data-test-id="nav-settings__profile-info"] .t-bold') ||
-      document.querySelector('.global-nav__primary-link--active .artdeco-entity-lockup__title') ||
-      document.querySelector('.artdeco-entity-lockup__title.ember-view') ||
-      document.querySelector('a[data-control-name="identity_welcome_message"] .t-bold') ||
-      document.querySelector('.profile-rail-card .t-bold') ||
-      // Fallback: buscar en la navegación superior el nombre del usuario
-      (() => {
-        const navItems = document.querySelectorAll('.global-nav__secondary-items .global-nav__secondary-link span');
-        for (const el of navItems) {
-          const txt = el.textContent?.trim();
-          if (txt && txt.length > 2 && txt.length < 60 && !txt.includes('Notif') && !txt.includes('Jobs')) return el;
-        }
-        return null;
-      })();
+      document.querySelector('.profile-rail-card .t-bold');
 
+    const name = nameFromAlt || nameEl?.textContent?.trim() || nameEl?.innerText?.trim();
+    if (!name || name.length < 2) return false;
+
+    // ── Avatar: la misma imagen del nav (Waalaxy: PROFILE_PICTURE_SELECTOR) ─
     const imgEl =
+      navPhoto ||
+      document.querySelector('.pv-top-card-profile-picture__container > img') ||
       document.querySelector('.profile-nav-card-mini__profile-picture img') ||
       document.querySelector('.feed-identity-module__actor-meta img') ||
-      document.querySelector('.global-nav__me-photo') ||
-      document.querySelector('[data-test-id="nav-settings__profile-info"] img') ||
-      document.querySelector('.scaffold-layout-toolbar__profile-details img');
+      document.querySelector('[data-test-id="nav-settings__profile-info"] img');
 
+    // ── Headline ──────────────────────────────────────────────────────────
     const headlineEl =
       document.querySelector('.profile-nav-card-mini__headline') ||
       document.querySelector('.scaffold-layout-toolbar__profile-details-headline') ||
       document.querySelector('.feed-identity-module__actor-meta .t-14') ||
       document.querySelector('[data-test-id="nav-settings__profile-info"] .t-14');
-
-    const name = nameEl?.textContent?.trim() || nameEl?.innerText?.trim();
-    if (!name || name.length < 2) return false;
 
     // Intentar obtener la URL real del perfil desde los links del nav
     let profile_url = 'https://www.linkedin.com/in/me/';
@@ -873,17 +959,13 @@
     return true;
   }
 
-  // Ejecutar en CUALQUIER página de LinkedIn (el nav con perfil siempre está visible)
+  // Ejecutar en CUALQUIER página de LinkedIn (Voyager API + DOM scraping como fallback)
   if (window.location.hostname === 'www.linkedin.com') {
-    // Intentos escalonados para esperar a que el DOM cargue
-    setTimeout(() => detectOwnProfile(), 1500);
-    setTimeout(() => detectOwnProfile(), 4000);
-    setTimeout(() => detectOwnProfile(), 8000);
-  }
-
-  // También en Sales Navigator
-  if (window.location.hostname === 'www.linkedin.com' && isSalesNavigator()) {
-    setTimeout(() => detectOwnProfile(), 2000);
+    // Primer intento inmediato con Voyager API (no depende del DOM)
+    setTimeout(() => detectOwnProfileAuto(), 800);
+    // Reintentos escalonados por si el primer intento falla (e.g. sesión aún cargando)
+    setTimeout(() => detectOwnProfileAuto(), 3000);
+    setTimeout(() => detectOwnProfileAuto(), 8000);
   }
 
   // ── Auto-extracción al cargar un perfil ───────────────────────────────────
@@ -3025,9 +3107,15 @@
           }
 
           case 'detect_own_profile': {
-            const detected = detectOwnProfile();
-            sendResponse({ success: !!detected });
-            break;
+            // Intentar Voyager API primero, DOM scraping como fallback
+            detectOwnProfileFromVoyager().then((ok) => {
+              if (!ok) detectOwnProfile();
+              sendResponse({ success: true });
+            }).catch(() => {
+              const ok = detectOwnProfile();
+              sendResponse({ success: !!ok });
+            });
+            return true; // Mantener canal abierto para respuesta async
           }
 
           default:

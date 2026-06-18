@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useTransition, useRef } from "react";
+import { useState, useCallback, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { LinkedInConnectionCard } from "./LinkedInConnectionCard";
 import { EngineStatusCard } from "./EngineStatusCard";
@@ -42,6 +42,23 @@ export function IntegrationsView({ data }: Props) {
     // Also trigger RSC refresh for other components on the page
     startTransition(() => router.refresh());
   }, [router]);
+
+  // Auto-poll cada 10s para mantener estado sincronizado sin esperar heartbeat manual
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const result = await getIntegrationsData();
+        if (result.success && result.data) {
+          setEngine(result.data.engine);
+          // Solo actualizar LinkedIn si hay datos (no sobreescribir estado optimístico)
+          if (result.data.linkedInAccount) {
+            setLinkedInAccount(result.data.linkedInAccount);
+          }
+        }
+      } catch (_) {}
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDisconnect = useCallback(async () => {
     // Update DB first, then refresh local state
