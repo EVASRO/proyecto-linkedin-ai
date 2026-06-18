@@ -815,28 +815,53 @@
   // ── Detectar perfil propio ────────────────────────────────────────────────
 
   function detectOwnProfile() {
+    // Multi-selector para el nombre del usuario logueado (nav sidebar + feed + global nav)
     const nameEl =
       document.querySelector('.profile-nav-card-mini__title') ||
-      document.querySelector('[data-anonymize="person-name"]') ||
+      document.querySelector('.scaffold-layout-toolbar__profile-details-title') ||
       document.querySelector('.feed-identity-module__actor-meta .t-bold') ||
-      document.querySelector('.global-nav__me-photo + span') ||
-      document.querySelector('.profile-nav-card-mini__profile-picture ~ div .t-bold');
+      document.querySelector('[data-test-id="nav-settings__profile-info"] .t-bold') ||
+      document.querySelector('.global-nav__primary-link--active .artdeco-entity-lockup__title') ||
+      document.querySelector('.artdeco-entity-lockup__title.ember-view') ||
+      document.querySelector('a[data-control-name="identity_welcome_message"] .t-bold') ||
+      document.querySelector('.profile-rail-card .t-bold') ||
+      // Fallback: buscar en la navegación superior el nombre del usuario
+      (() => {
+        const navItems = document.querySelectorAll('.global-nav__secondary-items .global-nav__secondary-link span');
+        for (const el of navItems) {
+          const txt = el.textContent?.trim();
+          if (txt && txt.length > 2 && txt.length < 60 && !txt.includes('Notif') && !txt.includes('Jobs')) return el;
+        }
+        return null;
+      })();
 
     const imgEl =
       document.querySelector('.profile-nav-card-mini__profile-picture img') ||
       document.querySelector('.feed-identity-module__actor-meta img') ||
-      document.querySelector('.global-nav__me-photo');
+      document.querySelector('.global-nav__me-photo') ||
+      document.querySelector('[data-test-id="nav-settings__profile-info"] img') ||
+      document.querySelector('.scaffold-layout-toolbar__profile-details img');
 
     const headlineEl =
       document.querySelector('.profile-nav-card-mini__headline') ||
-      document.querySelector('.feed-identity-module__actor-meta .t-14');
+      document.querySelector('.scaffold-layout-toolbar__profile-details-headline') ||
+      document.querySelector('.feed-identity-module__actor-meta .t-14') ||
+      document.querySelector('[data-test-id="nav-settings__profile-info"] .t-14');
 
     const name = nameEl?.textContent?.trim() || nameEl?.innerText?.trim();
-    if (!name) return;
+    if (!name || name.length < 2) return false;
+
+    // Intentar obtener la URL real del perfil desde los links del nav
+    let profile_url = 'https://www.linkedin.com/in/me/';
+    const meLink = document.querySelector('a[href*="/in/"]');
+    if (meLink) {
+      const match = meLink.href.match(/linkedin\.com(\/in\/[^/?#]+)/);
+      if (match) profile_url = `https://www.linkedin.com${match[1]}`;
+    }
 
     const profile = {
       name,
-      profile_url:  'https://www.linkedin.com/in/me/',
+      profile_url,
       headline:     headlineEl?.textContent?.trim() ?? '',
       avatar_url:   imgEl?.src ?? '',
       detected_at:  new Date().toISOString(),
@@ -844,14 +869,21 @@
 
     safeStorageSet({ linkedin_profile: profile });
     safeSendMessage({ type: 'LINKEDIN_PROFILE_DETECTED', profile });
+    console.log('[cazary.ai] Perfil detectado:', name);
+    return true;
   }
 
+  // Ejecutar en CUALQUIER página de LinkedIn (el nav con perfil siempre está visible)
   if (window.location.hostname === 'www.linkedin.com') {
-    const path = window.location.pathname;
-    if (path === '/feed/' || path === '/feed' || path.startsWith('/in/me') || path === '/') {
-      setTimeout(detectOwnProfile, 2000);
-      setTimeout(detectOwnProfile, 5000);
-    }
+    // Intentos escalonados para esperar a que el DOM cargue
+    setTimeout(() => detectOwnProfile(), 1500);
+    setTimeout(() => detectOwnProfile(), 4000);
+    setTimeout(() => detectOwnProfile(), 8000);
+  }
+
+  // También en Sales Navigator
+  if (window.location.hostname === 'www.linkedin.com' && isSalesNavigator()) {
+    setTimeout(() => detectOwnProfile(), 2000);
   }
 
   // ── Auto-extracción al cargar un perfil ───────────────────────────────────
@@ -2989,6 +3021,12 @@
 
             console.log('[NexusAI Content] Total perfiles extraídos:', results.length);
             sendResponse({ profiles: results });
+            break;
+          }
+
+          case 'detect_own_profile': {
+            const detected = detectOwnProfile();
+            sendResponse({ success: !!detected });
             break;
           }
 

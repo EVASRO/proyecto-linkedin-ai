@@ -137,6 +137,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (!wId) { sendResponse({ ok: false, error: 'No workspace' }); break; }
           await chrome.storage.local.set({ engine_running: true });
           await getTodayStats(wId);
+          await requestProfileDetectionFromLinkedIn();
           await sendHeartbeat();
           sendResponse({ ok: true, running: true });
         }
@@ -1070,7 +1071,11 @@ async function syncLinkedInAccount() {
   if (!wsId || !token) return;
 
   const { linkedin_profile } = await chrome.storage.local.get('linkedin_profile');
-  if (!linkedin_profile?.name) return;
+  if (!linkedin_profile?.name) {
+    // Sin perfil en storage → pedir detección activa a tabs de LinkedIn abiertas
+    await requestProfileDetectionFromLinkedIn();
+    return;
+  }
 
   try {
     await supabaseFetch('linkedin_accounts?on_conflict=workspace_id', {
@@ -1090,6 +1095,16 @@ async function syncLinkedInAccount() {
       }),
     });
     console.log('[cazary.ai] LinkedIn account synced:', linkedin_profile.name);
+  } catch (_) {}
+}
+
+// ── Solicitar detección de perfil a tabs de LinkedIn abiertas ─────────────────
+async function requestProfileDetectionFromLinkedIn() {
+  try {
+    const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
+    for (const tab of tabs) {
+      chrome.tabs.sendMessage(tab.id, { action: 'detect_own_profile' }).catch(() => {});
+    }
   } catch (_) {}
 }
 
