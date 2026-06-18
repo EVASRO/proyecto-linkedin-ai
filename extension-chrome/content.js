@@ -322,33 +322,35 @@
         }
       }
 
-      // PASO 3: Heurístico por botones — "Mensaje" visible + "Conectar" ausente = 1er grado
-      // En SalesNav: contactos 1er grado tienen botón "Mensaje"/"Message" pero no "Conectar"/"Connect"
-      const allBtns = Array.from(document.querySelectorAll('button,[role="button"]'))
-        .filter(el => {
-          const r = el.getBoundingClientRect();
-          return r.width > 0 && r.height > 0;
-        });
-      const hasMensaje = allBtns.some(btn => {
-        const t = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-        const l = (btn.getAttribute('aria-label') || '').toLowerCase();
-        return t === 'mensaje' || t === 'message' || t === 'send message' ||
-               l.includes('enviar mensaje') || l.includes('send message') ||
-               (t.startsWith('mens') && t.length < 10);
-      });
-      const hasConectar = allBtns.some(btn => {
-        const t = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-        const l = (btn.getAttribute('aria-label') || '').toLowerCase();
-        return t === 'conectar' || t === 'connect' ||
-               l.includes('conectar') || l.includes('connect to');
-      });
-      if (hasMensaje && !hasConectar) {
-        console.log('[cazary.ai] SalesNav: botón Mensaje presente + sin Conectar → 1er grado inferido');
-        return true;
+      // PASO 3: Búsqueda ampliada de texto "1er"/"1st"/"1°" en el topcard completo
+      // (cubre casos donde el badge CSS no matchea pero el texto sí está en el DOM)
+      const topcardAreaSelectors = [
+        '.profile-topcard', '[class*="profile-topcard"]',
+        'section[class*="profile"]', '.lead-profile', 'main article',
+        '[data-x--lead-header]', '[class*="lead-header"]',
+      ];
+      let topcardArea = null;
+      for (const sel of topcardAreaSelectors) {
+        topcardArea = document.querySelector(sel);
+        if (topcardArea) break;
+      }
+      if (topcardArea) {
+        // Buscar elementos hoja (pocas hijos) que contengan exactamente "1er"/"1st"/"1°"
+        const candidates = Array.from(topcardArea.querySelectorAll('span,abbr,div,p,small'))
+          .filter(el => el.children.length <= 2)
+          .map(el => (el.textContent || el.innerText || '').trim());
+        const has1er = candidates.some(t =>
+          /^[·•\s]*1\s*(er|st|°|º)[·•\s]*$/i.test(t) ||  // exactamente "1er", "• 1er", etc.
+          /·\s*1\s*(er|st|°|º)/i.test(t)                  // "· 1er" dentro de texto más largo
+        );
+        if (has1er) {
+          console.log('[cazary.ai] SalesNav: topcard text search → "1er" encontrado → 1er grado');
+          return true;
+        }
       }
 
-      // Sin evidencia clara de 1er grado → asumir NO conectado (fail-safe)
-      console.log(`[cazary.ai] SalesNav: sin badge de 1er grado (hasMensaje=${hasMensaje} hasConectar=${hasConectar}) → NOT connected`);
+      // Sin evidencia clara de 1er grado → asumir NO conectado (fail-safe para 2°/3°)
+      console.log('[cazary.ai] SalesNav: sin badge 1er grado → NOT connected (proceder a conectar)');
       return false;
     }
 
@@ -472,6 +474,49 @@
         Array.from(document.querySelectorAll('button')).find(el =>
           (el.getAttribute('aria-label') || '').toLowerCase().includes('exceso de acciones')
         ) || null;
+    }
+
+    // Tercer intento: buscar botón con texto "..." o icono-only en la barra de acciones
+    // SalesNav 2025 puede no tener los atributos data/aria esperados
+    if (!btn) {
+      // Primero: buscar en el área de acciones del topcard
+      const actionContainers = [
+        '[data-x--lead-actions-bar]', '[class*="lead-actions-bar"]',
+        '.profile-topcard__actions', '[class*="profile-topcard__actions"]',
+        '.artdeco-dropdown', 'header',
+      ];
+      for (const containerSel of actionContainers) {
+        const container = document.querySelector(containerSel);
+        if (!container) continue;
+        // Último botón icono-only visible en el área de acciones
+        const iconBtns = Array.from(container.querySelectorAll('button,[role="button"]'))
+          .filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return false;
+            const txt = (el.innerText || el.textContent || '').trim();
+            // Botones sin texto, con "...", "•••", o icono SVG solo
+            return txt === '' || txt === '...' || txt === '•••' || txt === '…' ||
+                   (txt.length <= 3 && el.querySelector('svg'));
+          });
+        if (iconBtns.length > 0) {
+          btn = iconBtns[iconBtns.length - 1]; // el último icono-botón (más a la derecha = "...")
+          console.log('[cazary.ai] clickMoreButton: fallback icono-only en', containerSel, '→', btn.className?.slice(0,50));
+          break;
+        }
+      }
+    }
+
+    // Cuarto intento: cualquier botón con aria-label que incluya "opciones", "acción", "action"
+    if (!btn) {
+      btn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return false;
+        const label = (el.getAttribute('aria-label') || '').toLowerCase();
+        return label.includes('opciones') || label.includes('option') ||
+               label.includes('acciones') || label.includes('acción') ||
+               label.includes('action') || label.includes('menú') || label.includes('menu');
+      }) || null;
+      if (btn) console.log('[cazary.ai] clickMoreButton: fallback aria-label acciones →', btn.getAttribute('aria-label'));
     }
 
     if (!btn) {
@@ -1438,7 +1483,7 @@
       const { supabase_workspace_id: wsId } = await chrome.storage.local.get('supabase_workspace_id');
       if (wsId) await loadSelectorOverrides(wsId);
     } catch (_) {}
-    await sleep(2500 + Math.random() * 1500);
+    await sleep(1500 + Math.random() * 1000);
 
     // ── Detectar OUT_OF_NETWORK (perfil bloqueado) ────────────────────────────
     const isOutOfNetwork = window.location.href.includes('OUT_OF_NETWORK');
@@ -1481,6 +1526,7 @@
       await sleep(800);
 
       // ── PASO 0: Voyager API (más fiable que DOM, no depende de selectores UI) ──
+      console.log('[cazary.ai] SalesNav: intentando Voyager API para:', window.location.href.slice(0, 80));
       const apiResult = await connectViaVoyagerAPI(window.location.href, note);
       console.log('[cazary.ai] SalesNav Voyager API connect result:', apiResult);
 
