@@ -4,7 +4,7 @@ import { useState, useCallback, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { LinkedInConnectionCard } from "./LinkedInConnectionCard";
 import { EngineStatusCard } from "./EngineStatusCard";
-import { getIntegrationsData } from "@/app/dashboard/configuracion/actions";
+import { getIntegrationsData, disconnectLinkedIn } from "@/app/dashboard/configuracion/actions";
 import type { IntegrationsData, LinkedInAccount } from "@/app/dashboard/configuracion/actions";
 
 type Props = {
@@ -44,6 +44,8 @@ export function IntegrationsView({ data }: Props) {
   }, [router]);
 
   const handleDisconnect = useCallback(async () => {
+    // Update DB first, then refresh local state
+    await disconnectLinkedIn();
     setLinkedInAccount(null);
     await refreshData();
   }, [refreshData]);

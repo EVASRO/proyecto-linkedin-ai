@@ -1086,6 +1086,7 @@ async function syncLinkedInAccount() {
         connection_mode:         'extension',
         daily_connection_limit:  20,
         daily_message_limit:     30,
+        last_synced_at:          new Date().toISOString(),
       }),
     });
     console.log('[cazary.ai] LinkedIn account synced:', linkedin_profile.name);

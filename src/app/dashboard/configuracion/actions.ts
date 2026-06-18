@@ -47,6 +47,7 @@ export async function getIntegrationsData(): Promise<{
         .from("linkedin_accounts")
         .select("id, name, headline, profile_url, avatar_url, status, last_synced_at, error_message")
         .eq("workspace_id", workspaceId)
+        .eq("status", "connected")
         .order("created_at", { ascending: false })
         .limit(1),
       supabase
@@ -113,6 +114,22 @@ export async function getIntegrationsData(): Promise<{
         },
       },
     };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// -- disconnectLinkedIn -------------------------------------------------------
+
+export async function disconnectLinkedIn(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { error } = await supabase
+      .from("linkedin_accounts")
+      .update({ status: "disconnected" })
+      .eq("workspace_id", workspaceId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
   }

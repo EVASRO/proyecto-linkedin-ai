@@ -56,20 +56,25 @@ create table if not exists profiles (
 
 create table if not exists linkedin_accounts (
     id                      uuid default uuid_generate_v4() primary key,
-    workspace_id            uuid references workspaces(id) on delete cascade,
+    workspace_id            uuid references workspaces(id) on delete cascade unique,
     name                    varchar(255) not null,
+    headline                varchar(500),
+    profile_url             varchar(500),
+    avatar_url              varchar(500),
     li_at_cookie            text,
     connection_mode         varchar(50)  default 'extension', -- extension | oauth_api
-    oauth_client_id         varchar(255),  -- LinkedIn API Client ID
-    oauth_client_secret     text,          -- LinkedIn API Client Secret (cifrado en prod)
-    oauth_access_token      text,          -- Token de acceso OAuth
+    oauth_client_id         varchar(255),
+    oauth_client_secret     text,
+    oauth_access_token      text,
     oauth_refresh_token     text,
     oauth_expires_at        timestamptz,
     status                  varchar(50)  default 'connected', -- connected | disconnected | expired
     daily_connection_limit  integer default 30,
     daily_message_limit     integer default 50,
     use_ultra_safe_mode     boolean default true,
-    created_at              timestamptz default now() not null
+    last_synced_at          timestamptz  default now(),
+    error_message           text,
+    created_at              timestamptz  default now() not null
 );
 
 -- ============================================================
