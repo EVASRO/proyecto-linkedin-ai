@@ -1474,13 +1474,12 @@ async function handleActionDone(taskId, result) {
           }).catch(() => {});
         }
         if (convId) {
-          const source = result.lead_id ? await getLeadSource(result.lead_id, wsId) : 'linkedin';
+          // NOTA: 'source' no existe en conversations — solo actualizar preview y timestamp
           await supabaseFetch(`conversations?id=eq.${convId}`, {
             method: 'PATCH', prefer: 'return=minimal',
             body: JSON.stringify({
               last_message_preview: nota ? nota.slice(0, 100) : '✓ Conexión enviada',
               last_message_at:      now,
-              source,
             }),
           }).catch(() => {});
         }

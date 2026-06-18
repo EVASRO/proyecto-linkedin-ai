@@ -322,8 +322,33 @@
         }
       }
 
+      // PASO 3: Heurístico por botones — "Mensaje" visible + "Conectar" ausente = 1er grado
+      // En SalesNav: contactos 1er grado tienen botón "Mensaje"/"Message" pero no "Conectar"/"Connect"
+      const allBtns = Array.from(document.querySelectorAll('button,[role="button"]'))
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+      const hasMensaje = allBtns.some(btn => {
+        const t = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+        const l = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return t === 'mensaje' || t === 'message' || t === 'send message' ||
+               l.includes('enviar mensaje') || l.includes('send message') ||
+               (t.startsWith('mens') && t.length < 10);
+      });
+      const hasConectar = allBtns.some(btn => {
+        const t = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+        const l = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return t === 'conectar' || t === 'connect' ||
+               l.includes('conectar') || l.includes('connect to');
+      });
+      if (hasMensaje && !hasConectar) {
+        console.log('[cazary.ai] SalesNav: botón Mensaje presente + sin Conectar → 1er grado inferido');
+        return true;
+      }
+
       // Sin evidencia clara de 1er grado → asumir NO conectado (fail-safe)
-      console.log('[cazary.ai] SalesNav: no 1st degree badge found → assuming NOT connected');
+      console.log(`[cazary.ai] SalesNav: sin badge de 1er grado (hasMensaje=${hasMensaje} hasConectar=${hasConectar}) → NOT connected`);
       return false;
     }
 
@@ -1225,6 +1250,11 @@
           return { ok: false, reason: 'already_connected' };
         return { ok: false, reason: 'api_400', raw: msg.slice(0, 200) };
       }
+      // 301/302 = LinkedIn redirige cuando el contacto ya está en la red (1er grado)
+      if (res.status === 301 || res.status === 302) {
+        console.log('[cazary.ai] connectViaVoyagerAPI: 301/302 → contacto ya en red → already_connected');
+        return { ok: false, reason: 'already_connected' };
+      }
       return { ok: false, reason: `api_${res.status}` };
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -2046,6 +2076,19 @@
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'daily_limit_reached',
             lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        if (apiRes.reason === 'already_connected') {
+          console.log('[cazary.ai] connect mode=fast SalesNav: API → already_connected → conexion_aceptada');
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: true, reason: 'already_connected',
+            crm_target: 'conexion_aceptada', lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        if (apiRes.reason === 'already_pending') {
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: true, reason: 'already_pending',
+            crm_target: 'conexion_enviada', lead_id: leadId, campaign_id: campaignId,
           }});
         }
         // Si falla pero no es límite → continuar con DOM
