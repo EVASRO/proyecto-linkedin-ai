@@ -239,12 +239,25 @@ export async function saveSettings(settings: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
+
+    // upsert: crea la fila si no existe (evita silent-noop de .update())
     const { error } = await supabase
       .from("workspace_settings")
-      .update(settings)
-      .eq("workspace_id", workspaceId);
+      .upsert(
+        { workspace_id: workspaceId, ...settings },
+        { onConflict: "workspace_id" }
+      );
 
     if (error) return { success: false, error: error.message };
+
+    // Notificar a la extensión para que recargue settings inmediatamente
+    await supabase.from("settings_events").insert({
+      workspace_id: workspaceId,
+      event_type:   "UPDATE_SETTINGS",
+      payload:      settings,
+      consumed:     false,
+    });
+
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };

@@ -360,10 +360,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function processTick() {
   const { engine_running } = await chrome.storage.local.get('engine_running');
   if (!engine_running) return;
-  // TODO: Re-enable for production
-  // if (!await isActiveHour()) return;
-  // TODO: Re-enable for production
-  // if (await isWeekendPaused()) return;
+  if (!await isActiveHour()) {
+    console.log('[cazary.ai] Fuera del horario activo configurado → saltando tick');
+    return;
+  }
+  if (await isWeekendPaused()) {
+    console.log('[cazary.ai] Fin de semana pausado → saltando tick');
+    return;
+  }
 
   // Validate token before hitting Supabase — avoids "Failed to fetch" on expiry
   const token = await getStoredToken();
@@ -1082,16 +1086,13 @@ async function syncLinkedInAccount() {
       method:  'POST',
       headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({
-        workspace_id:            wsId,
-        name:                    linkedin_profile.name,
-        profile_url:             linkedin_profile.profile_url ?? '',
-        headline:                linkedin_profile.headline    ?? '',
-        avatar_url:              linkedin_profile.avatar_url  ?? '',
-        status:                  'connected',
-        connection_mode:         'extension',
-        daily_connection_limit:  20,
-        daily_message_limit:     30,
-        last_synced_at:          new Date().toISOString(),
+        workspace_id:  wsId,
+        name:          linkedin_profile.name,
+        profile_url:   linkedin_profile.profile_url ?? '',
+        headline:      linkedin_profile.headline    ?? '',
+        avatar_url:    linkedin_profile.avatar_url  ?? '',
+        status:        'connected',
+        last_synced_at: new Date().toISOString(),
       }),
     });
     console.log('[cazary.ai] LinkedIn account synced:', linkedin_profile.name);
@@ -1116,6 +1117,9 @@ async function sendHeartbeat() {
   // Sync LinkedIn account on every heartbeat (idempotent upsert)
   await syncLinkedInAccount();
 
+  // ── Reload workspace settings from Supabase every heartbeat ──────────────
+  await loadWorkspaceSettings();
+
   // ── Poll settings_events: consume comandos del dashboard ─────────────────
   try {
     const events = await supabaseFetch(
@@ -1129,6 +1133,9 @@ async function sendHeartbeat() {
         } else if (evt.event_type === 'PAUSE_ENGINE') {
           await chrome.storage.local.set({ engine_running: false, processing: false });
           console.log('[cazary.ai] settings_events → PAUSE_ENGINE');
+        } else if (evt.event_type === 'UPDATE_SETTINGS') {
+          await loadWorkspaceSettings();
+          console.log('[cazary.ai] settings_events → UPDATE_SETTINGS → settings reloaded');
         }
         // Marcar como consumido
         await supabaseFetch(`settings_events?id=eq.${evt.id}`, {
@@ -2646,11 +2653,25 @@ async function getLinkedInTab() {
   return getOrCreateEngineTab();
 }
 
-// TODO: Re-enable for production
-async function isActiveHour() { return true; }
+async function isActiveHour() {
+  const { settings } = await chrome.storage.local.get('settings');
+  const start = settings?.activeHoursStart ?? 0;
+  const end   = settings?.activeHoursEnd   ?? 24;
+  if (start === 0 && end === 24) return true; // sin restricción de horario
+  const tz  = settings?.timezone ?? 'America/Lima';
+  const now  = new Date();
+  const h    = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(now), 10);
+  return h >= start && h < end;
+}
 
-// TODO: Re-enable for production
-async function isWeekendPaused() { return false; }
+async function isWeekendPaused() {
+  const { settings } = await chrome.storage.local.get('settings');
+  if (!settings?.pauseWeekends) return false;
+  const tz  = settings?.timezone ?? 'America/Lima';
+  const now  = new Date();
+  const day  = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(now);
+  return day === 'Sat' || day === 'Sun';
+}
 
 async function getTodayStats(wsId) {
   try {
