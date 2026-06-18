@@ -5,8 +5,30 @@ const DASHBOARD_URL = 'https://proyecto-linkedin-ai.vercel.app';
 const SUPABASE_URL      = 'https://qamqcygybwrlbsylkxyo.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_b38hB4jcgLsmNmu8oobz_g_MkzyacQb';
 
+// ── Circuit breaker: evita spamear Supabase cuando está caído ────────────────
+// Si hay ≥3 fallos de red en los últimos 60s, omite nuevos intentos por 30s
+const _cbState = { failures: 0, lastFailAt: 0, openUntil: 0 };
+function _cbRecord() {
+  _cbState.failures++;
+  _cbState.lastFailAt = Date.now();
+  if (_cbState.failures >= 3) {
+    _cbState.openUntil = Date.now() + 30000; // abrir circuito 30s
+    console.warn('[cazary.ai] Circuit breaker ABIERTO — Supabase no disponible, pausa 30s');
+  }
+}
+function _cbReset() { _cbState.failures = 0; _cbState.openUntil = 0; }
+function _cbIsOpen() {
+  if (_cbState.openUntil > Date.now()) return true;
+  // Auto-reset después de la ventana
+  if (_cbState.openUntil && _cbState.openUntil <= Date.now()) _cbReset();
+  return false;
+}
+
 // ── Helper: fetch autenticado a Supabase REST API ─────────────────────────────
 async function supabaseFetch(path, opts = {}) {
+  // Circuit breaker: no intentar si Supabase está caído
+  if (_cbIsOpen()) return null;
+
   const method = opts.method ?? 'GET';
   const prefer = opts.prefer ?? 'return=representation';
   const url    = `${SUPABASE_URL}/rest/v1/${path}`;
@@ -19,7 +41,7 @@ async function supabaseFetch(path, opts = {}) {
     ...(opts.headers ?? {}),
   });
 
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2;  // reducido de 3 a 2 para menos noise en consola
   let lastError = null;
   let token = await getStoredToken();
 
@@ -57,6 +79,7 @@ async function supabaseFetch(path, opts = {}) {
         console.error(`[cazary.ai] supabaseFetch ERROR ${res.status}`, path.split('?')[0], JSON.stringify(errBody));
         return null;
       }
+      _cbReset(); // éxito → resetear circuit breaker
       return res.json();
     } catch (err) {
       lastError = err;
@@ -68,6 +91,7 @@ async function supabaseFetch(path, opts = {}) {
     }
   }
 
+  _cbRecord(); // registrar fallo en el circuit breaker
   console.error('[cazary.ai] supabaseFetch NETWORK ERROR', path.split('?')[0], lastError?.message);
   return null;
 }

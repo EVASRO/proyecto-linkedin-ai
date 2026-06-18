@@ -13,12 +13,33 @@
   // ── Wrappers seguros para APIs de extensión ───────────────────────────────
   // Evitan crash por "Extension context invalidated" tras reload/update
 
-  function safeSendMessage(msg) {
-    try {
-      chrome.runtime.sendMessage(msg).catch(() => {});
-    } catch (_) {
-      // Extension context invalidated — ignorar
+  // safeSendMessage con retry: si el service worker está dormido, lo despierta
+  // y reintenta hasta 4 veces con backoff exponencial.
+  async function safeSendMessage(msg) {
+    const MAX_RETRIES = 4;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        await chrome.runtime.sendMessage(msg);
+        return; // éxito
+      } catch (err) {
+        const isLast = attempt === MAX_RETRIES - 1;
+        if (isLast) {
+          // Último intento fallido — loguear y salir
+          console.warn(`[cazary.ai] safeSendMessage: no se pudo entregar mensaje ${msg.type} tras ${MAX_RETRIES} intentos:`, err?.message);
+          return;
+        }
+        // Esperar antes de reintentar (100ms, 300ms, 700ms)
+        await new Promise(r => setTimeout(r, 100 * Math.pow(3, attempt)));
+      }
     }
+  }
+
+  // fetchWithTimeout: fetch con AbortController para evitar colgarse indefinidamente
+  function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, { ...options, signal: controller.signal })
+      .finally(() => clearTimeout(timer));
   }
 
   async function safeStorageSet(data) {
@@ -821,15 +842,19 @@
       const csrf = csrfMatch ? csrfMatch[1] : '';
       if (!csrf) return false;
 
-      const res = await fetch('https://www.linkedin.com/voyager/api/me', {
-        headers: {
-          'accept': 'application/vnd.linkedin.normalized+json+2.1',
-          'csrf-token': csrf,
-          'x-restli-protocol-version': '2.0.0',
-          'x-li-lang': 'es_ES',
+      const res = await fetchWithTimeout(
+        'https://www.linkedin.com/voyager/api/me',
+        {
+          headers: {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': csrf,
+            'x-restli-protocol-version': '2.0.0',
+            'x-li-lang': 'es_ES',
+          },
+          credentials: 'include',
         },
-        credentials: 'include',
-      });
+        10000  // 10s timeout
+      );
 
       if (!res.ok) return false;
       const data = await res.json();
@@ -1110,12 +1135,17 @@
 
   // ── Extraer memberId de la página actual (múltiples métodos) ─────────────
   function extractMemberIdFromPage(profileUrl) {
+    // LinkedIn member IDs empiezan con "AC" + caracteres alfanuméricos (longitud ~30-40 chars)
+    // Pueden ser ACoA, ACwA, ACgA, etc. — NO solo ACoA
+    const isLinkedInMemberId = (s) => /^AC[A-Za-z0-9_-]{15,}$/.test(s);
+
     // Método 1: URL de SalesNav → /sales/lead/<memberId>,<instanceId>
+    // La URL puede tener comas, ej: /sales/lead/ACwAACJi9LA...,NAME_SEARCH,4u-Z
     const url = profileUrl || window.location.href;
-    const snMatch = url.match(/\/sales\/(?:lead|people)\/([A-Za-z0-9_%-]+)/);
+    const snMatch = url.match(/\/sales\/(?:lead|people)\/([A-Za-z0-9_,%:-]+)/);
     if (snMatch) {
       const raw = decodeURIComponent(snMatch[1]).split(',')[0];
-      if (/^ACoA[A-Za-z0-9_-]{10,}$/.test(raw)) return raw;
+      if (isLinkedInMemberId(raw)) return raw;
     }
 
     // Método 2: Atributos data-entity-urn en el DOM (Waalaxy: getMemberIdByProfileUrn)
@@ -1123,7 +1153,7 @@
     for (const el of urnEls) {
       const urn = el.getAttribute('data-entity-urn') || el.getAttribute('data-urn') || el.getAttribute('data-member-urn') || '';
       const m = urn.match(/fsd_profile:([A-Za-z0-9_-]+)/);
-      if (m && /^ACoA/.test(m[1])) return m[1];
+      if (m && isLinkedInMemberId(m[1])) return m[1];
     }
 
     // Método 3: Links con profileUrn (técnica Waalaxy)
@@ -1165,18 +1195,22 @@
       };
       if (note && note.trim()) body.message = note.trim().slice(0, 300);
 
-      const res = await fetch('https://www.linkedin.com/voyager/api/growth/normInvitations', {
-        method:      'POST',
-        credentials: 'include',
-        headers: {
-          'accept':                    'application/vnd.linkedin.normalized+json+2.1',
-          'content-type':              'application/json',
-          'csrf-token':                csrf,
-          'x-restli-protocol-version': '2.0.0',
-          'x-li-lang':                 'es_ES',
+      const res = await fetchWithTimeout(
+        'https://www.linkedin.com/voyager/api/growth/normInvitations',
+        {
+          method:      'POST',
+          credentials: 'include',
+          headers: {
+            'accept':                    'application/vnd.linkedin.normalized+json+2.1',
+            'content-type':              'application/json',
+            'csrf-token':                csrf,
+            'x-restli-protocol-version': '2.0.0',
+            'x-li-lang':                 'es_ES',
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-      });
+        15000  // 15s timeout — evita que el motor se cuelgue
+      );
 
       console.log(`[cazary.ai] connectViaVoyagerAPI: status=${res.status} memberId=${memberId.slice(0,8)}...`);
 
@@ -1193,6 +1227,10 @@
       }
       return { ok: false, reason: `api_${res.status}` };
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.warn('[cazary.ai] connectViaVoyagerAPI: timeout 15s — LinkedIn API no respondió');
+        return { ok: false, reason: 'timeout' };
+      }
       console.warn('[cazary.ai] connectViaVoyagerAPI error:', err.message);
       return { ok: false, reason: 'exception' };
     }
@@ -1350,6 +1388,20 @@
   async function executeConnect(taskId, note, leadId, campaignId, lead) {
     const platform = getPlatform();
     console.log(`[cazary.ai] executeConnect platform=${platform} leadId=${leadId}`);
+    // Wrap global: cualquier excepción no catcheada envía un ACTION_DONE con failure
+    // para que el background nunca se quede esperando indefinidamente
+    try {
+      return await _executeConnectInner(taskId, note, leadId, campaignId, lead, platform);
+    } catch (err) {
+      console.error('[cazary.ai] executeConnect: excepción no catcheada →', err?.message);
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'exception',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+  }
+
+  async function _executeConnectInner(taskId, note, leadId, campaignId, lead, platform) {
     note = personalizeMessage(note, lead);
     // Cargar overrides de selectores antes de ejecutar (fail-safe: no bloquea si falla)
     try {
@@ -1968,6 +2020,17 @@
 
     } else {
       // ── SalesNav MODO RÁPIDO ──────────────────────────────────────────────
+
+      // ⚡ Si ya estamos en la página del perfil SalesNav, saltar búsqueda de card
+      // y usar directamente el modo perfil (evita el "card no encontrada" espurio)
+      const currentHref = window.location.href;
+      const onSalesNavProfile = currentHref.includes('/sales/lead/') ||
+                                currentHref.includes('/sales/people/');
+      if (onSalesNavProfile) {
+        console.log('[cazary.ai] connect mode=fast SalesNav: ya en perfil → delegando a executeConnect directo');
+        return executeConnect(taskId, note, leadId, campaignId, lead);
+      }
+
       // PASO 0: Intentar Voyager API si tenemos la URL del perfil del lead
       const leadProfileUrl = lead?.salesnav_url ?? lead?.linkedin_url ?? '';
       if (leadProfileUrl) {
@@ -2008,7 +2071,7 @@
       }
 
       if (!snCard) {
-        console.log('[cazary.ai] connect mode=fast SalesNav → fallback mode=profile (card no encontrada)');
+        console.log('[cazary.ai] connect mode=fast SalesNav → fallback mode=profile (card no encontrada en lista)');
         return executeConnect(taskId, note, leadId, campaignId, lead);
       }
 
