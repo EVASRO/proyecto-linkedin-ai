@@ -28,9 +28,14 @@ export type WorkspaceSettingsData = {
   daily_connect_limit:  number;
   daily_message_limit:  number;
   daily_view_limit:     number;
+  daily_likes_limit:    number;
+  daily_inmails_limit:  number;
   working_hours_start:  number;
   working_hours_end:    number;
   timezone:             string;
+  pause_on_weekends:    boolean;
+  ultra_safe_mode:      boolean;
+  active_days:          number[];
 };
 
 export type UserProfileData = {
@@ -63,25 +68,42 @@ export async function getWorkspaceSettings(): Promise<Result<WorkspaceSettingsDa
     const { supabase, workspaceId } = await getAuthContext();
     if (!workspaceId) return { success: false, error: "Sin workspace" };
 
-    const { data, error } = await supabase
-      .from("workspaces")
-      .select("workspace_name, logo_url, daily_connect_limit, daily_message_limit, daily_view_limit, working_hours_start, working_hours_end, timezone")
-      .eq("id", workspaceId)
-      .single();
+    // Read from both workspaces (dashboard limits) and workspace_settings (extension settings)
+    const [wsRes, wssRes] = await Promise.all([
+      supabase
+        .from("workspaces")
+        .select("workspace_name, logo_url, daily_connect_limit, daily_message_limit, daily_view_limit, daily_likes_limit, daily_inmails_limit, working_hours_start, working_hours_end, timezone, pause_on_weekends, ultra_safe_mode")
+        .eq("id", workspaceId)
+        .single(),
+      supabase
+        .from("workspace_settings")
+        .select("active_days")
+        .eq("workspace_id", workspaceId)
+        .single(),
+    ]);
 
+    const error = wsRes.error;
     if (error) return { success: false, error: error.message };
+
+    const data = wsRes.data as Record<string, unknown>;
+    const wss  = (wssRes.data ?? {}) as Record<string, unknown>;
 
     return {
       success: true,
       data: {
-        workspace_name:      (data as Record<string, unknown>).workspace_name as string | null ?? null,
-        logo_url:            (data as Record<string, unknown>).logo_url as string | null ?? null,
-        daily_connect_limit: ((data as Record<string, unknown>).daily_connect_limit as number) ?? 20,
-        daily_message_limit: ((data as Record<string, unknown>).daily_message_limit as number) ?? 50,
-        daily_view_limit:    ((data as Record<string, unknown>).daily_view_limit as number) ?? 100,
-        working_hours_start: ((data as Record<string, unknown>).working_hours_start as number) ?? 9,
-        working_hours_end:   ((data as Record<string, unknown>).working_hours_end as number) ?? 18,
-        timezone:            ((data as Record<string, unknown>).timezone as string) ?? "America/Lima",
+        workspace_name:      (data.workspace_name as string | null) ?? null,
+        logo_url:            (data.logo_url as string | null) ?? null,
+        daily_connect_limit: (data.daily_connect_limit as number) ?? 20,
+        daily_message_limit: (data.daily_message_limit as number) ?? 50,
+        daily_view_limit:    (data.daily_view_limit as number) ?? 100,
+        daily_likes_limit:   (data.daily_likes_limit as number) ?? 30,
+        daily_inmails_limit: (data.daily_inmails_limit as number) ?? 10,
+        working_hours_start: (data.working_hours_start as number) ?? 9,
+        working_hours_end:   (data.working_hours_end as number) ?? 18,
+        timezone:            (data.timezone as string) ?? "America/Lima",
+        pause_on_weekends:   (data.pause_on_weekends as boolean) ?? true,
+        ultra_safe_mode:     (data.ultra_safe_mode as boolean) ?? false,
+        active_days:         Array.isArray(wss.active_days) ? (wss.active_days as number[]) : [1,2,3,4,5],
       },
     };
   } catch (err) {
@@ -92,25 +114,70 @@ export async function getWorkspaceSettings(): Promise<Result<WorkspaceSettingsDa
 // -- saveWorkspaceSettings -----------------------------------------------------
 
 export async function saveWorkspaceSettings(data: {
-  workspace_name?:      string;
-  logo_url?:            string;
-  daily_connect_limit?: number;
-  daily_message_limit?: number;
-  daily_view_limit?:    number;
-  working_hours_start?: number;
-  working_hours_end?:   number;
-  timezone?:            string;
+  workspace_name?:       string;
+  logo_url?:             string;
+  daily_connect_limit?:  number;
+  daily_message_limit?:  number;
+  daily_view_limit?:     number;
+  daily_likes_limit?:    number;
+  daily_inmails_limit?:  number;
+  working_hours_start?:  number;
+  working_hours_end?:    number;
+  timezone?:             string;
+  pause_on_weekends?:    boolean;
+  ultra_safe_mode?:      boolean;
+  active_days?:          number[];
 }): Promise<Result> {
   try {
     const { supabase, workspaceId } = await getAuthContext();
     if (!workspaceId) return { success: false, error: "Sin workspace" };
 
-    const { error } = await supabase
-      .from("workspaces")
-      .update(data)
-      .eq("id", workspaceId);
+    // 1. Guardar en tabla workspaces (fuente de verdad del dashboard)
+    const workspacesPayload: Record<string, unknown> = {};
+    if (data.workspace_name      !== undefined) workspacesPayload.workspace_name      = data.workspace_name;
+    if (data.logo_url            !== undefined) workspacesPayload.logo_url            = data.logo_url;
+    if (data.daily_connect_limit !== undefined) workspacesPayload.daily_connect_limit = data.daily_connect_limit;
+    if (data.daily_message_limit !== undefined) workspacesPayload.daily_message_limit = data.daily_message_limit;
+    if (data.daily_view_limit    !== undefined) workspacesPayload.daily_view_limit    = data.daily_view_limit;
+    if (data.daily_likes_limit   !== undefined) workspacesPayload.daily_likes_limit   = data.daily_likes_limit;
+    if (data.daily_inmails_limit !== undefined) workspacesPayload.daily_inmails_limit = data.daily_inmails_limit;
+    if (data.working_hours_start !== undefined) workspacesPayload.working_hours_start = data.working_hours_start;
+    if (data.working_hours_end   !== undefined) workspacesPayload.working_hours_end   = data.working_hours_end;
+    if (data.timezone            !== undefined) workspacesPayload.timezone            = data.timezone;
+    if (data.pause_on_weekends   !== undefined) workspacesPayload.pause_on_weekends   = data.pause_on_weekends;
+    if (data.ultra_safe_mode     !== undefined) workspacesPayload.ultra_safe_mode     = data.ultra_safe_mode;
 
-    if (error) return { success: false, error: error.message };
+    if (Object.keys(workspacesPayload).length > 0) {
+      await supabase.from("workspaces").update(workspacesPayload).eq("id", workspaceId);
+    }
+
+    // 2. Sync a workspace_settings (fuente de verdad de la extensión Chrome)
+    // La extensión lee de esta tabla vía loadWorkspaceSettings()
+    const wsPayload: Record<string, unknown> = { workspace_id: workspaceId };
+    if (data.daily_connect_limit !== undefined) wsPayload.daily_connections_limit = data.daily_connect_limit;
+    if (data.daily_message_limit !== undefined) wsPayload.daily_messages_limit    = data.daily_message_limit;
+    if (data.daily_view_limit    !== undefined) wsPayload.daily_visits_limit      = data.daily_view_limit;
+    if (data.daily_likes_limit   !== undefined) wsPayload.daily_likes_limit       = data.daily_likes_limit;
+    if (data.daily_inmails_limit !== undefined) wsPayload.daily_inmails_limit     = data.daily_inmails_limit;
+    if (data.working_hours_start !== undefined) wsPayload.active_hours_start      = data.working_hours_start;
+    if (data.working_hours_end   !== undefined) wsPayload.active_hours_end        = data.working_hours_end;
+    if (data.timezone            !== undefined) wsPayload.timezone                = data.timezone;
+    if (data.pause_on_weekends   !== undefined) wsPayload.pause_on_weekends       = data.pause_on_weekends;
+    if (data.ultra_safe_mode     !== undefined) wsPayload.ultra_safe_mode         = data.ultra_safe_mode;
+    if (data.active_days         !== undefined) wsPayload.active_days             = JSON.stringify(data.active_days);
+
+    await supabase
+      .from("workspace_settings")
+      .upsert(wsPayload, { onConflict: "workspace_id" });
+
+    // 3. Notificar a la extensión para que recargue settings inmediatamente
+    await supabase.from("settings_events").insert({
+      workspace_id: workspaceId,
+      event_type:   "UPDATE_SETTINGS",
+      payload:      wsPayload,
+      consumed:     false,
+    });
+
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };

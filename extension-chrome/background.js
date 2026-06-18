@@ -11,8 +11,10 @@ const HEARTBEAT_ALARM = 'nexusai-heartbeat';
 // ── Límites anti-ban por defecto ──────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
   maxConnections:   50,
-  maxMessages:      50,
+  maxMessages:      75,
   maxLikes:         30,
+  maxInmails:       10,
+  maxVisits:        75,
   delayMinSec:      180,
   delayMaxSec:      480,
   ultraSafe:        false,
@@ -20,6 +22,7 @@ const DEFAULT_SETTINGS = {
   activeHoursStart: 0,
   activeHoursEnd:   24,
   timezone:         'America/Lima',
+  activeDays:       [1, 2, 3, 4, 5],   // 0=Dom, 1=Lun, ..., 6=Sáb
 };
 
 // ── Auto-init al despertar el service worker ──────────────────────────────────
@@ -366,6 +369,10 @@ async function processTick() {
   }
   if (await isWeekendPaused()) {
     console.log('[cazary.ai] Fin de semana pausado → saltando tick');
+    return;
+  }
+  if (!await isActiveDayOfWeek()) {
+    console.log('[cazary.ai] Día no activo → saltando tick');
     return;
   }
 
@@ -2673,6 +2680,25 @@ async function isWeekendPaused() {
   return day === 'Sat' || day === 'Sun';
 }
 
+// Retorna true si el día de hoy está en la lista de días activos.
+// activeDays usa convención JS: 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
+async function isActiveDayOfWeek() {
+  const { settings } = await chrome.storage.local.get('settings');
+  const activeDays = settings?.activeDays ?? DEFAULT_SETTINGS.activeDays;
+  if (!Array.isArray(activeDays) || activeDays.length === 0) return false; // sin días activos → pausa
+  const tz  = settings?.timezone ?? 'America/Lima';
+  const now  = new Date();
+  // Obtener número de día (0=Dom ... 6=Sáb) en la zona horaria configurada
+  const dateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, weekday: 'short',
+  }).format(now);
+  const MAP = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  // Intl with 'en-CA' and weekday:'short' returns full locale string; use en-US instead
+  const dayShort = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(now);
+  const dayNum = MAP[dayShort] ?? new Date().getDay();
+  return activeDays.includes(dayNum);
+}
+
 async function getTodayStats(wsId) {
   try {
     const today = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
@@ -2747,18 +2773,30 @@ async function loadWorkspaceSettings() {
       `workspace_settings?workspace_id=eq.${wsId}&select=*&limit=1`
     );
     if (data?.length) {
+      // active_days puede llegar como array JS o como string JSON desde Supabase jsonb
+      let activeDays = DEFAULT_SETTINGS.activeDays;
+      const rawDays = data[0].active_days;
+      if (Array.isArray(rawDays)) {
+        activeDays = rawDays;
+      } else if (typeof rawDays === 'string') {
+        try { activeDays = JSON.parse(rawDays); } catch (_) { /* keep default */ }
+      }
+
       await chrome.storage.local.set({
         settings: {
-          maxConnections:   data[0].daily_connections_limit ?? 20,
-          maxMessages:      data[0].daily_messages_limit    ?? 30,
-          maxLikes:         20,
-          ultraSafe:        data[0].ultra_safe_mode         ?? true,
-          pauseWeekends:    data[0].pause_on_weekends       ?? true,
-          activeHoursStart: data[0].active_hours_start      ?? 8,
-          activeHoursEnd:   data[0].active_hours_end        ?? 20,
-          delayMinSec:      180,
-          delayMaxSec:      480,
-          timezone:         'America/Lima',
+          maxConnections:   data[0].daily_connections_limit ?? DEFAULT_SETTINGS.maxConnections,
+          maxMessages:      data[0].daily_messages_limit    ?? DEFAULT_SETTINGS.maxMessages,
+          maxLikes:         data[0].daily_likes_limit       ?? DEFAULT_SETTINGS.maxLikes,
+          maxInmails:       data[0].daily_inmails_limit     ?? DEFAULT_SETTINGS.maxInmails,
+          maxVisits:        data[0].daily_visits_limit      ?? DEFAULT_SETTINGS.maxVisits,
+          ultraSafe:        data[0].ultra_safe_mode         ?? DEFAULT_SETTINGS.ultraSafe,
+          pauseWeekends:    data[0].pause_on_weekends       ?? DEFAULT_SETTINGS.pauseWeekends,
+          activeHoursStart: data[0].active_hours_start      ?? DEFAULT_SETTINGS.activeHoursStart,
+          activeHoursEnd:   data[0].active_hours_end        ?? DEFAULT_SETTINGS.activeHoursEnd,
+          delayMinSec:      data[0].action_delay_min_sec    ?? DEFAULT_SETTINGS.delayMinSec,
+          delayMaxSec:      data[0].action_delay_max_sec    ?? DEFAULT_SETTINGS.delayMaxSec,
+          timezone:         data[0].timezone                ?? DEFAULT_SETTINGS.timezone,
+          activeDays,
         },
       });
     }
