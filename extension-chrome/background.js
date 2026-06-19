@@ -554,30 +554,29 @@ async function detectNewConnections(wsId) {
 async function scheduleNetworkUpdateCheck(wsId) {
   if (!wsId) return;
   try {
-    const existing = await supabaseFetch(
+    // supabaseFetch retorna array JSON directamente (no Response object)
+    const rows = await supabaseFetch(
       `engine_queue?workspace_id=eq.${wsId}` +
       `&action_type=eq.check_network_updates` +
       `&status=in.(pending,processing)` +
       `&select=id`,
       { method: 'GET' }
-    ).catch(() => null);
-    const rows = existing ? await existing.json().catch(() => []) : [];
-    if (rows.length > 0) {
+    ).catch(() => []);
+    if (Array.isArray(rows) && rows.length > 0) {
       console.log('[cazary.ai] scheduleNetworkUpdateCheck: ya hay tarea pendiente, skip');
       return;
     }
 
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    const recent = await supabaseFetch(
+    const recentRows = await supabaseFetch(
       `engine_queue?workspace_id=eq.${wsId}` +
       `&action_type=eq.check_network_updates` +
       `&status=eq.completed` +
       `&executed_at=gte.${twoHoursAgo}` +
       `&select=id`,
       { method: 'GET' }
-    ).catch(() => null);
-    const recentRows = recent ? await recent.json().catch(() => []) : [];
-    if (recentRows.length > 0) {
+    ).catch(() => []);
+    if (Array.isArray(recentRows) && recentRows.length > 0) {
       console.log('[cazary.ai] scheduleNetworkUpdateCheck: ejecutado hace <2h, skip');
       return;
     }
@@ -1698,6 +1697,39 @@ async function handleActionDone(taskId, result) {
           }),
         }).catch(() => {});
         console.log('[cazary.ai] already_connected → conexion_aceptada:', result.lead_id);
+        return;
+      }
+
+      // ── Requiere email para conectar → marcar lead + notificar usuario ───────
+      if (result.action === 'connect' && result.reason === 'requires_email') {
+        await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            status:     'needs_review',
+            next_task:  'Requiere email para conectar en SalesNav',
+            notes:      'SalesNav solicitó email para enviar invitación. Agregar email del contacto y reintentar.',
+          }),
+        }).catch(() => {});
+        await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            status:      'done',
+            executed_at: now,
+            last_error:  'requires_email — perfil fuera de red requiere email para conectar',
+          }),
+        }).catch(() => {});
+        // Log de actividad para que el dashboard notifique al usuario
+        await supabaseFetch('activity_log', {
+          method: 'POST', prefer: 'return=minimal',
+          body: JSON.stringify({
+            workspace_id: wsId,
+            lead_id:      result.lead_id,
+            action:       'connect_requires_email',
+            metadata:     { reason: 'requires_email', campaign_id: result.campaign_id },
+            created_at:   now,
+          }),
+        }).catch(() => {});
+        console.warn('[cazary.ai] requires_email → lead marcado needs_review:', result.lead_id);
         return;
       }
 

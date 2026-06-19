@@ -2072,7 +2072,7 @@
   async function handleSalesNavConnectDialog(note) {
     let dialogFound = false;
     for (let i = 0; i < 8; i++) {
-      if (document.querySelector('button.connect-cta-form__send')) {
+      if (document.querySelector('button.connect-cta-form__send, [data-test-modal] button[type="submit"]')) {
         dialogFound = true;
         break;
       }
@@ -2082,6 +2082,23 @@
     if (!dialogFound) {
       console.warn('[cazary.ai] handleSalesNavConnectDialog: dialog no apareció');
       return false;
+    }
+
+    // ── DETECCIÓN: dialog requiere email (OUT_OF_NETWORK sin créditos) ──────────
+    const emailInput = document.querySelector(
+      'input[type="email"], input[name="email"], input[placeholder*="email"], ' +
+      '.connect-cta-form input[type="text"], [data-test-connect-email-input]'
+    );
+    if (emailInput) {
+      console.warn('[cazary.ai] handleSalesNavConnectDialog: dialog requiere email → requires_email');
+      // Cerrar el dialog
+      const cancelBtn = Array.from(document.querySelectorAll('button')).find(b => {
+        const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+        return txt === 'cancelar' || txt === 'cancel';
+      });
+      if (cancelBtn) simulateClick(cancelBtn);
+      else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return 'requires_email';
     }
 
     if (note && note.trim()) {
@@ -2128,37 +2145,48 @@
     console.log('[cazary.ai] executeSalesNavConnectFromProfile: buscando botón "..."');
     await sleepHuman();
 
-    let moreBtn = null;
-    for (let i = 0; i < 4; i++) {
-      moreBtn =
-        document.querySelector('button[aria-label*="Más acciones"], button[aria-label*="More actions"]') ??
-        Array.from(document.querySelectorAll(
-          '.profile-topcard__actions button, [class*="profile-topcard"] button'
-        )).find(b => {
-          const label = (b.getAttribute('aria-label') || '').toLowerCase();
-          const txt   = (b.innerText || b.textContent || '').trim();
-          return label.includes('accion') || label.includes('action') || txt === '···' || txt === '•••';
-        }) ?? null;
-      if (moreBtn) break;
-      await sleep(600);
-    }
+    // Usar clickMoreButton() — helper robusto con hover + 4 estrategias de fallback
+    // Cubre: data-x--lead-actions-bar-overflow-menu, aria-label, clases post-rebrand, icon-only
+    const opened = await clickMoreButton();
 
-    if (!moreBtn) {
+    if (!opened) {
       console.warn('[cazary.ai] executeSalesNavConnectFromProfile: "..." no encontrado → fallback');
       return executeConnect(taskId, note, leadId, campaignId, lead);
     }
 
-    simulateClick(moreBtn);
-    await sleepHuman();
+    const DROPDOWN_ITEM_SEL = [
+      '[role="menuitem"]', '.artdeco-dropdown__item', '.eah-menu-item__action',
+      '.eah-menu-content__list-item button', 'button.ember-view._item_1xnv7i',
+      'li._item_1xnv7i button', '[data-control-name="connect"], [data-control-name="srp_connect"]',
+      '.dropdown-options li button',
+    ].join(', ');
+
+    // ── Detectar "Conexión (pendiente)" en dropdown → ya enviado ────────────────
+    await sleep(400);
+    const allMenuItems = Array.from(document.querySelectorAll(DROPDOWN_ITEM_SEL));
+    const pendingItem = allMenuItems.find(b => {
+      const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+      return txt.includes('pendiente') || txt.includes('pending') ||
+             txt === 'retirar' || txt === 'withdraw';
+    });
+    if (pendingItem) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      console.log('[cazary.ai] executeSalesNavConnectFromProfile: "Conexión pendiente" en dropdown → already_pending');
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: true, reason: 'already_pending',
+        crm_target: 'conexion_enviada', lead_id: leadId, campaign_id: campaignId,
+        method: 'salesnav_profile_dropdown',
+      }});
+    }
 
     let connectItem = null;
     for (let i = 0; i < 5; i++) {
-      connectItem = Array.from(
-        document.querySelectorAll('button.ember-view._item_1xnv7i, li._item_1xnv7i button, [role="menuitem"]')
-      ).find(b => {
-        const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-        return txt === 'conectar' || txt === 'connect';
-      });
+      connectItem = Array.from(document.querySelectorAll(DROPDOWN_ITEM_SEL))
+        .find(b => {
+          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+          return txt === 'conectar' || txt === 'connect' ||
+                 txt === 'enviar solicitud' || txt.includes('solicitud de conexión');
+        });
       if (connectItem) break;
       await sleep(400);
     }
@@ -2178,6 +2206,17 @@
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action: 'connect', success: false, reason: 'daily_limit_reached',
         lead_id: leadId, campaign_id: campaignId, method: 'salesnav_profile_dropdown',
+      }});
+    }
+    // ── Detectar: dialog requiere email (contacto fuera de red) ─────────────────
+    if (sent === 'requires_email') {
+      console.warn('[cazary.ai] executeSalesNavConnectFromProfile: requiere email → marcando lead');
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'requires_email',
+        lead_id: leadId, campaign_id: campaignId,
+        method: 'salesnav_profile_dropdown',
+        // El dashboard mostrará alerta al usuario para este lead
+        crm_target: null,
       }});
     }
     if (!sent) {
@@ -2409,11 +2448,25 @@
       }
 
       // ── PASO 2: Click en botón "..." de la card ──────────────────────────────
+      // Hover primero para que aparezca el botón (SalesNav lo oculta sin hover)
+      snCard.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      snCard.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      await sleep(500);
+
       let moreBtn =
         snCard.querySelector('button[data-search-overflow-trigger]') ??
-        Array.from(snCard.querySelectorAll('button[aria-label]')).find(b => {
+        snCard.querySelector('[data-x--lead-actions-bar-overflow-menu]') ??
+        Array.from(snCard.querySelectorAll('button, [role="button"]')).find(b => {
           const label = (b.getAttribute('aria-label') || '').toLowerCase();
-          return label.includes('ver más acciones') || label.includes('more actions');
+          const txt   = (b.innerText || b.textContent || '').trim();
+          const cls   = (b.className || '').toLowerCase();
+          return label.includes('ver más acciones') ||
+                 label.includes('más acciones') ||
+                 label.includes('more actions') ||
+                 label.includes('overflow') ||
+                 cls.includes('overflow') ||
+                 txt === '...' || txt === '•••' || txt === '···' ||
+                 (txt === '' && !!b.querySelector('svg') && b.getBoundingClientRect().width > 0);
         }) ?? null;
 
       if (!moreBtn) {
@@ -2421,27 +2474,31 @@
         return executeConnect(taskId, note, leadId, campaignId, lead);
       }
 
-      console.log('[cazary.ai] connect mode=fast SalesNav: clickeando "..."');
+      console.log('[cazary.ai] connect mode=fast SalesNav: clickeando "..."', moreBtn.getAttribute('aria-label') || moreBtn.className.slice(0,40));
       simulateClick(moreBtn);
       await sleepHuman();
 
       // ── PASO 3: Click en "Conectar" dentro del dropdown ──────────────────────
+      const DROPDOWN_SEL = [
+        '[role="menuitem"]',
+        '.artdeco-dropdown__item',
+        '.eah-menu-item__action',
+        '.eah-menu-content__list-item button',
+        'button.ember-view._item_1xnv7i',
+        'li._item_1xnv7i button',
+        '[role="option"]',
+        '.dropdown-item',
+        '[class*="dropdown"] li button',
+        '[data-control-name="connect"], [data-control-name="srp_connect"]',
+      ].join(', ');
+
       let connectDropdownItem = null;
       for (let i = 0; i < 5; i++) {
-        connectDropdownItem = Array.from(
-          document.querySelectorAll('button.ember-view._item_1xnv7i, li._item_1xnv7i button')
-        ).find(b => {
-          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-          return txt === 'conectar' || txt === 'connect';
-        });
-        if (!connectDropdownItem) {
-          connectDropdownItem = Array.from(document.querySelectorAll(
-            '[role="menuitem"], [role="option"], .dropdown-item, [class*="dropdown"] li button'
-          )).find(b => {
+        connectDropdownItem = Array.from(document.querySelectorAll(DROPDOWN_SEL))
+          .find(b => {
             const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
             return txt === 'conectar' || txt === 'connect';
           });
-        }
         if (connectDropdownItem) break;
         await sleep(400);
       }
