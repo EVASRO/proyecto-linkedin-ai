@@ -1295,10 +1295,12 @@
           return { ok: false, reason: 'already_connected' };
         return { ok: false, reason: 'api_400', raw: msg.slice(0, 200) };
       }
-      // 301/302 = LinkedIn redirige cuando el contacto ya está en la red (1er grado)
+      // 301/302 = redirect inesperado (SalesNav entity IDs "ACwAAE..." no son aceptados
+      // por la API normInvitations — LinkedIn redirige). NO indica "ya conectado".
+      // Dejar caer al fallback DOM que SÍ funciona.
       if (res.status === 301 || res.status === 302) {
-        console.log('[cazary.ai] connectViaVoyagerAPI: 301/302 → contacto ya en red → already_connected');
-        return { ok: false, reason: 'already_connected' };
+        console.log('[cazary.ai] connectViaVoyagerAPI: 301/302 → redirect de API (memberId format), usar DOM');
+        return { ok: false, reason: 'api_redirect' };
       }
       return { ok: false, reason: `api_${res.status}` };
     } catch (err) {
