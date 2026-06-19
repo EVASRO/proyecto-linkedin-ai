@@ -49,7 +49,9 @@ export type NodeType =
   | "withdraw"
   | "find_email"
   | "find_phone"
-  | "connect_email";
+  | "connect_email"
+  | "follow"
+  | "unfollow";
 
 /** @deprecated Use NodeType */
 export type CampaignNodeType = NodeType;

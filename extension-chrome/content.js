@@ -117,9 +117,121 @@
     catch (_) { return []; }
   }
 
+  // ─── Utilidades de humanización ──────────────────────────────────────────────
+
   function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
+    return new Promise((r) => setTimeout(r, Math.max(0, ms)));
   }
+
+  function sleepGaussian(mean, stdDev, min = 300) {
+    const u1 = Math.random() || 1e-10;
+    const u2 = Math.random();
+    const z  = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const ms = Math.round(mean + z * stdDev);
+    return sleep(Math.max(min, ms));
+  }
+
+  function sleepMicro() { return sleepGaussian(120, 40, 50); }
+  function sleepHuman() { return sleepGaussian(1800, 600, 800); }
+  function sleepNav()   { return sleepGaussian(3500, 900, 1500); }
+
+  async function simulateCursorMove(targetEl) {
+    if (!targetEl) return;
+    const rect   = targetEl.getBoundingClientRect();
+    const destX  = rect.left + rect.width  * (0.3 + Math.random() * 0.4);
+    const destY  = rect.top  + rect.height * (0.3 + Math.random() * 0.4);
+    const startX = destX + (Math.random() - 0.5) * 300;
+    const startY = destY + (Math.random() - 0.5) * 200;
+    const steps  = 3 + Math.floor(Math.random() * 3);
+
+    for (let i = 1; i <= steps; i++) {
+      const t    = i / steps;
+      const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      const x = startX + (destX - startX) * ease + (Math.random() - 0.5) * 8;
+      const y = startY + (destY - startY) * ease + (Math.random() - 0.5) * 8;
+      document.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true,
+        clientX: Math.round(x), clientY: Math.round(y),
+      }));
+      await sleep(30 + Math.random() * 40);
+    }
+  }
+
+  async function typeHuman(el, text, clear = true) {
+    if (!el || !text) return;
+    el.focus();
+    await sleepMicro();
+
+    if (clear) {
+      el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleepMicro();
+    }
+
+    for (const char of text) {
+      const delay = sleepGaussian(270, 80, 60);
+      el.value += char;
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: char, inputType: 'insertText' }));
+      el.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: char }));
+      el.dispatchEvent(new KeyboardEvent('keyup',    { bubbles: true, key: char }));
+      if (Math.random() < 0.08) await sleepGaussian(600, 200, 300);
+      await delay;
+    }
+
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function typeHumanContenteditable(el, text) {
+    if (!el || !text) return;
+    el.focus();
+    await sleepMicro();
+
+    el.innerHTML = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleepMicro();
+
+    for (const char of text) {
+      const sel   = window.getSelection();
+      const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+
+      if (range) {
+        range.deleteContents();
+        range.insertNode(document.createTextNode(char));
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else {
+        document.execCommand('insertText', false, char);
+      }
+
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true, data: char, inputType: 'insertText',
+      }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: char }));
+
+      if (Math.random() < 0.08) await sleepGaussian(500, 180, 250);
+      await sleepGaussian(260, 75, 60);
+    }
+
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function scrollHuman(targetY, duration = 1200) {
+    const startY = window.scrollY;
+    const dist   = targetY - startY;
+    if (Math.abs(dist) < 10) return;
+    const steps  = Math.max(8, Math.round(duration / 60));
+    const stepMs = duration / steps;
+
+    for (let i = 1; i <= steps; i++) {
+      const t    = i / steps;
+      const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      window.scrollTo(0, Math.round(startY + dist * ease));
+      await sleep(stepMs * (0.7 + Math.random() * 0.6));
+    }
+  }
+
+  // ─── Fin utilidades de humanización ──────────────────────────────────────────
 
   function personalizeMessage(template, lead) {
     if (!template || !lead) return template || '';
@@ -158,6 +270,7 @@
 
   function simulateClick(el) {
     if (!el) return false;
+    simulateCursorMove(el).catch(() => {});
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     const rect = el.getBoundingClientRect();
@@ -1315,41 +1428,50 @@
 
   // ── isSalesNavDialogOpen con selectores actualizados ─────────────────────
   function isSalesNavDialogOpenRobust() {
-    // Selectores ordenados de más a menos específicos
-    if (document.querySelector('.connect-cta-form__send'))                         return true;
-    if (document.querySelector('[data-test-modal-container][aria-hidden="false"]')) return true;
-    const d1 = document.querySelector('[data-test-modal][role="dialog"]');
-    if (d1 && d1.getBoundingClientRect().height > 0)                               return true;
-    // Nuevos selectores SalesNav 2025
-    const d2 = document.querySelector('[role="dialog"][aria-modal="true"]');
-    if (d2 && d2.getBoundingClientRect().height > 0)                               return true;
-    const d3 = document.querySelector('[class*="connect-cta"], [class*="send-invite"]');
-    if (d3 && d3.getBoundingClientRect().height > 0)                               return true;
+    const dialogSelectors = [
+      '[data-test-modal]',
+      '[data-x-dialog]',
+      '.artdeco-modal',
+      '[role="dialog"]',
+      '[class*="modal"][class*="connect"]',
+      '[class*="invite"][class*="modal"]',
+      '[class*="connect-modal"]',
+      '[data-x--invite-to-connect-modal]',
+      '[class*="invite-to-connect"]',
+      '[class*="invitation-modal"]',
+    ];
+
+    for (const sel of dialogSelectors) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetParent !== null) return true;
+    }
+
+    const sendBtn = findDialogSendButton();
+    if (sendBtn && sendBtn.offsetParent !== null) return true;
+
     return false;
   }
 
   // ── Buscar botón Send en cualquier dialog de invitación ──────────────────
   function findDialogSendButton() {
-    const selectors = [
-      '.connect-cta-form__send',
-      'button[data-sn-modal-btn]',
-      '[role="dialog"] button[type="submit"]',
-      '[data-test-modal] button[type="submit"]',
-      '[aria-modal="true"] button[type="submit"]',
-    ];
-    for (const sel of selectors) {
-      const btn = document.querySelector(sel);
-      if (btn) return btn;
-    }
-    // Fallback: cualquier botón visible con texto "enviar" o "send" dentro de un dialog
-    const dialogs = document.querySelectorAll('[role="dialog"],[data-test-modal],[class*="connect-cta"]');
-    for (const dialog of dialogs) {
-      const found = Array.from(dialog.querySelectorAll('button')).find(b => {
-        if (!b.offsetParent || b.disabled) return false;
-        const t = (b.innerText || b.textContent || '').trim().toLowerCase();
-        return t === 'enviar' || t === 'send' || t.includes('enviar invit') || t.includes('send invit') || t === 'conectar' || t === 'connect';
+    const containers = [
+      document.querySelector('[data-test-modal], [role="dialog"], .artdeco-modal, [data-x-dialog]'),
+      document.body,
+    ].filter(Boolean);
+
+    for (const container of containers) {
+      const btns = Array.from(container.querySelectorAll('button, [role="button"]'));
+      const sendBtn = btns.find(btn => {
+        if (btn.disabled) return false;
+        if (btn.offsetParent === null && container === document.body) return false;
+        const txt   = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return txt === 'enviar' || txt === 'send' ||
+               txt === 'enviar invitación' || txt === 'send invitation' ||
+               txt === 'conectar' || txt === 'connect' ||
+               label.includes('enviar') || label.includes('send invitation');
       });
-      if (found) return found;
+      if (sendBtn) return sendBtn;
     }
     return null;
   }
@@ -1419,11 +1541,24 @@
       await sleep(1500);
     }
 
+    // ── TIMEOUT DE SEGURIDAD: Si la función tarda más de 45s, forzar ACTION_DONE ──
+    let _connectTimeoutFired = false;
+    const _connectSafetyTimer = setTimeout(() => {
+      _connectTimeoutFired = true;
+      console.warn('[cazary.ai] _executeConnectInner: timeout de seguridad 45s → forzando ACTION_DONE');
+      safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'safety_timeout_45s',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }, 45000);
+
     // ── SMART STATE DETECTION ─────────────────────────────────────────────────
     const connectionState = await detectConnectionState();
     console.log(`[cazary.ai] ConnectionState: ${connectionState} | platform=${platform}`);
 
     if (connectionState === 'connected') {
+      clearTimeout(_connectSafetyTimer);
+      if (_connectTimeoutFired) return;
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action:     'connect',
         success:    true,
@@ -1435,6 +1570,8 @@
     }
 
     if (connectionState === 'pending') {
+      clearTimeout(_connectSafetyTimer);
+      if (_connectTimeoutFired) return;
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action:     'connect',
         success:    true,
@@ -1457,24 +1594,32 @@
       console.log('[cazary.ai] SalesNav Voyager API connect result:', apiResult);
 
       if (apiResult.ok) {
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: true, reason: 'sent', method: 'voyager_api',
           lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
         }});
       }
       if (apiResult.reason === 'daily_limit_reached') {
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: false, reason: 'daily_limit_reached',
           lead_id: leadId, campaign_id: campaignId,
         }});
       }
       if (apiResult.reason === 'already_pending') {
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: true, reason: 'already_pending',
           crm_target: 'conexion_enviada', lead_id: leadId, campaign_id: campaignId,
         }});
       }
       if (apiResult.reason === 'already_connected') {
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: true, reason: 'already_connected',
           crm_target: 'conexion_aceptada', lead_id: leadId, campaign_id: campaignId,
@@ -1561,6 +1706,8 @@
               } else {
                 // Para OUT_OF_NETWORK sin botón: marcar como scheduled para reintentar en 24h
                 console.warn('[cazary.ai] SalesNav OUT_OF_NETWORK: sin botón Conectar visible → rescheduled');
+                clearTimeout(_connectSafetyTimer);
+                if (_connectTimeoutFired) return;
                 return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
                   action: 'connect', success: false,
                   reason: 'out_of_network_locked',
@@ -1569,6 +1716,8 @@
               }
             } else {
               console.warn('[cazary.ai] SalesNav: "Conectar" no encontrado ni en dropdown ni en topcard');
+              clearTimeout(_connectSafetyTimer);
+              if (_connectTimeoutFired) return;
               return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
                 action: 'connect', success: false, reason: 'connect_item_not_found',
                 lead_id: leadId, campaign_id: campaignId,
@@ -1585,6 +1734,8 @@
           }
         } else {
           console.warn('[cazary.ai] SalesNav: no se pudo abrir dropdown → more_button_not_found');
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'more_button_not_found',
             lead_id: leadId, campaign_id: campaignId,
@@ -1600,29 +1751,45 @@
       }
 
       if (!dialogFound) {
-        // Sin dialog → verificar si conexión se envió automáticamente
-        await sleep(1000);
-        const verifyOpened = await clickMoreButton();
-        if (verifyOpened) {
-          await sleep(600);
-          const verifyContainer = getDropdownContainer();
-          if (verifyContainer) {
-            const texts = Array.from(verifyContainer.querySelectorAll('li, a, button'))
-              .map(el => (el.innerText || '').trim().toLowerCase());
-            const isPendingNow = texts.some(t => t.includes('pendiente') || t.includes('retirar'));
-            const connectGone  = !texts.some(t => t.trim() === 'conectar' || t.trim() === 'connect');
-            const btn = document.querySelector('[data-x--lead-actions-bar-overflow-menu]');
-            if (btn) btn.click();
-            if (isPendingNow || connectGone) {
-              console.log('[cazary.ai] SalesNav: ✅ conexión enviada sin dialog');
-              return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-                action: 'connect', success: true, reason: 'sent',
-                lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
-              }});
-            }
-          }
+        // Sin dialog — puede que SalesNav envió sin modal (ej. sin nota),
+        // o que el click no registró. Verificar una sola vez, sin loops.
+        console.warn('[cazary.ai] SalesNav: dialog no apareció tras click en Conectar');
+        await sleep(1500);
+
+        // Comprobar si el botón "Conectar" desapareció del dropdown (señal de éxito)
+        // No volvemos a abrir el dropdown — solo verificamos estado del DOM actual
+        const pendingBtn = Array.from(document.querySelectorAll('button, [role="button"]')).find(b => {
+          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+          return (txt === 'pendiente' || txt === 'pending' || txt === 'retirar' || txt === 'withdraw');
+        });
+
+        if (pendingBtn) {
+          console.log('[cazary.ai] SalesNav: ✅ botón Pendiente visible → conexión enviada sin dialog');
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: true, reason: 'sent_no_dialog', method: 'dom_salesnav',
+            lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
+          }});
         }
-        console.warn('[cazary.ai] SalesNav: dialog no apareció, conexión no confirmada');
+
+        // También intentar buscar el send button directamente (puede que dialog apareció tarde)
+        const lateSendBtn = findDialogSendButton();
+        if (lateSendBtn) {
+          console.log('[cazary.ai] SalesNav: dialog apareció tarde → clickeando Enviar');
+          simulateClick(lateSendBtn);
+          await sleep(1500);
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'connect', success: true, reason: 'sent_late_dialog', method: 'dom_salesnav',
+            lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
+          }});
+        }
+
+        console.warn('[cazary.ai] SalesNav: no se pudo confirmar envío → modal_not_opened');
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: false, reason: 'modal_not_opened',
           lead_id: leadId, campaign_id: campaignId,
@@ -1634,6 +1801,8 @@
       const sendBtn = findDialogSendButton();
       if (!sendBtn) {
         console.warn('[cazary.ai] SalesNav: botón send no encontrado en dialog');
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: false, reason: 'dialog_send_button_not_found',
           lead_id: leadId, campaign_id: campaignId,
@@ -1674,8 +1843,10 @@
 
       if (!isSalesNavDialogOpen()) {
         console.log('[cazary.ai] SalesNav: ✅ conexión enviada (dialog cerrado)');
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-          action: 'connect', success: true, reason: 'sent',
+          action: 'connect', success: true, reason: 'sent', method: 'dom_salesnav',
           lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
         }});
       }
@@ -1686,8 +1857,10 @@
         sendBtn2.click();
         await sleep(2000);
         if (!isSalesNavDialogOpen()) {
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-            action: 'connect', success: true, reason: 'sent',
+            action: 'connect', success: true, reason: 'sent', method: 'dom_salesnav',
             lead_id: leadId, campaign_id: campaignId, connection_note: note || '',
           }});
         }
@@ -1695,11 +1868,15 @@
 
       const limitHit = document.body.innerText.toLowerCase().match(/límite|limit|weekly invitation/);
       if (limitHit) {
+        clearTimeout(_connectSafetyTimer);
+        if (_connectTimeoutFired) return;
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: false, reason: 'daily_limit_reached',
           lead_id: leadId, campaign_id: campaignId,
         }});
       }
+      clearTimeout(_connectSafetyTimer);
+      if (_connectTimeoutFired) return;
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action: 'connect', success: false, reason: 'dialog_send_failed',
         lead_id: leadId, campaign_id: campaignId,
@@ -1747,6 +1924,8 @@
         const opened = await clickMoreButton();
         if (!opened) {
           console.warn('[cazary.ai] LI connect: FALLO — no se encontró botón "..."');
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'button_not_found',
             lead_id: leadId, campaign_id: campaignId,
@@ -1757,6 +1936,8 @@
         if (!item) {
           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
           console.warn('[cazary.ai] LI connect: FALLO — "Conectar" no encontrado en dropdown');
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'button_not_found',
             lead_id: leadId, campaign_id: campaignId,
@@ -1766,6 +1947,8 @@
         const modalOpened = await forceClick(item);
         if (!modalOpened) {
           console.warn('[cazary.ai] forceClick: modal no abrió tras 3 intentos');
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'modal_not_opened',
             lead_id: leadId, campaign_id: campaignId,
@@ -1777,6 +1960,8 @@
         const modalOpened = await forceClick(connectBtn);
         if (!modalOpened) {
           console.warn('[cazary.ai] forceClick: modal no abrió tras 3 intentos');
+          clearTimeout(_connectSafetyTimer);
+          if (_connectTimeoutFired) return;
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: false, reason: 'modal_not_opened',
             lead_id: leadId, campaign_id: campaignId,
@@ -1844,6 +2029,8 @@
       console.warn('[cazary.ai][SelectorHealing] selector_failure: send_btn');
       console.warn('[cazary.ai] Send btn not found. Modal:',
         modal ? modal.innerHTML.slice(0, 800) : 'NO MODAL');
+      clearTimeout(_connectSafetyTimer);
+      if (_connectTimeoutFired) return;
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action: 'connect', success: false, reason: 'send_button_not_found',
         lead_id: leadId, campaign_id: campaignId,
@@ -1861,6 +2048,8 @@
       document.body.innerText.toLowerCase().match(/límite|limit|weekly invitation/);
 
     if (limitHit) {
+      clearTimeout(_connectSafetyTimer);
+      if (_connectTimeoutFired) return;
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action: 'connect', success: false, reason: 'daily_limit_reached',
         lead_id: leadId, campaign_id: campaignId,
@@ -1868,10 +2057,139 @@
     }
 
     console.log(`[cazary.ai] connect done: success=${!modalOpen}`);
+    clearTimeout(_connectSafetyTimer);
+    if (_connectTimeoutFired) return;
     safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
       action: 'connect', success: !modalOpen,
       lead_id: leadId, campaign_id: campaignId,
       connection_note: note || '',
+    }});
+  }
+
+  // ── Helper: manejar el dialog connect-cta-form de SalesNav ─────────────────
+  // Selectores estables Ember.js (auditados en vivo 2026-06-18).
+  // Retorna: true=enviado | false=falló | 'limit'=límite alcanzado
+  async function handleSalesNavConnectDialog(note) {
+    let dialogFound = false;
+    for (let i = 0; i < 8; i++) {
+      if (document.querySelector('button.connect-cta-form__send')) {
+        dialogFound = true;
+        break;
+      }
+      await sleep(500);
+    }
+
+    if (!dialogFound) {
+      console.warn('[cazary.ai] handleSalesNavConnectDialog: dialog no apareció');
+      return false;
+    }
+
+    if (note && note.trim()) {
+      const noteField = document.querySelector(
+        'textarea#connect-cta-form__invitation,' +
+        '.connect-cta-form textarea,' +
+        'textarea[placeholder*="nota"],' +
+        'textarea[placeholder*="note"]'
+      );
+      if (noteField) {
+        console.log('[cazary.ai] handleSalesNavConnectDialog: escribiendo nota humanizada');
+        await typeHuman(noteField, note.trim().slice(0, 300), true);
+        await sleepMicro();
+      } else {
+        console.warn('[cazary.ai] handleSalesNavConnectDialog: campo de nota no encontrado');
+      }
+    }
+
+    const sendBtn = document.querySelector('button.connect-cta-form__send') ??
+      Array.from(document.querySelectorAll('button')).find(b => {
+        const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+        return txt === 'enviar invitación' || txt === 'send invitation' ||
+               txt === 'enviar' || txt === 'send';
+      });
+
+    if (!sendBtn || sendBtn.disabled) {
+      console.warn('[cazary.ai] handleSalesNavConnectDialog: botón enviar no encontrado/disabled');
+      return false;
+    }
+
+    console.log('[cazary.ai] handleSalesNavConnectDialog: clickeando "Enviar invitación"');
+    simulateClick(sendBtn);
+    await sleepHuman();
+
+    const limitHit = document.body.innerText.toLowerCase().match(/límite|limit|weekly invitation/);
+    if (limitHit) return 'limit';
+
+    const dialogGone = !document.querySelector('button.connect-cta-form__send');
+    return dialogGone;
+  }
+
+  // ── Helper: connect desde perfil SalesNav usando menú "..." → dropdown ────────
+  async function executeSalesNavConnectFromProfile(taskId, note, leadId, campaignId, lead) {
+    console.log('[cazary.ai] executeSalesNavConnectFromProfile: buscando botón "..."');
+    await sleepHuman();
+
+    let moreBtn = null;
+    for (let i = 0; i < 4; i++) {
+      moreBtn =
+        document.querySelector('button[aria-label*="Más acciones"], button[aria-label*="More actions"]') ??
+        Array.from(document.querySelectorAll(
+          '.profile-topcard__actions button, [class*="profile-topcard"] button'
+        )).find(b => {
+          const label = (b.getAttribute('aria-label') || '').toLowerCase();
+          const txt   = (b.innerText || b.textContent || '').trim();
+          return label.includes('accion') || label.includes('action') || txt === '···' || txt === '•••';
+        }) ?? null;
+      if (moreBtn) break;
+      await sleep(600);
+    }
+
+    if (!moreBtn) {
+      console.warn('[cazary.ai] executeSalesNavConnectFromProfile: "..." no encontrado → fallback');
+      return executeConnect(taskId, note, leadId, campaignId, lead);
+    }
+
+    simulateClick(moreBtn);
+    await sleepHuman();
+
+    let connectItem = null;
+    for (let i = 0; i < 5; i++) {
+      connectItem = Array.from(
+        document.querySelectorAll('button.ember-view._item_1xnv7i, li._item_1xnv7i button, [role="menuitem"]')
+      ).find(b => {
+        const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+        return txt === 'conectar' || txt === 'connect';
+      });
+      if (connectItem) break;
+      await sleep(400);
+    }
+
+    if (!connectItem) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      console.warn('[cazary.ai] executeSalesNavConnectFromProfile: "Conectar" no en dropdown → fallback');
+      return executeConnect(taskId, note, leadId, campaignId, lead);
+    }
+
+    simulateClick(connectItem);
+    await sleepHuman();
+
+    const sent = await handleSalesNavConnectDialog(note);
+
+    if (sent === 'limit') {
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'connect', success: false, reason: 'daily_limit_reached',
+        lead_id: leadId, campaign_id: campaignId, method: 'salesnav_profile_dropdown',
+      }});
+    }
+    if (!sent) {
+      console.warn('[cazary.ai] executeSalesNavConnectFromProfile: dialog falló → fallback');
+      return executeConnect(taskId, note, leadId, campaignId, lead);
+    }
+
+    console.log('[cazary.ai] executeSalesNavConnectFromProfile: ✅ conexión enviada desde perfil');
+    return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'connect', success: true, reason: 'sent',
+      lead_id: leadId, campaign_id: campaignId,
+      connection_note: note || '', method: 'salesnav_profile_dropdown',
     }});
   }
 
@@ -2022,22 +2340,22 @@
 
     } else {
       // ── SalesNav MODO RÁPIDO ──────────────────────────────────────────────
+      // Flujo: "..." → dropdown → "Conectar" (_item_1xnv7i) → dialog connect-cta-form
 
-      // ⚡ Si ya estamos en la página del perfil SalesNav, saltar búsqueda de card
-      // y usar directamente el modo perfil (evita el "card no encontrada" espurio)
+      // ⚡ Si ya estamos en perfil SalesNav: usar flujo "..." dropdown del perfil
       const currentHref = window.location.href;
       const onSalesNavProfile = currentHref.includes('/sales/lead/') ||
                                 currentHref.includes('/sales/people/');
       if (onSalesNavProfile) {
-        console.log('[cazary.ai] connect mode=fast SalesNav: ya en perfil → delegando a executeConnect directo');
-        return executeConnect(taskId, note, leadId, campaignId, lead);
+        console.log('[cazary.ai] connect mode=fast SalesNav: en perfil → usando flujo "..." dropdown');
+        return executeSalesNavConnectFromProfile(taskId, note, leadId, campaignId, lead);
       }
 
-      // PASO 0: Intentar Voyager API si tenemos la URL del perfil del lead
+      // ── PASO 0: Intentar Voyager API (solo funciona con LI profileId estándar) ──
       const leadProfileUrl = lead?.salesnav_url ?? lead?.linkedin_url ?? '';
       if (leadProfileUrl) {
         const apiRes = await connectViaVoyagerAPI(leadProfileUrl, note);
-        console.log('[cazary.ai] connect mode=fast SalesNav Voyager API:', apiRes);
+        console.log('[cazary.ai] connect mode=fast SalesNav Voyager API:', apiRes.reason);
         if (apiRes.ok) {
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: true, reason: 'sent', method: 'voyager_api_fast',
@@ -2051,7 +2369,6 @@
           }});
         }
         if (apiRes.reason === 'already_connected') {
-          console.log('[cazary.ai] connect mode=fast SalesNav: API → already_connected → conexion_aceptada');
           return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
             action: 'connect', success: true, reason: 'already_connected',
             crm_target: 'conexion_aceptada', lead_id: leadId, campaign_id: campaignId,
@@ -2063,100 +2380,101 @@
             crm_target: 'conexion_enviada', lead_id: leadId, campaign_id: campaignId,
           }});
         }
-        // Si falla pero no es límite → continuar con DOM
-        console.warn(`[cazary.ai] connect mode=fast SalesNav: API falló (${apiRes.reason}) → DOM fallback`);
+        console.warn(`[cazary.ai] connect mode=fast SalesNav: API falló (${apiRes.reason}) → DOM`);
       }
-      // Buscar card del lead en la lista/búsqueda actual de SalesNav
-      const snUrl = leadProfileUrl;
-      const snSlug = snUrl ? String(snUrl).split('?')[0].split('/').filter(Boolean).pop() : null;
+
+      // ── PASO 1: Localizar la card del lead en la lista de búsqueda ───────────
+      const snUrl    = leadProfileUrl;
+      const snIdRaw  = snUrl ? String(snUrl).match(/\/sales\/lead\/([^,?#]+)/)?.[1] : null;
       const leadName = (lead?.full_name || lead?.name || '').trim().toLowerCase();
 
       let snCard = null;
-      if (snSlug) {
+      if (snIdRaw) {
         const anchors = Array.from(document.querySelectorAll('a[href*="/sales/lead/"]'));
-        const cardAnchor = anchors.find(a => (a.getAttribute('href') || '').toLowerCase().includes(snSlug));
-        snCard = cardAnchor?.closest('li, [data-id], .artdeco-list__item, [class*="result"]') ||
-                 cardAnchor?.parentElement || null;
+        const match   = anchors.find(a => (a.getAttribute('href') || '').includes(snIdRaw));
+        snCard = match?.closest('li, [data-id], .artdeco-list__item, [class*="result-item"]')
+               ?? match?.parentElement ?? null;
       }
-      // Fallback por nombre en la lista visible
       if (!snCard && leadName) {
-        const nameEls = Array.from(document.querySelectorAll('[data-anonymize="person-name"], .result-lockup__name'));
+        const nameEls = Array.from(document.querySelectorAll(
+          '[data-anonymize="person-name"], .result-lockup__name, [class*="result-lockup__name"]'
+        ));
         const matched = nameEls.find(el => (el.textContent || '').trim().toLowerCase() === leadName);
-        snCard = matched?.closest('li, [data-id], .artdeco-list__item') || null;
+        snCard = matched?.closest('li, [data-id], .artdeco-list__item') ?? null;
       }
 
       if (!snCard) {
-        console.log('[cazary.ai] connect mode=fast SalesNav → fallback mode=profile (card no encontrada en lista)');
+        console.log('[cazary.ai] connect mode=fast SalesNav: card no encontrada → fallback perfil');
         return executeConnect(taskId, note, leadId, campaignId, lead);
       }
 
-      // Buscar botón Connect inline en la card
-      const snConnectBtn = Array.from(snCard.querySelectorAll('button,[role="button"]')).find(el => {
-        if (!el.offsetParent) return false;
-        const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
-        const label = (el.getAttribute('aria-label') || '').toLowerCase();
-        return t === 'conectar' || t === 'connect' ||
-               label.includes('conectar') || label.includes('connect');
-      }) || null;
+      // ── PASO 2: Click en botón "..." de la card ──────────────────────────────
+      let moreBtn =
+        snCard.querySelector('button[data-search-overflow-trigger]') ??
+        Array.from(snCard.querySelectorAll('button[aria-label]')).find(b => {
+          const label = (b.getAttribute('aria-label') || '').toLowerCase();
+          return label.includes('ver más acciones') || label.includes('more actions');
+        }) ?? null;
 
-      if (!snConnectBtn) {
-        console.log('[cazary.ai] connect mode=fast SalesNav → fallback mode=profile (sin btn Connect en card)');
+      if (!moreBtn) {
+        console.log('[cazary.ai] connect mode=fast SalesNav: botón "..." no encontrado → fallback');
         return executeConnect(taskId, note, leadId, campaignId, lead);
       }
 
-      console.log('[cazary.ai] connect mode=fast SalesNav: card encontrada → clickeando Connect');
-      simulateClick(snConnectBtn);
-      await sleep(1500);
+      console.log('[cazary.ai] connect mode=fast SalesNav: clickeando "..."');
+      simulateClick(moreBtn);
+      await sleepHuman();
 
-      // ── Dialog de nota SalesNav ───────────────────────────────────────────
-      const dialogOpen = isSalesNavDialogOpen();
-      if (dialogOpen) {
-        const sendBtn = findDialogSendButton();
-        if (!sendBtn) {
-          console.log('[cazary.ai] connect mode=fast SalesNav → fallback (sin send btn en dialog)');
-          return executeConnect(taskId, note, leadId, campaignId, lead);
-        }
-        if (note && note.trim()) {
-          const noteBtn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
-            const t = (el.innerText || el.textContent || '').toLowerCase();
-            return t.includes('nota') || t.includes('note') || t.includes('agregar') ||
-                   t.includes('add a') || t.includes('añadir') || t.includes('optional');
+      // ── PASO 3: Click en "Conectar" dentro del dropdown ──────────────────────
+      let connectDropdownItem = null;
+      for (let i = 0; i < 5; i++) {
+        connectDropdownItem = Array.from(
+          document.querySelectorAll('button.ember-view._item_1xnv7i, li._item_1xnv7i button')
+        ).find(b => {
+          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+          return txt === 'conectar' || txt === 'connect';
+        });
+        if (!connectDropdownItem) {
+          connectDropdownItem = Array.from(document.querySelectorAll(
+            '[role="menuitem"], [role="option"], .dropdown-item, [class*="dropdown"] li button'
+          )).find(b => {
+            const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+            return txt === 'conectar' || txt === 'connect';
           });
-          if (noteBtn) { simulateClick(noteBtn); await sleep(700); }
-          const noteField = document.querySelector(
-            'textarea#custom-message, textarea[name="message"], ' +
-            'textarea[placeholder*="nota"], textarea[placeholder*="note"], ' +
-            '.connect-cta-form textarea, [data-test-modal] textarea'
-          );
-          if (noteField) {
-            noteField.focus();
-            noteField.value = '';
-            document.execCommand('insertText', false, note.trim().slice(0, 300));
-            noteField.dispatchEvent(new Event('input',  { bubbles: true }));
-            noteField.dispatchEvent(new Event('change', { bubbles: true }));
-            await sleep(400);
-          }
         }
-        sendBtn.click();
-        await sleep(2000);
-        if (isSalesNavDialogOpen()) {
-          console.log('[cazary.ai] connect mode=fast SalesNav → fallback (dialog aún abierto)');
-          return executeConnect(taskId, note, leadId, campaignId, lead);
-        }
+        if (connectDropdownItem) break;
+        await sleep(400);
       }
 
-      const limitHit = document.body.innerText.toLowerCase().match(/límite|limit|weekly invitation/);
-      if (limitHit) {
+      if (!connectDropdownItem) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        console.log('[cazary.ai] connect mode=fast SalesNav: "Conectar" no en dropdown → fallback');
+        return executeConnect(taskId, note, leadId, campaignId, lead);
+      }
+
+      console.log('[cazary.ai] connect mode=fast SalesNav: clickeando "Conectar" en dropdown');
+      simulateClick(connectDropdownItem);
+      await sleepHuman();
+
+      // ── PASO 4: Interactuar con el dialog connect-cta-form ───────────────────
+      const sentFromDialog = await handleSalesNavConnectDialog(note);
+
+      if (sentFromDialog === 'limit') {
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
           action: 'connect', success: false, reason: 'daily_limit_reached',
-          lead_id: leadId, campaign_id: campaignId, method: 'fast',
+          lead_id: leadId, campaign_id: campaignId, method: 'fast_salesnav_search',
         }});
       }
+      if (!sentFromDialog) {
+        console.log('[cazary.ai] connect mode=fast SalesNav: dialog no cerró → fallback');
+        return executeConnect(taskId, note, leadId, campaignId, lead);
+      }
 
+      console.log('[cazary.ai] connect mode=fast SalesNav: ✅ conexión enviada desde lista');
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action: 'connect', success: true, reason: 'sent',
         lead_id: leadId, campaign_id: campaignId,
-        connection_note: note || '', method: 'fast',
+        connection_note: note || '', method: 'fast_salesnav_search',
       }});
     }
   }
@@ -2171,26 +2489,91 @@
       const { supabase_workspace_id: wsId } = await chrome.storage.local.get('supabase_workspace_id');
       if (wsId) await loadSelectorOverrides(wsId);
     } catch (_) {}
-    await sleep(2000 + Math.random() * 1500);
+
+    await sleepHuman();
+
+    // ── ETAPA A: Voyager Messaging API (solo LinkedIn, 1er grado) ────────────
+    if (platform === 'linkedin') {
+      const profileUrn = (() => {
+        const msgLink = document.querySelector('a[href*="/messaging/compose/?profileUrn="]');
+        const raw     = msgLink?.href?.match(/profileUrn=([^&]+)/)?.[1];
+        return raw ? decodeURIComponent(raw) : null;
+      })();
+
+      if (profileUrn) {
+        console.log(`[cazary.ai] executeMessage: intentando Voyager API, urn=${profileUrn}`);
+        try {
+          const csrfToken = document.cookie.match(/JSESSIONID="?([^";]+)/)?.[1] ?? '';
+          const body = {
+            keyVersion: 'LEGACY_INBOX',
+            conversationCreate: {
+              eventCreate: {
+                value: {
+                  'com.linkedin.voyager.messaging.create.MessageCreate': {
+                    body: text,
+                    attachments: [],
+                    attributedBody: { text, attributes: [] },
+                  },
+                },
+              },
+              recipients: [profileUrn],
+              subtype: 'MEMBER_TO_MEMBER',
+            },
+          };
+
+          const resp = await fetch('/voyager/api/messaging/conversations', {
+            method:  'POST',
+            headers: {
+              'csrf-token':                csrfToken,
+              'x-restli-protocol-version': '2.0.0',
+              'content-type':              'application/json',
+              'accept':                    'application/vnd.linkedin.normalized+json+2.1',
+            },
+            credentials: 'include',
+            body: JSON.stringify(body),
+          });
+
+          if (resp.status === 201) {
+            console.log('[cazary.ai] executeMessage: ✅ enviado vía Voyager API');
+            return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+              action: 'message', success: true, method: 'voyager_api',
+              lead_id: leadId, campaign_id: campaignId, message_text: text,
+            }});
+          }
+          if (resp.status === 429) {
+            console.warn('[cazary.ai] executeMessage: Voyager API rate limit');
+            return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+              action: 'message', success: false, reason: 'rate_limit',
+              lead_id: leadId, campaign_id: campaignId,
+            }});
+          }
+          console.warn(`[cazary.ai] executeMessage: Voyager API ${resp.status} → fallback DOM`);
+        } catch (apiErr) {
+          console.warn('[cazary.ai] executeMessage: Voyager API excepción → fallback DOM', apiErr.message);
+        }
+      }
+    }
+
+    // ── ETAPA B/C: DOM (LinkedIn o SalesNav) ─────────────────────────────────
     window.scrollTo({ top: 200, behavior: 'smooth' });
-    await sleep(1000);
+    await sleepMicro();
 
     const msgBtnSel = getSelector(platform, 'message', 'message_btn',
       'button[aria-label*="Mensaje"], button[aria-label*="Message"], button[aria-label*="InMail"]');
     let msgBtn = null;
-    for (let i = 0; i < 3; i++) {
-      msgBtn = Array.from(document.querySelectorAll('button,[role="button"],a'))
-        .filter(el => el.offsetParent)
+    for (let i = 0; i < 4; i++) {
+      msgBtn = Array.from(document.querySelectorAll('button, [role="button"], a'))
+        .filter(el => el.offsetParent !== null)
         .find(el => {
           const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
           const label = (el.getAttribute('aria-label') || '').toLowerCase();
-          return t === 'mensaje'     || t === 'message'  ||
-                 t === 'inmail'      || t.includes('enviar mensaje') ||
-                 label.includes('mensaje') || label.includes('message') ||
+          return t === 'mensaje'   || t === 'message'  || t === 'inmail' ||
+                 t.includes('enviar mensaje') || t.includes('send message') ||
+                 label.includes('mensaje')   || label.includes('message') ||
                  label.includes('inmail');
-        }) || document.querySelector(msgBtnSel);
+        }) ?? document.querySelector(msgBtnSel) ?? null;
       if (msgBtn) break;
-      await sleep(800);
+      await sleep(700);
     }
 
     if (!msgBtn) {
@@ -2204,11 +2587,12 @@
       }});
     }
 
-    msgBtn.focus();
-    msgBtn.click();
-    await sleep(2500);
+    simulateClick(msgBtn);
+    await sleepNav();
 
+    // ── Localizar el campo de escritura ──────────────────────────────────────
     let inputEl = null;
+    let isContentEditable = false;
 
     const msgFieldSel = platform === 'salesnav'
       ? getSelector('salesnav', 'message', 'message_field',
@@ -2216,31 +2600,28 @@
       : getSelector('linkedin', 'message', 'message_field',
           '.msg-form__contenteditable[contenteditable="true"], [role="textbox"][data-placeholder], [data-artdeco-is-focused][contenteditable="true"]');
 
-    if (platform === 'salesnav') {
-      for (let i = 0; i < 4; i++) {
-        inputEl =
-          document.querySelector('textarea.message-anywhere-compose-box__msg-body') ||
-          document.querySelector('.compose-message__textarea') ||
-          document.querySelector('[data-test-compose-message-textarea]') ||
-          document.querySelector('textarea[placeholder*="mensaje"], textarea[placeholder*="message"]') ||
-          document.querySelector('.inmail-compose-form textarea') ||
-          document.querySelector('[contenteditable="true"][role="textbox"]') ||
-          document.querySelector(msgFieldSel) ||
-          document.querySelector('textarea:not([disabled])');
+    for (let i = 0; i < 6; i++) {
+      if (platform === 'linkedin') {
+        inputEl = document.querySelector(
+          '.msg-form__contenteditable[contenteditable="true"],' +
+          '[role="textbox"][contenteditable="true"],' +
+          '[data-artdeco-is-focused][contenteditable="true"],' +
+          '.msg-form__msg-content-container [contenteditable="true"]'
+        ) ?? document.querySelector(msgFieldSel) ?? null;
+        if (inputEl) { isContentEditable = true; break; }
+      } else {
+        inputEl = document.querySelector(
+          'textarea.message-anywhere-compose-box__msg-body,' +
+          '.compose-message__textarea,' +
+          '[data-test-compose-message-textarea],' +
+          '.inmail-compose-form textarea,' +
+          'textarea[placeholder*="mensaje"],' +
+          'textarea[placeholder*="message"]'
+        ) ?? document.querySelector(msgFieldSel)
+          ?? document.querySelector('textarea:not([disabled])') ?? null;
         if (inputEl) break;
-        await sleep(700);
       }
-    } else {
-      for (let i = 0; i < 4; i++) {
-        inputEl =
-          document.querySelector('.msg-form__contenteditable[contenteditable="true"]') ||
-          document.querySelector('[role="textbox"][data-placeholder]') ||
-          document.querySelector('[contenteditable="true"].msg-form__contenteditable') ||
-          document.querySelector('[data-artdeco-is-focused][contenteditable="true"]') ||
-          document.querySelector(msgFieldSel);
-        if (inputEl) break;
-        await sleep(700);
-      }
+      await sleep(600);
     }
 
     if (!inputEl) {
@@ -2248,45 +2629,39 @@
         document.querySelector('.msg-overlay-conversation-bubble, .compose-message, [class*="compose"]')?.innerHTML
         ?? document.body.innerHTML.substring(0, 3000));
       console.warn('[cazary.ai][SelectorHealing] selector_failure: message_field');
-      console.warn('[cazary.ai] Message input not found. Page HTML fragment:',
-        document.body.innerHTML.slice(0, 600));
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
         action: 'message', success: false, reason: 'input_not_found',
         lead_id: leadId, campaign_id: campaignId,
       }});
     }
 
-    inputEl.focus();
-    if (inputEl.tagName === 'TEXTAREA') {
-      inputEl.value = '';
-      document.execCommand('insertText', false, text);
-      inputEl.dispatchEvent(new Event('input',  { bubbles: true }));
-      inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+    // ── Escribir el mensaje humanizado ───────────────────────────────────────
+    if (isContentEditable) {
+      await typeHumanContenteditable(inputEl, text);
     } else {
-      inputEl.innerText = '';
-      document.execCommand('insertText', false, text);
-      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      await typeHuman(inputEl, text, true);
     }
-    await sleep(800 + Math.random() * 400);
+    await sleepHuman();
 
-    // Send button — buscar por texto (funciona en ambas plataformas sin importar clases)
+    // ── Buscar y clickar el botón Enviar ─────────────────────────────────────
     const msgSendBtnSel = getSelector(platform, 'message', 'message_send_btn',
       'button[aria-label*="Enviar"], button[aria-label*="Send message"]');
     let sendBtn = null;
     for (let i = 0; i < 5; i++) {
-      sendBtn = Array.from(document.querySelectorAll('button,[role="button"]'))
-        .filter(el => el.offsetParent && !el.disabled)
+      sendBtn = Array.from(document.querySelectorAll('button, [role="button"]'))
+        .filter(el => el.offsetParent !== null && !el.disabled)
         .find(el => {
-          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-          return t === 'enviar' || t === 'send';
-        }) || document.querySelector(msgSendBtnSel);
+          const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
+          const label = (el.getAttribute('aria-label') || '').toLowerCase();
+          return t === 'enviar' || t === 'send' ||
+                 label.includes('enviar') || label.includes('send message');
+        }) ?? document.querySelector(msgSendBtnSel) ?? null;
       if (sendBtn) break;
-      await sleep(500);
+      await sleep(400);
     }
 
     if (sendBtn && !sendBtn.disabled) {
-      sendBtn.focus();
-      sendBtn.click();
+      simulateClick(sendBtn);
     } else {
       if (!sendBtn) {
         reportSelectorFailure(platform, 'message', 'message_send_btn', msgSendBtnSel,
@@ -2300,12 +2675,143 @@
       }));
     }
 
-    await sleep(1000);
-    console.log(`[cazary.ai] message sent platform=${platform} leadId=${leadId}`);
-    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-      action: 'message', success: true,
+    await sleepHuman();
+
+    // ── Verificar envío: el campo debe quedar vacío ───────────────────────────
+    const sentOk = isContentEditable
+      ? (inputEl.innerText || inputEl.textContent || '').trim() === ''
+      : inputEl.value.trim() === '';
+
+    if (!sentOk) {
+      console.warn('[cazary.ai] executeMessage: campo no vacío tras send → reintentando Enter');
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', keyCode: 13, bubbles: true,
+      }));
+      await sleep(1200);
+    }
+
+    console.log(`[cazary.ai] executeMessage: ✅ mensaje enviado platform=${platform}`);
+    return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action: 'message', success: true, method: 'dom',
       lead_id: leadId, campaign_id: campaignId, message_text: text,
     }});
+  }
+
+  // ── ACCIÓN 3b: CHECK NETWORK UPDATES (batch via Voyager API) ────────────
+
+  async function executeCheckNetworkUpdates(taskId, workspaceId) {
+    console.log('[cazary.ai] executeCheckNetworkUpdates: inicio batch check vía Voyager API');
+    await sleep(1500 + Math.random() * 1000);
+
+    try {
+      const csrfMatch = document.cookie.match(/JSESSIONID="?([^";]+)/);
+      const csrf = csrfMatch ? csrfMatch[1] : '';
+      if (!csrf) {
+        console.warn('[cazary.ai] checkNetworkUpdates: sin CSRF token');
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'check_network_updates', success: false, reason: 'no_csrf',
+        }});
+      }
+
+      const headers = {
+        'csrf-token':                csrf,
+        'x-restli-protocol-version': '2.0.0',
+        'x-li-lang':                 'es_ES',
+        'accept':                    'application/vnd.linkedin.normalized+json+2.1',
+      };
+
+      // ── LLAMADA 1: Invitaciones enviadas pendientes ──────────────────────────
+      let pendingProfileIds = new Set();
+      let pendingUrns = new Set();
+
+      for (let start = 0; start <= 40; start += 40) {
+        const sentUrl = `https://www.linkedin.com/voyager/api/relationships/invitations` +
+          `?invitationType=SENT&start=${start}&count=40`;
+
+        const sentRes = await fetchWithTimeout(sentUrl, { headers }, 10000).catch(() => null);
+        if (!sentRes || !sentRes.ok) break;
+
+        const sentData = await sentRes.json().catch(() => null);
+        if (!sentData) break;
+
+        const elements = sentData?.elements ?? sentData?.data?.elements ?? [];
+        const included = sentData?.included ?? [];
+
+        for (const el of elements) {
+          const toMember = el.toMember ?? el.invitee;
+          const profileId = toMember?.profileId ??
+            (toMember?.['com.linkedin.voyager.growth.invitation.InviteeProfile']?.profileId);
+          if (profileId) pendingProfileIds.add(profileId);
+
+          const urn = el.entityUrn ?? toMember?.entityUrn ?? '';
+          if (urn) pendingUrns.add(urn);
+        }
+
+        for (const inc of included) {
+          if (inc.entityUrn && inc.entityUrn.includes('fsd_profile')) {
+            const m = inc.entityUrn.match(/fsd_profile:([A-Za-z0-9_-]+)/);
+            if (m) pendingProfileIds.add(m[1]);
+          }
+          if (inc.profileId) pendingProfileIds.add(inc.profileId);
+        }
+
+        if (elements.length < 40) break;
+      }
+
+      console.log(`[cazary.ai] checkNetworkUpdates: ${pendingProfileIds.size} invitaciones pendientes`);
+
+      // ── LLAMADA 2: Conexiones recientes ─────────────────────────────────────
+      let recentConnectionIds = new Set();
+      let recentConnectionNames = [];
+
+      const connUrl = `https://www.linkedin.com/voyager/api/relationships/connections` +
+        `?count=40&start=0&sortType=RECENTLY_ADDED`;
+
+      const connRes = await fetchWithTimeout(connUrl, { headers }, 10000).catch(() => null);
+      if (connRes && connRes.ok) {
+        const connData = await connRes.json().catch(() => null);
+        const connElements = connData?.elements ?? connData?.data?.elements ?? [];
+        const connIncluded = connData?.included ?? [];
+
+        for (const el of connElements) {
+          const profileId = el.miniProfile?.publicIdentifier ?? el.profileId;
+          if (profileId) recentConnectionIds.add(profileId);
+          if (el.miniProfile) {
+            recentConnectionNames.push({
+              profileId: el.miniProfile.publicIdentifier ?? '',
+              entityUrn: el.miniProfile.entityUrn ?? '',
+              firstName: el.miniProfile.firstName ?? '',
+              lastName:  el.miniProfile.lastName ?? '',
+            });
+          }
+        }
+        for (const inc of connIncluded) {
+          if (inc.entityUrn && inc.entityUrn.includes('fsd_profile')) {
+            const m = inc.entityUrn.match(/fsd_profile:([A-Za-z0-9_-]+)/);
+            if (m) recentConnectionIds.add(m[1]);
+          }
+          if (inc.publicIdentifier) recentConnectionIds.add(inc.publicIdentifier);
+        }
+      }
+
+      console.log(`[cazary.ai] checkNetworkUpdates: ${recentConnectionIds.size} conexiones recientes`);
+
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action:              'check_network_updates',
+        success:             true,
+        pendingProfileIds:   Array.from(pendingProfileIds),
+        pendingUrns:         Array.from(pendingUrns),
+        recentConnectionIds: Array.from(recentConnectionIds),
+        recentConnections:   recentConnectionNames,
+        workspace_id:        workspaceId,
+      }});
+
+    } catch (err) {
+      console.error('[cazary.ai] checkNetworkUpdates error:', err);
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'check_network_updates', success: false, reason: err.message,
+      }});
+    }
   }
 
   // ── ACCIÓN 4: CHECK CONNECTION STATUS ────────────────────────────────────
@@ -2332,79 +2838,185 @@
 
   async function executeFollow(taskId, leadId, campaignId) {
     const platform = getPlatform();
-    console.log(`[cazary.ai] executeFollow platform=${platform}`);
-    await sleep(2000);
+    console.log(`[cazary.ai] executeFollow platform=${platform} leadId=${leadId}`);
 
-    let followBtn = null;
+    try {
+      await sleepHuman();
 
-    if (platform === 'salesnav') {
-      const opened = await clickMoreButton();
-      if (!opened) {
+      // ── Verificar si ya seguimos (evitar doble follow) ────────────────────
+      const alreadyFollowing =
+        !!document.querySelector('button[aria-label^="Dejar de seguir"]') ||
+        !!Array.from(document.querySelectorAll('button, [role="button"]')).find(el => {
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          return t === 'siguiendo' || t === 'following';
+        });
+
+      if (alreadyFollowing) {
+        console.log('[cazary.ai] executeFollow: ya seguimos a este contacto → skip');
         return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-          action: 'follow', success: false, reason: 'more_button_not_found',
+          action: 'follow', success: true, reason: 'already_following',
           lead_id: leadId, campaign_id: campaignId,
         }});
       }
-      followBtn = findMenuItemByText('seguir', 'follow');
-    } else {
-      followBtn = Array.from(document.querySelectorAll('button,[role="button"]')).find(el => {
-        const t = (el.innerText || '').trim().toLowerCase();
-        return (t === 'seguir' || t === 'follow') && el.offsetParent;
-      });
+
+      // ── Estrategia A: botón directo en el perfil (aria-label estable) ────
+      let followBtn =
+        document.querySelector('button[aria-label^="Seguir a"]') ??
+        document.querySelector('button[aria-label^="Follow "]') ??
+        null;
+
+      // ── Estrategia B: buscar por texto en botones visibles ───────────────
+      if (!followBtn) {
+        followBtn = Array.from(document.querySelectorAll('button, [role="button"]'))
+          .filter(el => el.offsetParent !== null)
+          .find(el => {
+            const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
+            const label = (el.getAttribute('aria-label') || '').toLowerCase();
+            return t === 'seguir' || t === 'follow' ||
+                   label.startsWith('seguir a') || label.startsWith('follow ');
+          }) ?? null;
+      }
+
+      // ── Estrategia C: menú "..." ──────────────────────────────────────────
       if (!followBtn) {
         const opened = await clickMoreButton();
-        if (opened) followBtn = findMenuItemByText('seguir', 'follow');
+        if (opened) {
+          await sleepHuman();
+          if (platform === 'salesnav') {
+            followBtn =
+              Array.from(document.querySelectorAll('button.ember-view._item_1xnv7i'))
+                .find(b => {
+                  const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                  return t === 'seguir' || t === 'follow';
+                }) ??
+              findMenuItemByText('seguir', 'follow');
+          } else {
+            followBtn = findMenuItemByText('seguir', 'follow');
+          }
+        }
       }
-    }
 
-    if (!followBtn) {
+      if (!followBtn) {
+        console.warn('[cazary.ai] executeFollow: botón no encontrado');
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'follow', success: false, reason: 'button_not_found',
+          lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+
+      simulateClick(followBtn);
+      await sleepHuman();
+
+      const nowFollowing =
+        !!document.querySelector('button[aria-label^="Dejar de seguir"]') ||
+        !!Array.from(document.querySelectorAll('button, [role="button"]')).find(el => {
+          const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
+          const label = (el.getAttribute('aria-label') || '').toLowerCase();
+          return t === 'siguiendo' || t === 'following' ||
+                 label.startsWith('dejar de seguir') || label.startsWith('unfollow');
+        });
+
+      if (!nowFollowing) {
+        console.warn('[cazary.ai] executeFollow: botón no cambió a "Siguiendo" tras click');
+      }
+
+      console.log('[cazary.ai] executeFollow: ✅ follow completado');
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'follow', success: false, reason: 'button_not_found',
+        action: 'follow', success: true, reason: 'followed',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+
+    } catch (err) {
+      console.error('[cazary.ai] executeFollow error:', err);
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'follow', success: false, reason: err.message ?? 'unknown_error',
         lead_id: leadId, campaign_id: campaignId,
       }});
     }
-
-    followBtn.focus();
-    followBtn.click();
-    await sleep(800);
-    console.log('[cazary.ai] follow done');
-    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-      action: 'follow', success: true, lead_id: leadId, campaign_id: campaignId,
-    }});
   }
 
   // ── ACCIÓN 5b: UNFOLLOW ───────────────────────────────────────────────────
 
   async function executeUnfollow(taskId, leadId, campaignId) {
     const platform = getPlatform();
-    console.log(`[cazary.ai] executeUnfollow platform=${platform}`);
-    await sleep(2000);
+    console.log(`[cazary.ai] executeUnfollow platform=${platform} leadId=${leadId}`);
 
-    const opened = await clickMoreButton();
-    if (!opened) {
+    try {
+      await sleepHuman();
+
+      // ── Estrategia A: botón directo "Dejar de seguir" (aria-label estable) ──
+      let unfollowBtn =
+        document.querySelector('button[aria-label^="Dejar de seguir"]') ??
+        document.querySelector('button[aria-label^="Unfollow "]') ??
+        null;
+
+      // ── Estrategia B: menú "..." → "Dejar de seguir" ─────────────────────
+      if (!unfollowBtn) {
+        const opened = await clickMoreButton();
+        if (!opened) {
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'unfollow', success: false, reason: 'more_button_not_found',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        await sleepHuman();
+
+        if (platform === 'salesnav') {
+          unfollowBtn =
+            Array.from(document.querySelectorAll('button.ember-view._item_1xnv7i'))
+              .find(b => {
+                const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                return t === 'dejar de seguir' || t === 'unfollow' || t === 'stop following';
+              }) ??
+            findMenuItemByText('dejar de seguir', 'unfollow', 'stop following');
+        } else {
+          unfollowBtn = findMenuItemByText('dejar de seguir', 'unfollow', 'stop following');
+        }
+      }
+
+      if (!unfollowBtn) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        const notFollowing =
+          !!document.querySelector('button[aria-label^="Seguir a"]') ||
+          !!document.querySelector('button[aria-label^="Follow "]');
+        if (notFollowing) {
+          console.log('[cazary.ai] executeUnfollow: no seguíamos a este contacto → skip');
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'unfollow', success: true, reason: 'already_not_following',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+        console.warn('[cazary.ai] executeUnfollow: botón no encontrado');
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'unfollow', success: false, reason: 'button_not_found',
+          lead_id: leadId, campaign_id: campaignId,
+        }});
+      }
+
+      simulateClick(unfollowBtn);
+      await sleepHuman();
+
+      const nowNotFollowing =
+        !!document.querySelector('button[aria-label^="Seguir a"]') ||
+        !!document.querySelector('button[aria-label^="Follow "]') ||
+        !!Array.from(document.querySelectorAll('button')).find(el => {
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          return t === 'seguir' || t === 'follow';
+        });
+
+      console.log(`[cazary.ai] executeUnfollow: ✅ unfollow completado, verificado=${nowNotFollowing}`);
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'unfollow', success: false, reason: 'more_button_not_found',
+        action: 'unfollow', success: true, reason: 'unfollowed',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+
+    } catch (err) {
+      console.error('[cazary.ai] executeUnfollow error:', err);
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'unfollow', success: false, reason: err.message ?? 'unknown_error',
         lead_id: leadId, campaign_id: campaignId,
       }});
     }
-
-    const unfollowItem = findMenuItemByText(
-      'dejar de seguir', 'unfollow', 'stop following', 'dejar seguir'
-    );
-    if (!unfollowItem) {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'unfollow', success: false, reason: 'item_not_found',
-        lead_id: leadId, campaign_id: campaignId,
-      }});
-    }
-
-    simulateClick(unfollowItem);
-    await sleep(800);
-    console.log('[cazary.ai] unfollow done');
-    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-      action: 'unfollow', success: true, lead_id: leadId, campaign_id: campaignId,
-    }});
   }
 
   // ── ACCIÓN 6: DISCONNECT ──────────────────────────────────────────────────
@@ -2451,28 +3063,207 @@
 
   // ── ACCIÓN 7: LIKE POST ───────────────────────────────────────────────────
 
-  async function executeLikePost(taskId, leadId, campaignId) {
-    console.log('[cazary.ai] executeLikePost');
-    await sleep(2000);
+  async function executeLikePost(taskId, leadId, campaignId, profileUrl) {
+    console.log('[cazary.ai] executeLikePost: inicio', { leadId, profileUrl });
 
-    const likeButtons = Array.from(document.querySelectorAll(
-      'button[aria-label*="Me gusta"]:not([aria-pressed="true"]), ' +
-      'button[aria-label*="Like"]:not([aria-pressed="true"]), ' +
-      'button[data-control-name="react"]:not(.active), ' +
-      'button.react-button__trigger:not([aria-pressed="true"])'
-    )).filter(b => b.offsetParent && !b.disabled);
+    // ── 1. Construir URL de actividad reciente ────────────────────────────────
+    let activityUrl = null;
 
-    if (!likeButtons.length) {
+    const liMatch = (profileUrl ?? '').match(/linkedin\.com\/in\/([^/?#]+)/);
+    if (liMatch) {
+      const username = liMatch[1].replace(/\/$/, '');
+      activityUrl = `https://www.linkedin.com/in/${username}/recent-activity/all/`;
+    }
+
+    if (!activityUrl) {
+      const snMatch = (profileUrl ?? '').match(
+        /linkedin\.com\/sales\/(?:lead|people)\/([A-Za-z0-9_-]+)/
+      );
+      if (snMatch) {
+        const entityId = snMatch[1].split(',')[0];
+        const csrfMatch = document.cookie.match(/JSESSIONID="?([^";]+)/);
+        const csrf = csrfMatch ? csrfMatch[1] : '';
+
+        if (csrf && entityId.startsWith('ACw')) {
+          try {
+            const resolveUrl = `https://www.linkedin.com/voyager/api/identity/profiles` +
+              `?memberIdentity=${entityId}&count=1`;
+            const res = await fetchWithTimeout(resolveUrl, {
+              headers: {
+                'csrf-token':                csrf,
+                'x-restli-protocol-version': '2.0.0',
+                'accept':                    'application/vnd.linkedin.normalized+json+2.1',
+              },
+            }, 8000).catch(() => null);
+            if (res && res.ok) {
+              const data = await res.json().catch(() => null);
+              const pi = data?.elements?.[0]?.miniProfile?.publicIdentifier
+                ?? data?.included?.[0]?.publicIdentifier;
+              if (pi) activityUrl = `https://www.linkedin.com/in/${pi}/recent-activity/all/`;
+            }
+          } catch (_) { /* continuar sin resolución */ }
+        }
+      }
+    }
+
+    if (!activityUrl) {
+      console.warn('[cazary.ai] executeLikePost: no se pudo construir activityUrl', profileUrl);
       return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-        action: 'like', success: false, reason: 'no_posts_to_like',
+        action: 'like', success: false, reason: 'cannot_build_activity_url',
         lead_id: leadId, campaign_id: campaignId,
       }});
     }
 
-    simulateClick(likeButtons[0]);
-    await sleep(600);
-    safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
-      action: 'like', success: true, lead_id: leadId, campaign_id: campaignId,
+    // ── 2. Navegar a la página de actividad reciente ──────────────────────────
+    console.log('[cazary.ai] executeLikePost: navegando a', activityUrl);
+    window.location.href = activityUrl;
+
+    let pageReady = false;
+    for (let i = 0; i < 30; i++) {
+      await sleep(500);
+      if (window.location.href.includes('/recent-activity/')) {
+        pageReady = true;
+        break;
+      }
+    }
+    if (!pageReady) {
+      console.warn('[cazary.ai] executeLikePost: página no cargó en 15s');
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'like', success: false, reason: 'page_load_timeout',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    await sleep(2500 + Math.random() * 1000);
+
+    // ── 3. Scroll suave para simular comportamiento humano ────────────────────
+    window.scrollTo({ top: 300, behavior: 'smooth' });
+    await sleep(800 + Math.random() * 400);
+
+    // ── 4. Buscar el primer post NO likeado ──────────────────────────────────
+    const findUnlikedButton = () => {
+      // Estrategia A: selector directo (más fiable — Ember.js, página de actividad)
+      // "Recomendar" es el nombre real del botón Like en español (auditado 2026-06-18)
+      const direct = document.querySelector(
+        'button[aria-label="Recomendar"][aria-pressed="false"],' +
+        'button[aria-label="Like"][aria-pressed="false"],' +
+        'button[aria-label="Me gusta"][aria-pressed="false"]'
+      );
+      if (direct && direct.offsetParent !== null) return direct;
+
+      // Estrategia B: búsqueda amplia por aria-label
+      const allButtons = Array.from(document.querySelectorAll(
+        'button[aria-label], [role="button"][aria-label]'
+      ));
+      const likeBtn = allButtons.find(btn => {
+        const label   = (btn.getAttribute('aria-label') ?? '').toLowerCase();
+        const pressed = btn.getAttribute('aria-pressed');
+        const isLiked = pressed === 'true'
+          || label.includes('ya me gusta')
+          || label.includes('unlike')
+          || label.includes('quitar me gusta')
+          || btn.classList.contains('active')
+          || btn.classList.contains('react--active');
+        if (isLiked) return false;
+        return label === 'recomendar'       // ← ES: nombre real en actividad
+          || label === 'me gusta'           // ← ES: variante
+          || label === 'like'               // ← EN
+          || label.includes('recomendar')   // ← ES: coincidencia parcial
+          || label.includes('me gusta')
+          || label.includes('like')
+          || label.includes('react')
+          || label.includes('reaccionar');
+      });
+      if (likeBtn) return likeBtn;
+
+      // Estrategia C: clases artdeco estables (Ember.js — muy confiables)
+      const artdecoBtns = document.querySelectorAll(
+        '.artdeco-button.artdeco-button--3:not([aria-pressed="true"]),' +
+        '.react-button__trigger:not(.active),' +
+        '[class*="react-button"]:not([aria-pressed="true"]),' +
+        '[data-test-id*="social-action"]:not([aria-pressed="true"])'
+      );
+      for (const btn of artdecoBtns) {
+        const txt   = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+        if (txt === 'recomendar' || txt === 'me gusta' || txt === 'like'
+            || txt === 'reaccionar'
+            || label === 'recomendar' || label === 'me gusta') return btn;
+      }
+      return null;
+    };
+
+    let likeButton = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      likeButton = findUnlikedButton();
+      if (likeButton) break;
+      console.log(`[cazary.ai] executeLikePost: intento ${attempt + 1} sin botón, scrolling...`);
+      window.scrollTo({ top: 400 + attempt * 300, behavior: 'smooth' });
+      await sleep(1500 + Math.random() * 500);
+    }
+
+    if (!likeButton) {
+      console.warn('[cazary.ai] executeLikePost: no se encontró botón de Like en actividad reciente');
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'like', success: false, reason: 'no_like_button_found',
+        lead_id: leadId, campaign_id: campaignId,
+      }});
+    }
+
+    // ── 5. Scroll al botón y click humanizado ─────────────────────────────────
+    likeButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(600 + Math.random() * 300);
+
+    console.log('[cazary.ai] executeLikePost: haciendo click en Like');
+    simulateClick(likeButton);
+    await sleep(1200 + Math.random() * 500);
+
+    // ── 6. Verificar efectividad ──────────────────────────────────────────────
+    const likeConfirmed = (() => {
+      const pressed = likeButton.getAttribute('aria-pressed');
+      const label   = (likeButton.getAttribute('aria-label') ?? '').toLowerCase();
+      return pressed === 'true'
+        || label.includes('ya me gusta')
+        || label.includes('unlike')
+        || likeButton.classList.contains('active')
+        || likeButton.classList.contains('react--active');
+    })();
+
+    if (!likeConfirmed) {
+      console.log('[cazary.ai] executeLikePost: like no confirmado, reintentando...');
+      const picker = document.querySelector(
+        '[class*="reactions-picker"], [class*="reaction-picker"], [class*="emoji-picker"]'
+      );
+      if (picker) {
+        const likeInPicker = Array.from(picker.querySelectorAll('button, [role="button"]'))
+          .find(b => {
+            const label = (b.getAttribute('aria-label') ?? '').toLowerCase();
+            return label === 'me gusta' || label === 'like';
+          });
+        if (likeInPicker) {
+          simulateClick(likeInPicker);
+          await sleep(1000);
+        } else {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await sleep(500);
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'like', success: false, reason: 'like_not_confirmed',
+            lead_id: leadId, campaign_id: campaignId,
+          }});
+        }
+      } else {
+        simulateClick(likeButton);
+        await sleep(1000);
+      }
+    }
+
+    console.log('[cazary.ai] executeLikePost: ✅ Like exitoso');
+    return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+      action:      'like',
+      success:     true,
+      reason:      'liked_from_activity_tab',
+      lead_id:     leadId,
+      campaign_id: campaignId,
     }});
   }
 
@@ -2839,122 +3630,495 @@
 
   async function executeWithdraw(taskId, leadId) {
     try {
-      await sleep(1500);
+      await sleepHuman();
       const platform = getPlatform();
-      const withdrawSel = getSelector(platform, 'withdraw', 'withdraw_btn',
-        'button[aria-label*="Pending"], button[aria-label*="Retirar"], button[aria-label*="Withdraw"], button[aria-label*="Remove connection"]');
-      const selectors = [
-        withdrawSel,
-        'button[aria-label*="Pending"]',
-        'button[aria-label*="Remove connection"]',
-        'button[aria-label*="Retirar"]',
-        'button[aria-label*="Withdraw"]',
-      ];
-      let btn = null;
-      for (const sel of selectors) {
-        btn = document.querySelector(sel);
-        if (btn) break;
+      console.log(`[cazary.ai] executeWithdraw platform=${platform} leadId=${leadId}`);
+
+      // ── ETAPA A: Voyager API DELETE (0 page views) ────────────────────────
+      const csrfToken = document.cookie.match(/JSESSIONID="?([^";]+)/)?.[1] ?? '';
+
+      const currentUrl  = window.location.href;
+      const liSlug      = currentUrl.match(/linkedin\.com\/in\/([^/?#]+)/)?.[1]?.replace(/\/$/, '');
+      const snEntityId  = currentUrl.match(/\/sales\/lead\/([^,?#]+)/)?.[1] ?? null;
+
+      let invitationId = null;
+
+      if (liSlug || snEntityId) {
+        try {
+          const pages = [
+            `/voyager/api/relationships/invitations?invitationType=SENT&start=0&count=40`,
+            `/voyager/api/relationships/invitations?invitationType=SENT&start=40&count=40`,
+          ];
+
+          for (const url of pages) {
+            const resp = await fetch(url, {
+              headers: {
+                'csrf-token':                csrfToken,
+                'x-restli-protocol-version': '2.0.0',
+                'accept':                    'application/vnd.linkedin.normalized+json+2.1',
+              },
+              credentials: 'include',
+            });
+            if (!resp.ok) break;
+
+            const data     = await resp.json();
+            const elements = data?.elements ?? [];
+
+            for (const inv of elements) {
+              const toId   = inv.toMember?.profileId ?? '';
+              const toSlug = inv.toMember?.miniProfile?.publicIdentifier ?? '';
+
+              const matchLI = liSlug && (toSlug === liSlug || toId === liSlug);
+              const matchSN = snEntityId && (toId === snEntityId || toSlug === snEntityId);
+
+              if (matchLI || matchSN) {
+                invitationId = inv.id;
+                console.log(`[cazary.ai] executeWithdraw: invitationId encontrado: ${invitationId}`);
+                break;
+              }
+            }
+            if (invitationId) break;
+
+            const total = data?.paging?.total ?? 0;
+            if (elements.length < 40 || total <= 40) break;
+          }
+        } catch (apiErr) {
+          console.warn('[cazary.ai] executeWithdraw: error buscando invitations →', apiErr.message);
+        }
       }
-      if (!btn) {
-        const allBtns = Array.from(document.querySelectorAll('button'));
-        btn = allBtns.find(b => {
-          const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-          return txt === 'pendiente' || txt === 'pending' || txt === 'retirar invitación' ||
-                 txt === 'withdraw' || txt === 'eliminar conexión' || txt === 'remove connection';
-        });
+
+      if (invitationId) {
+        try {
+          await sleepMicro();
+          const delResp = await fetch(
+            `/voyager/api/relationships/invitations/${encodeURIComponent(invitationId)}`,
+            {
+              method:  'DELETE',
+              headers: {
+                'csrf-token':                csrfToken,
+                'x-restli-protocol-version': '2.0.0',
+                'accept':                    'application/vnd.linkedin.normalized+json+2.1',
+              },
+              credentials: 'include',
+            }
+          );
+
+          if (delResp.status === 204 || delResp.status === 200) {
+            console.log('[cazary.ai] executeWithdraw: ✅ cancelado vía Voyager API');
+            return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+              action: 'withdraw', success: true, reason: 'withdrawn',
+              method: 'voyager_api', lead_id: leadId,
+            }});
+          }
+          if (delResp.status === 404) {
+            console.log('[cazary.ai] executeWithdraw: invitation ya no existe (404) → success');
+            return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+              action: 'withdraw', success: true, reason: 'already_withdrawn',
+              method: 'voyager_api', lead_id: leadId,
+            }});
+          }
+          console.warn(`[cazary.ai] executeWithdraw: DELETE devolvió ${delResp.status} → fallback DOM`);
+        } catch (delErr) {
+          console.warn('[cazary.ai] executeWithdraw: excepción en DELETE →', delErr.message);
+        }
+      } else {
+        console.log('[cazary.ai] executeWithdraw: invitationId no encontrado → fallback DOM');
       }
-      if (!btn) {
-        reportSelectorFailure(platform, 'withdraw', 'withdraw_btn', withdrawSel,
-          document.querySelector('.pvs-profile-actions, .pv-top-card-v2-ctas')?.innerHTML
-          ?? document.body.innerHTML.substring(0, 3000));
-        console.warn('[cazary.ai][SelectorHealing] selector_failure: withdraw_btn');
-        safeSendMessage({ type: 'ACTION_DONE', taskId,
-          result: { action: 'withdraw', success: false, reason: 'button_not_found', lead_id: leadId } });
-        return;
+
+      // ── ETAPA B: DOM fallback ─────────────────────────────────────────────
+      let pendingBtn = null;
+      for (let i = 0; i < 4; i++) {
+        pendingBtn =
+          document.querySelector('button[aria-label="Pendiente"]') ??
+          document.querySelector('button[aria-label="Pending"]') ??
+          Array.from(document.querySelectorAll('button, [role="button"]'))
+            .filter(el => el.offsetParent !== null)
+            .find(el => {
+              const t     = (el.innerText || el.textContent || '').trim().toLowerCase();
+              const label = (el.getAttribute('aria-label') || '').toLowerCase();
+              return t === 'pendiente' || t === 'pending' ||
+                     label === 'pendiente' || label === 'pending';
+            }) ?? null;
+
+        if (pendingBtn) break;
+        await sleep(600);
       }
-      simulateClick(btn);
-      await sleep(1200);
-      // Confirm dialog if present
-      const confirmBtns = Array.from(document.querySelectorAll('button'));
-      const confirmBtn = confirmBtns.find(b => {
-        const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-        return txt === 'retirar' || txt === 'withdraw' || txt === 'confirmar' || txt === 'confirm';
-      });
+
+      if (!pendingBtn) {
+        const opened = await clickMoreButton();
+        if (opened) {
+          await sleepHuman();
+          pendingBtn = findMenuItemByText(
+            'retirar invitación', 'withdraw invitation',
+            'retirar', 'withdraw', 'cancelar invitación'
+          );
+        }
+      }
+
+      if (!pendingBtn) {
+        const isConnected = !!document.querySelector('a[href*="/messaging/compose/?profileUrn="]') ||
+          Array.from(document.querySelectorAll('button')).some(b =>
+            (b.innerText || '').trim().toLowerCase() === 'mensaje'
+          );
+        if (isConnected) {
+          console.log('[cazary.ai] executeWithdraw: ya es 1er grado (aceptó) → skip withdraw');
+          return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+            action: 'withdraw', success: false, reason: 'already_connected',
+            lead_id: leadId,
+          }});
+        }
+        console.warn('[cazary.ai] executeWithdraw: botón "Pendiente" no encontrado');
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'withdraw', success: false, reason: 'button_not_found',
+          method: 'dom', lead_id: leadId,
+        }});
+      }
+
+      simulateClick(pendingBtn);
+      await sleepHuman();
+
+      // Confirm dialog — esperar hasta 4s
+      let confirmBtn = null;
+      for (let i = 0; i < 8; i++) {
+        confirmBtn = Array.from(document.querySelectorAll(
+          'button, [role="button"], [role="menuitem"]'
+        )).find(b => {
+          if (b.disabled || b.offsetParent === null) return false;
+          const t     = (b.innerText || b.textContent || '').trim().toLowerCase();
+          const label = (b.getAttribute('aria-label') || '').toLowerCase();
+          return t === 'retirar' || t === 'withdraw' ||
+                 t === 'confirmar' || t === 'confirm' ||
+                 t.includes('retirar invitación') || t.includes('withdraw invitation') ||
+                 label.includes('retirar') || label.includes('withdraw');
+        }) ?? null;
+        if (confirmBtn) break;
+        await sleep(400);
+      }
+
       if (confirmBtn) {
         simulateClick(confirmBtn);
-        await sleep(1000);
+        await sleepHuman();
+        console.log('[cazary.ai] executeWithdraw: ✅ confirmado vía DOM');
+      } else {
+        console.log('[cazary.ai] executeWithdraw: sin confirm dialog — asumiendo éxito');
       }
-      safeSendMessage({ type: 'ACTION_DONE', taskId,
-        result: { action: 'withdraw', success: true, reason: 'withdrawn', lead_id: leadId } });
+
+      // Verificar que desapareció el botón "Pendiente"
+      await sleep(800);
+      const stillPending = !!document.querySelector(
+        'button[aria-label="Pendiente"], button[aria-label="Pending"]'
+      ) || Array.from(document.querySelectorAll('button')).some(b =>
+        ['pendiente', 'pending'].includes((b.innerText || '').trim().toLowerCase())
+      );
+      if (stillPending) {
+        console.warn('[cazary.ai] executeWithdraw: botón "Pendiente" aún visible — posible fallo');
+      }
+
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'withdraw', success: true, reason: 'withdrawn',
+        method: 'dom', lead_id: leadId,
+      }});
+
     } catch (err) {
-      safeSendMessage({ type: 'ACTION_DONE', taskId,
-        result: { action: 'withdraw', success: false, reason: err.message ?? 'unknown_error', lead_id: leadId } });
+      console.error('[cazary.ai] executeWithdraw error:', err);
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'withdraw', success: false, reason: err.message ?? 'unknown_error',
+        lead_id: leadId,
+      }});
     }
   }
 
   async function executeFindEmail(taskId, leadId) {
     try {
-      await sleep(2000);
-      // Open contact info overlay
-      const contactLink = document.querySelector('a[href*="overlay/contact-info"]') ||
+      await sleep(1000 + Math.random() * 500);
+
+      // ── 1. Extraer publicIdentifier desde la URL actual ───────────────────
+      const currentUrl = window.location.href;
+      let publicIdentifier = null;
+
+      const liMatch = currentUrl.match(/linkedin\.com\/in\/([^/?#]+)/);
+      if (liMatch) {
+        publicIdentifier = liMatch[1].replace(/\/$/, '');
+      }
+
+      if (!publicIdentifier) {
+        const snMatch = currentUrl.match(/\/sales\/lead\/([^,?#]+)/);
+        if (snMatch) {
+          const entityId = snMatch[1];
+          const csrfToken = document.cookie.match(/JSESSIONID="?([^";]+)/)?.[1] ?? '';
+          const resolveResp = await fetch(
+            `/voyager/api/identity/profiles?memberIdentity=${encodeURIComponent(entityId)}&count=1`,
+            {
+              headers: {
+                'csrf-token': csrfToken,
+                'x-restli-protocol-version': '2.0.0',
+                'accept': 'application/vnd.linkedin.normalized+json+2.1',
+              },
+              credentials: 'include',
+            }
+          );
+          if (resolveResp.ok) {
+            const resolveData = await resolveResp.json();
+            publicIdentifier = resolveData?.elements?.[0]?.miniProfile?.publicIdentifier ?? null;
+          }
+        }
+      }
+
+      // ── 2. Intentar Voyager API profileContactInfo ────────────────────────
+      if (publicIdentifier) {
+        await sleep(800 + Math.random() * 400);
+        const csrfToken = document.cookie.match(/JSESSIONID="?([^";]+)/)?.[1] ?? '';
+        const apiResp = await fetch(
+          `/voyager/api/identity/profiles/${encodeURIComponent(publicIdentifier)}/profileContactInfo`,
+          {
+            headers: {
+              'csrf-token': csrfToken,
+              'x-restli-protocol-version': '2.0.0',
+              'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            },
+            credentials: 'include',
+          }
+        );
+
+        if (apiResp.ok) {
+          const contactData = await apiResp.json();
+          const email   = contactData?.emailAddress ?? null;
+          const phones  = contactData?.phoneNumbers ?? [];
+          const sites   = (contactData?.websites ?? []).map(w => w.url).filter(Boolean);
+          const twitter = (contactData?.twitterHandles ?? []).map(t => t.name).filter(Boolean);
+
+          if (email) {
+            console.log(`[cazary.ai] executeFindEmail: encontrado vía Voyager API → ${email}`);
+            safeSendMessage({
+              type: 'ACTION_DONE', taskId,
+              result: {
+                action: 'find_email',
+                success: true,
+                lead_id: leadId,
+                enrichment_source: 'voyager_api',
+                data: {
+                  email,
+                  phone:    phones[0]?.number ?? null,
+                  websites: sites,
+                  twitter:  twitter[0] ?? null,
+                },
+              },
+            });
+            return;
+          }
+          console.log('[cazary.ai] executeFindEmail: Voyager API no devolvió email, intentando DOM...');
+        } else {
+          console.warn(`[cazary.ai] executeFindEmail: Voyager API error ${apiResp.status}, intentando DOM...`);
+        }
+      }
+
+      // ── 3. Fallback DOM: click en "Información de contacto" ──────────────
+      await sleep(1500 + Math.random() * 500);
+
+      const contactLink =
+        document.querySelector('a[href*="overlay/contact-info"]') ||
+        document.querySelector('a[href*="contact-info"]') ||
         Array.from(document.querySelectorAll('a, button')).find(el => {
           const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-          return txt.includes('información de contacto') || txt.includes('contact info');
+          return txt === 'información de contacto' || txt === 'contact info';
         });
+
       if (!contactLink) {
-        safeSendMessage({ type: 'ACTION_DONE', taskId,
-          result: { action: 'find_email', success: false, reason: 'contact_link_not_found', lead_id: leadId } });
+        safeSendMessage({
+          type: 'ACTION_DONE', taskId,
+          result: {
+            action: 'find_email', success: false,
+            reason: 'contact_link_not_found',
+            enrichment_source: 'dom_contact_overlay',
+            lead_id: leadId,
+          },
+        });
         return;
       }
+
       simulateClick(contactLink);
-      await sleep(1500);
-      // Extract email
+      await sleep(2000 + Math.random() * 500);
+
       const mailLinks = Array.from(document.querySelectorAll('a[href^="mailto:"]'));
       const foundEmail = mailLinks.length > 0
         ? mailLinks[0].href.replace('mailto:', '').split('?')[0].trim()
         : null;
+
+      const phoneSections = Array.from(document.querySelectorAll(
+        'section.pv-contact-info__contact-type, [class*="contact-info"] li'
+      ));
+      let foundPhone = null;
+      for (const sec of phoneSections) {
+        const phoneLink = sec.querySelector('a[href^="tel:"]');
+        if (phoneLink) {
+          foundPhone = phoneLink.href.replace('tel:', '').trim();
+          break;
+        }
+      }
+
+      const closeBtn = document.querySelector(
+        'button[aria-label="Descartar"], button[aria-label="Dismiss"],' +
+        'button.artdeco-modal__dismiss, [data-test-modal-close-btn]'
+      );
+      if (closeBtn) simulateClick(closeBtn);
+
       if (!foundEmail) {
-        safeSendMessage({ type: 'ACTION_DONE', taskId,
-          result: { action: 'find_email', success: false, reason: 'email_not_found', lead_id: leadId } });
+        safeSendMessage({
+          type: 'ACTION_DONE', taskId,
+          result: {
+            action: 'find_email', success: false,
+            reason: 'email_not_in_overlay',
+            enrichment_source: 'dom_contact_overlay',
+            lead_id: leadId,
+          },
+        });
         return;
       }
-      safeSendMessage({ type: 'ACTION_DONE', taskId,
-        result: { action: 'find_email', success: true, lead_id: leadId, data: { email: foundEmail } } });
+
+      console.log(`[cazary.ai] executeFindEmail: encontrado vía DOM overlay → ${foundEmail}`);
+      safeSendMessage({
+        type: 'ACTION_DONE', taskId,
+        result: {
+          action: 'find_email',
+          success: true,
+          lead_id: leadId,
+          enrichment_source: 'dom_contact_overlay',
+          data: {
+            email: foundEmail,
+            phone: foundPhone ?? null,
+            websites: [],
+            twitter: null,
+          },
+        },
+      });
+
     } catch (err) {
-      safeSendMessage({ type: 'ACTION_DONE', taskId,
-        result: { action: 'find_email', success: false, reason: err.message ?? 'unknown_error', lead_id: leadId } });
+      console.error('[cazary.ai] executeFindEmail error:', err);
+      safeSendMessage({
+        type: 'ACTION_DONE', taskId,
+        result: {
+          action: 'find_email', success: false,
+          reason: err.message ?? 'unknown_error',
+          enrichment_source: 'error',
+          lead_id: leadId,
+        },
+      });
     }
   }
 
   async function executeFindPhone(taskId, leadId) {
     try {
-      await sleep(2000);
-      const contactLink = document.querySelector('a[href*="overlay/contact-info"]') ||
+      await sleepHuman();
+      const platform = getPlatform();
+      console.log(`[cazary.ai] executeFindPhone platform=${platform} leadId=${leadId}`);
+
+      // ── ETAPA A: Voyager API ──────────────────────────────────────────────
+      const currentUrl = window.location.href;
+      const liSlug     = currentUrl.match(/linkedin\.com\/in\/([^/?#]+)/)?.[1]?.replace(/\/$/, '');
+      const snEntityId = currentUrl.match(/\/sales\/lead\/([^,?#]+)/)?.[1] ?? null;
+      const csrfToken  = document.cookie.match(/JSESSIONID="?([^";]+)/)?.[1] ?? '';
+
+      let publicIdentifier = liSlug ?? null;
+
+      if (!publicIdentifier && snEntityId) {
+        try {
+          const resolveResp = await fetch(
+            `/voyager/api/identity/profiles?memberIdentity=${encodeURIComponent(snEntityId)}&count=1`,
+            {
+              headers: {
+                'csrf-token': csrfToken,
+                'x-restli-protocol-version': '2.0.0',
+                'accept': 'application/vnd.linkedin.normalized+json+2.1',
+              },
+              credentials: 'include',
+            }
+          );
+          if (resolveResp.ok) {
+            const rData = await resolveResp.json();
+            publicIdentifier = rData?.elements?.[0]?.miniProfile?.publicIdentifier ?? null;
+          }
+        } catch (_) {}
+      }
+
+      if (publicIdentifier) {
+        try {
+          await sleepMicro();
+          const apiResp = await fetch(
+            `/voyager/api/identity/profiles/${encodeURIComponent(publicIdentifier)}/profileContactInfo`,
+            {
+              headers: {
+                'csrf-token': csrfToken,
+                'x-restli-protocol-version': '2.0.0',
+                'accept': 'application/vnd.linkedin.normalized+json+2.1',
+              },
+              credentials: 'include',
+            }
+          );
+          if (apiResp.ok) {
+            const contactData = await apiResp.json();
+            const phones = contactData?.phoneNumbers ?? [];
+            if (phones.length > 0) {
+              const foundPhone = phones[0].number;
+              console.log(`[cazary.ai] executeFindPhone: ✅ encontrado vía Voyager API → ${foundPhone}`);
+              return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+                action: 'find_phone', success: true, lead_id: leadId,
+                method: 'voyager_api', data: { phone: foundPhone },
+              }});
+            }
+            console.log('[cazary.ai] executeFindPhone: Voyager API sin teléfono → fallback DOM');
+          }
+        } catch (_) {}
+      }
+
+      // ── ETAPA B: DOM fallback — overlay "Información de contacto" ─────────
+      await sleepHuman();
+
+      const contactLink =
+        document.querySelector('a[href*="overlay/contact-info"]') ??
         Array.from(document.querySelectorAll('a, button')).find(el => {
           const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-          return txt.includes('información de contacto') || txt.includes('contact info');
-        });
+          return txt === 'información de contacto' || txt === 'contact info';
+        }) ?? null;
+
       if (!contactLink) {
-        safeSendMessage({ type: 'ACTION_DONE', taskId,
-          result: { action: 'find_phone', success: false, reason: 'contact_link_not_found', lead_id: leadId } });
-        return;
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'find_phone', success: false,
+          reason: 'contact_link_not_found', lead_id: leadId,
+        }});
       }
+
       simulateClick(contactLink);
-      await sleep(1500);
+      await sleep(2000 + Math.random() * 500);
+
       const telLinks = Array.from(document.querySelectorAll('a[href^="tel:"]'));
       const foundPhone = telLinks.length > 0
         ? telLinks[0].href.replace('tel:', '').trim()
         : null;
+
+      const closeBtn = document.querySelector(
+        'button[aria-label="Descartar"], button[aria-label="Dismiss"],' +
+        'button.artdeco-modal__dismiss, [data-test-modal-close-btn]'
+      );
+      if (closeBtn) simulateClick(closeBtn);
+
       if (!foundPhone) {
-        safeSendMessage({ type: 'ACTION_DONE', taskId,
-          result: { action: 'find_phone', success: false, reason: 'phone_not_found', lead_id: leadId } });
-        return;
+        return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+          action: 'find_phone', success: false,
+          reason: 'phone_not_found', lead_id: leadId,
+        }});
       }
-      safeSendMessage({ type: 'ACTION_DONE', taskId,
-        result: { action: 'find_phone', success: true, lead_id: leadId, data: { phone: foundPhone } } });
+
+      console.log(`[cazary.ai] executeFindPhone: ✅ encontrado vía DOM → ${foundPhone}`);
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'find_phone', success: true, lead_id: leadId,
+        method: 'dom', data: { phone: foundPhone },
+      }});
+
     } catch (err) {
-      safeSendMessage({ type: 'ACTION_DONE', taskId,
-        result: { action: 'find_phone', success: false, reason: err.message ?? 'unknown_error', lead_id: leadId } });
+      return safeSendMessage({ type: 'ACTION_DONE', taskId, result: {
+        action: 'find_phone', success: false,
+        reason: err.message ?? 'unknown_error', lead_id: leadId,
+      }});
     }
   }
 
@@ -3033,12 +4197,13 @@
       case 'message':          await executeMessage(taskId, params.text, params.leadId, params.campaignId);         break;
       case 'count_leads':      await executeCountLeads(taskId, params.campaignId, params.segmentId);                break;
       case 'extract_profile':  await executeExtractProfile(taskId, params.leadId);                                  break;
-      case 'check_connection': await executeCheckConnection(taskId, params.leadId, params.campaignId);              break;
-      case 'check_inbox':      await executeCheckInbox(taskId, params.campaignId);                                  break;
+      case 'check_connection':      await executeCheckConnection(taskId, params.leadId, params.campaignId);              break;
+      case 'check_inbox':           await executeCheckInbox(taskId, params.campaignId);                                  break;
+      case 'check_network_updates': await executeCheckNetworkUpdates(taskId, params.workspaceId ?? null);              break;
       case 'follow':           await executeFollow(taskId, params.leadId, params.campaignId);                       break;
       case 'unfollow':         await executeUnfollow(taskId, params.leadId, params.campaignId);                     break;
       case 'disconnect':       await executeDisconnect(taskId, params.leadId, params.campaignId);                   break;
-      case 'like':             await executeLikePost(taskId, params.leadId, params.campaignId);                     break;
+      case 'like':             await executeLikePost(taskId, params.leadId, params.campaignId, params.profileUrl ?? null); break;
       case 'comment':          await executeCommentPost(taskId, params.text ?? '', params.leadId, params.campaignId); break;
       case 'post_linkedin':    await executePostLinkedIn(taskId, params.content ?? '');                              break;
       case 'withdraw':         await executeWithdraw(taskId, params.leadId ?? null);                                 break;
@@ -3081,6 +4246,9 @@
                 case 'check_connection':
                   await executeCheckConnection(msg.taskId, msg.leadId, msg.campaignId);
                   break;
+                case 'check_network_updates':
+                  await executeCheckNetworkUpdates(msg.taskId, msg.workspaceId ?? null);
+                  break;
                 case 'count_leads':
                   await executeCountLeads(msg.taskId, msg.campaignId, msg.segmentId);
                   break;
@@ -3097,7 +4265,7 @@
                   await executeDisconnect(msg.taskId, msg.leadId, msg.campaignId);
                   break;
                 case 'like':
-                  await executeLikePost(msg.taskId, msg.leadId, msg.campaignId);
+                  await executeLikePost(msg.taskId, msg.leadId, msg.campaignId, msg.profileUrl ?? null);
                   break;
                 case 'comment':
                   await executeCommentPost(msg.taskId, msg.text ?? '', msg.leadId, msg.campaignId);

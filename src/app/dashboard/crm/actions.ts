@@ -816,3 +816,46 @@ export async function deleteCrmAutomation(id: string): Promise<Result> {
     return { success: false, error: String(err) };
   }
 }
+
+// -- enqueueEnrichment ---------------------------------------------------------
+
+export async function enqueueEnrichment(
+  leadId: string,
+  type: "find_email" | "find_phone",
+  linkedinUrl: string
+): Promise<Result> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    if (!workspaceId) return { success: false, error: "Sin workspace" };
+
+    const { data: existing } = await supabase
+      .from("engine_queue")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("lead_id", leadId)
+      .eq("task_type", type)
+      .eq("status", "pending")
+      .limit(1);
+
+    if (existing?.length) return { success: true };
+
+    const { error } = await supabase.from("engine_queue").insert({
+      workspace_id: workspaceId,
+      lead_id:      leadId,
+      task_type:    type,
+      action_type:  type,
+      payload: {
+        lead_id:     leadId,
+        profile_url: linkedinUrl,
+        leadId,
+      },
+      priority: 5,
+      status:   "pending",
+    });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}

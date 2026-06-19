@@ -386,6 +386,9 @@ async function processTick() {
   const wsId = await getWorkspaceId();
   if (!wsId) return;
 
+  // Refrescar settings cacheados si hace más de 15 min
+  await refreshWsSettingsCache(wsId).catch(() => {});
+
   // Check de límites desde Supabase (fuente de verdad)
   const _settings = await getSettings();
   const _stats = await getTodayStats(wsId);
@@ -431,6 +434,15 @@ async function processTick() {
   try {
     const now = new Date().toISOString();
 
+    // Cada ~10 ticks (≈10 min con tick=60s), programar check batch de red
+    const { network_check_tick_count } = await chrome.storage.local.get('network_check_tick_count');
+    const newTickCount = (network_check_tick_count ?? 0) + 1;
+    await chrome.storage.local.set({ network_check_tick_count: newTickCount });
+    if (newTickCount % 10 === 0) {
+      const tickWsId = await getWorkspaceId();
+      if (tickWsId) await scheduleNetworkUpdateCheck(tickWsId);
+    }
+
     // Fetch only tasks belonging to active, non-archived campaigns
     const activeCampaigns = await supabaseFetch(
       `campaigns?workspace_id=eq.${wsId}&status=eq.active&deleted_at=is.null&select=id,priority`
@@ -451,10 +463,10 @@ async function processTick() {
     }
 
     if (!tasks || tasks.length === 0) {
-      // SIEMPRE procesar check_connection y check_inbox sin filtro de campaña activa
+      // SIEMPRE procesar check_connection, check_inbox y check_network_updates sin filtro de campaña activa
       const maintenanceTasks = await supabaseFetch(
         `engine_queue?workspace_id=eq.${wsId}` +
-        `&action_type=in.(check_connection,check_inbox)` +
+        `&action_type=in.(check_connection,check_inbox,check_network_updates)` +
         `&status=in.(pending,scheduled)` +
         `&scheduled_at=lte.${now}` +
         `&order=scheduled_at.asc&limit=1`
@@ -483,6 +495,10 @@ async function processTick() {
     }
 
     const task = tasks[0];
+
+    // Inter-task delay humanizado (entre tareas consecutivas)
+    await sleepGaussian(4500, 1200, 2000);
+
     await chrome.storage.local.set({ processing: true });
     await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
       method: 'PATCH',
@@ -531,6 +547,98 @@ async function detectNewConnections(wsId) {
       }),
     }).catch(() => {});
   }
+}
+
+// ── Encolar tarea batch de check_network_updates ─────────────────────────────
+
+async function scheduleNetworkUpdateCheck(wsId) {
+  if (!wsId) return;
+  try {
+    const existing = await supabaseFetch(
+      `engine_queue?workspace_id=eq.${wsId}` +
+      `&action_type=eq.check_network_updates` +
+      `&status=in.(pending,processing)` +
+      `&select=id`,
+      { method: 'GET' }
+    ).catch(() => null);
+    const rows = existing ? await existing.json().catch(() => []) : [];
+    if (rows.length > 0) {
+      console.log('[cazary.ai] scheduleNetworkUpdateCheck: ya hay tarea pendiente, skip');
+      return;
+    }
+
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const recent = await supabaseFetch(
+      `engine_queue?workspace_id=eq.${wsId}` +
+      `&action_type=eq.check_network_updates` +
+      `&status=eq.completed` +
+      `&executed_at=gte.${twoHoursAgo}` +
+      `&select=id`,
+      { method: 'GET' }
+    ).catch(() => null);
+    const recentRows = recent ? await recent.json().catch(() => []) : [];
+    if (recentRows.length > 0) {
+      console.log('[cazary.ai] scheduleNetworkUpdateCheck: ejecutado hace <2h, skip');
+      return;
+    }
+
+    await supabaseFetch('engine_queue', {
+      method: 'POST',
+      prefer: 'return=minimal',
+      body: JSON.stringify({
+        workspace_id: wsId,
+        campaign_id:  null,
+        lead_id:      null,
+        task_type:    'check_network_updates',
+        action_type:  'check_network_updates',
+        status:       'pending',
+        priority:     5,
+        payload:      { workspace_id: wsId },
+        scheduled_at: new Date().toISOString(),
+      }),
+    });
+    console.log('[cazary.ai] scheduleNetworkUpdateCheck: tarea encolada ✓');
+  } catch (e) {
+    console.error('[cazary.ai] scheduleNetworkUpdateCheck error:', e);
+  }
+}
+
+// ── Follow-up message scheduling helper ──────────────────────────────────────
+
+async function scheduleFollowUpMessage(leadId, campaignId, wsId, acceptedAt) {
+  const campRes = await supabaseFetch(
+    `campaigns?id=eq.${campaignId}&select=workflow_json`,
+    { method: 'GET' }
+  );
+  const camps = campRes ? await campRes.json().catch(() => []) : [];
+  const workflow = camps[0]?.workflow_json;
+  if (!workflow) return;
+
+  const steps = Array.isArray(workflow) ? workflow : (workflow.steps ?? []);
+  const followUpStep = steps.find(s =>
+    s.type === 'message' || s.action === 'message' ||
+    s.trigger === 'connection_accepted'
+  );
+  if (!followUpStep) return;
+
+  const delayMs = (followUpStep.delay_days ?? 1) * 24 * 60 * 60 * 1000;
+  const schedAt = new Date(Date.now() + delayMs).toISOString();
+
+  await supabaseFetch('engine_queue', {
+    method: 'POST', prefer: 'return=minimal',
+    body: JSON.stringify({
+      workspace_id: wsId,
+      campaign_id:  campaignId,
+      lead_id:      leadId,
+      task_type:    'message',
+      action_type:  'message',
+      status:       'pending',
+      priority:     10,
+      payload:      { text: followUpStep.message ?? followUpStep.text ?? '' },
+      scheduled_at: schedAt,
+    }),
+  });
+  console.log(`[cazary.ai] scheduleFollowUpMessage: mensaje programado para ${leadId} en ${schedAt}`);
 }
 
 // ── Helpers de comunicación con content script ────────────────────────────────
@@ -582,7 +690,7 @@ async function executeTask(task) {
     // Double-check: verify campaign is still active before executing
     // EXCEPCIÓN: check_connection y check_inbox son tareas de mantenimiento que deben
     // correr siempre, independientemente del estado de la campaña
-    const MAINTENANCE_TASKS = ['check_connection', 'check_inbox'];
+    const MAINTENANCE_TASKS = ['check_connection', 'check_inbox', 'check_network_updates'];
     if (task.campaign_id && !MAINTENANCE_TASKS.includes(task.action_type)) {
       const campCheck = await supabaseFetch(
         `campaigns?id=eq.${task.campaign_id}&select=status,deleted_at&limit=1`
@@ -668,9 +776,19 @@ async function executeTask(task) {
         break;
 
       case 'connect': {
-        await chrome.tabs.update(tab.id, { url: profileUrl });
+        // Preferir search_url (lista SalesNav) sobre profileUrl para connect fast
+        const navigateUrl = task.payload?.search_url ?? profileUrl;
+        if (!navigateUrl) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'failed', last_error: 'No URL (profile ni search)' }),
+          }).catch(() => {});
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+        await chrome.tabs.update(tab.id, { url: navigateUrl });
         await waitForTabComplete(tab.id);
-        await sleep(3000 + Math.random() * 2000);
+        await sleepGaussian(3000, 800, 2000);
         await chrome.tabs.update(tab.id, { active: true });
         await sleep(500);
         const connectLeadId = task.payload?.lead_id ?? null;
@@ -830,6 +948,45 @@ async function executeTask(task) {
         break;
       }
 
+      case 'like': {
+        // Navegar a cualquier página de LinkedIn para que el content script esté activo;
+        // la navegación real a /recent-activity/ la hace executeLikePost() desde content.js
+        const likeProfileUrl = task.payload?.profile_url ?? task.payload?.linkedin_url ?? 'https://www.linkedin.com/feed/';
+        await chrome.tabs.update(tab.id, { url: likeProfileUrl });
+        await waitForTabComplete(tab.id);
+        await sleep(2500 + Math.random() * 1000);
+        await sendToContentScript(tab.id, {
+          action:     'execute_task',
+          task:       'like',
+          taskId:     task.id,
+          leadId:     task.payload?.lead_id     ?? null,
+          campaignId: task.payload?.campaign_id ?? null,
+          profileUrl: likeProfileUrl,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id:    task.id,
+          processing_task_type:  'like',
+        });
+        break;
+      }
+
+      case 'check_network_updates': {
+        const nuWsId = await getWorkspaceId();
+        await sendToContentScript(tab.id, {
+          action:      'execute_task',
+          task:        'check_network_updates',
+          taskId:      task.id,
+          workspaceId: nuWsId,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id:    task.id,
+          processing_task_type:  'check_network_updates',
+        });
+        break;
+      }
+
       case 'withdraw': {
         const profileUrl = task.payload?.linkedin_url ?? task.payload?.salesnav_url;
         if (!profileUrl) {
@@ -842,7 +999,7 @@ async function executeTask(task) {
         }
         await chrome.tabs.update(tab.id, { url: profileUrl });
         await waitForTabComplete(tab.id);
-        await sleep(3000 + Math.random() * 1000);
+        await sleepGaussian(3000, 700, 2000);
         await sendToContentScript(tab.id, {
           action: 'execute_task', task: 'withdraw',
           taskId: task.id, leadId: task.payload?.lead_id ?? null,
@@ -880,7 +1037,7 @@ async function executeTask(task) {
         }
         await chrome.tabs.update(tab.id, { url: profileUrl });
         await waitForTabComplete(tab.id);
-        await sleep(3000 + Math.random() * 1500);
+        await sleep(2500 + Math.random() * 1000);
         await sendToContentScript(tab.id, {
           action: 'execute_task', task: 'find_email',
           taskId: task.id, leadId: task.payload?.lead_id ?? null,
@@ -1037,6 +1194,139 @@ async function executeTask(task) {
           );
         }
         return; // skip normal delay scheduling
+      }
+
+      case 'follow': {
+        const followUrl = task.payload?.linkedin_url ?? task.payload?.salesnav_url;
+        if (!followUrl) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'failed', last_error: 'No profile URL' }),
+          }).catch(() => {});
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+        await chrome.tabs.update(tab.id, { url: followUrl });
+        await waitForTabComplete(tab.id);
+        await sleepGaussian(3000, 700, 2000);
+        await sendToContentScript(tab.id, {
+          action: 'execute_task', task: 'follow',
+          taskId: task.id,
+          leadId: task.payload?.lead_id ?? null,
+          campaignId: task.payload?.campaign_id ?? null,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id:    task.id,
+          processing_task_type:  'follow',
+        });
+        break;
+      }
+
+      case 'unfollow': {
+        const unfollowUrl = task.payload?.linkedin_url ?? task.payload?.salesnav_url;
+        if (!unfollowUrl) {
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'failed', last_error: 'No profile URL' }),
+          }).catch(() => {});
+          await chrome.storage.local.set({ processing: false });
+          return;
+        }
+        await chrome.tabs.update(tab.id, { url: unfollowUrl });
+        await waitForTabComplete(tab.id);
+        await sleepGaussian(3000, 700, 2000);
+        await sendToContentScript(tab.id, {
+          action: 'execute_task', task: 'unfollow',
+          taskId: task.id,
+          leadId: task.payload?.lead_id ?? null,
+          campaignId: task.payload?.campaign_id ?? null,
+        });
+        await chrome.storage.local.set({
+          processing_started_at: Date.now(),
+          processing_task_id:    task.id,
+          processing_task_type:  'unfollow',
+        });
+        break;
+      }
+
+      case 'send_email': {
+        const { lead_id, subject, body_html, body_text, scheduled_delay_ms } = task.payload ?? {};
+
+        if (!lead_id || !subject || !body_html) {
+          console.warn('[cazary.ai] send_email: payload incompleto', task.payload);
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'done', result: { success: false, reason: 'missing_payload' } }),
+          }).catch(() => {});
+          break;
+        }
+
+        const leads = await supabaseFetch(
+          `leads?id=eq.${lead_id}&select=email,full_name,first_name,company,job_title,workspace_id`,
+          { method: 'GET' }
+        ).catch(() => []);
+
+        const lead = leads?.[0];
+        if (!lead?.email) {
+          console.warn(`[cazary.ai] send_email: lead ${lead_id} sin email → skip`);
+          await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ status: 'done', result: { success: false, reason: 'no_email' } }),
+          }).catch(() => {});
+          break;
+        }
+
+        const tokens = {
+          '{{nombre}}':          lead.first_name ?? lead.full_name?.split(' ')[0] ?? '',
+          '{{nombre_completo}}': lead.full_name ?? '',
+          '{{empresa}}':         lead.company ?? '',
+          '{{cargo}}':           lead.job_title ?? '',
+        };
+        const applyTokens = (text) =>
+          Object.entries(tokens).reduce((acc, [k, v]) => acc.replaceAll(k, v), text ?? '');
+
+        const scheduledAt = scheduled_delay_ms
+          ? new Date(Date.now() + scheduled_delay_ms).toISOString()
+          : new Date().toISOString();
+
+        const inserted = await supabaseFetch('email_queue', {
+          method: 'POST',
+          prefer: 'return=representation',
+          body: JSON.stringify({
+            workspace_id: task.workspace_id,
+            campaign_id:  task.payload.campaign_id ?? null,
+            lead_id,
+            to_email:     lead.email,
+            to_name:      lead.full_name ?? '',
+            subject:      applyTokens(subject),
+            body_html:    applyTokens(body_html),
+            body_text:    body_text ? applyTokens(body_text) : null,
+            status:       'pending',
+            scheduled_at: scheduledAt,
+            metadata: {
+              company:   lead.company ?? '',
+              job_title: lead.job_title ?? '',
+            },
+          }),
+        }).catch(() => null);
+
+        const emailQueueId = inserted?.[0]?.id ?? null;
+        console.log(`[cazary.ai] send_email: encolado en email_queue → ${emailQueueId}`);
+
+        await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            status: 'done',
+            result: { success: true, reason: 'enqueued', email_queue_id: emailQueueId, lead_id },
+          }),
+        }).catch(() => {});
+
+        if (!scheduled_delay_ms) {
+          await processEmailQueue(task.workspace_id).catch(() => {});
+        }
+
+        break;
       }
 
       default:
@@ -1543,6 +1833,13 @@ async function handleActionDone(taskId, result) {
             }),
           }).catch(() => {});
         }
+        await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({
+            last_message_sent_at: now,
+            last_message_method:  result.method ?? 'dom',
+          }),
+        }).catch(() => {});
 
         // Registrar mensaje enviado en conversations/messages
         const existingConv2 = await supabaseFetch(
@@ -1828,6 +2125,88 @@ async function handleActionDone(taskId, result) {
           console.log('[cazary.ai] conexion_aceptada:', result.lead_id);
         }
         // Si pending: dejar en conexion_enviada, se reintentará
+      } else if (result.action === 'withdraw' && result.success && result.lead_id) {
+        if (result.reason !== 'already_connected') {
+          await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({
+              crm_column:         'nuevo',
+              connection_status:  'none',
+              connection_sent_at: null,
+              withdraw_method:    result.method ?? 'dom',
+              last_withdrawn_at:  now,
+            }),
+          }).catch(() => {});
+          console.log('[cazary.ai] withdraw → crm_column=nuevo:', result.lead_id);
+        }
+
+      } else if (result.action === 'check_network_updates' && result.success) {
+        console.log('[cazary.ai] check_network_updates: procesando batch de aceptaciones');
+
+        const batchWsId = result.workspace_id ?? wsId;
+        if (batchWsId) {
+          const pendingSet = new Set(result.pendingProfileIds ?? []);
+          const recentSet  = new Set(result.recentConnectionIds ?? []);
+
+          const leadsRes = await supabaseFetch(
+            `leads?workspace_id=eq.${batchWsId}` +
+            `&crm_column=eq.conexion_enviada` +
+            `&connection_sent_at=not.is.null` +
+            `&select=id,linkedin_id,linkedin_url,campaign_id,connection_sent_at`,
+            { method: 'GET' }
+          );
+          const pendingLeads = leadsRes ? await leadsRes.json().catch(() => []) : [];
+          console.log(`[cazary.ai] check_network_updates: ${pendingLeads.length} leads en conexion_enviada`);
+
+          const acceptedLeadIds = [];
+
+          for (const lead of pendingLeads) {
+            const url = lead.linkedin_url ?? '';
+            let leadProfileId = lead.linkedin_id ?? '';
+            const snMatch = url.match(/\/sales\/(?:lead|people)\/([A-Za-z0-9_-]+)/);
+            if (snMatch) leadProfileId = snMatch[1].split(',')[0];
+            const liMatch = url.match(/linkedin\.com\/in\/([^/?]+)/);
+            if (liMatch) leadProfileId = liMatch[1].replace(/\/$/, '');
+
+            if (pendingSet.has(leadProfileId)) continue;
+
+            const inRecentConnections = recentSet.has(leadProfileId);
+            const sentDate = new Date(lead.connection_sent_at);
+            const daysSinceSent = (Date.now() - sentDate.getTime()) / (1000 * 60 * 60 * 24);
+            const likelyAccepted = inRecentConnections ||
+                                   (daysSinceSent < 28 && !pendingSet.has(leadProfileId));
+
+            if (likelyAccepted) {
+              acceptedLeadIds.push(lead.id);
+              console.log(`[cazary.ai] check_network_updates: ✅ ${lead.id} aceptó (inRecent=${inRecentConnections})`);
+            }
+          }
+
+          console.log(`[cazary.ai] check_network_updates: ${acceptedLeadIds.length} aceptaciones detectadas`);
+
+          for (const leadId of acceptedLeadIds) {
+            await supabaseFetch(`leads?id=eq.${leadId}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: JSON.stringify({
+                crm_column:             'conexion_aceptada',
+                connection_accepted_at: now,
+                status:                 'connected',
+              }),
+            }).catch(e => console.error(`[cazary.ai] PATCH lead ${leadId} error:`, e));
+
+            const leadMeta = pendingLeads.find(l => l.id === leadId);
+            if (leadMeta?.campaign_id) {
+              await scheduleFollowUpMessage(leadId, leadMeta.campaign_id, batchWsId, now)
+                .catch(e => console.error('[cazary.ai] scheduleFollowUp error:', e));
+            }
+          }
+        }
+
+        await supabaseFetch(`engine_queue?id=eq.${taskId}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({ status: 'done', executed_at: now }),
+        }).catch(() => {});
+        return;
       }
     } catch (err) {
       console.error('[cazary.ai] Error actualizando lead:', err);
@@ -1879,17 +2258,43 @@ async function handleActionDone(taskId, result) {
       body:   JSON.stringify({ status: 'done', executed_at: new Date().toISOString() }),
     }).catch(() => {});
 
-    // find_email / find_phone → guardar en lead
+    // find_email → guardar email, phone, websites, enrichment_source
     if (result.action === 'find_email' && result.data?.email && result.lead_id) {
+      const enrichPatch = {
+        email: result.data.email,
+        enrichment_source: result.enrichment_source ?? 'unknown',
+        enriched_at: new Date().toISOString(),
+      };
+      if (result.data.phone)    enrichPatch.phone    = result.data.phone;
+      if (result.data.twitter)  enrichPatch.twitter  = result.data.twitter;
+      if (result.data.websites?.length > 0) {
+        enrichPatch.website = result.data.websites[0];
+      }
       await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
         method: 'PATCH', prefer: 'return=minimal',
-        body: JSON.stringify({ email: result.data.email }),
+        body: JSON.stringify(enrichPatch),
       }).catch(() => {});
     }
     if (result.action === 'find_phone' && result.data?.phone && result.lead_id) {
       await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
         method: 'PATCH', prefer: 'return=minimal',
         body: JSON.stringify({ phone: result.data.phone }),
+      }).catch(() => {});
+    }
+
+    // like → actualizar last_liked_at en el lead
+    if (result.action === 'like' && result.lead_id) {
+      await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ last_liked_at: new Date().toISOString() }),
+      }).catch(() => {});
+    }
+
+    // follow → guardar last_followed_at
+    if (result.action === 'follow' && result.success && result.lead_id) {
+      await supabaseFetch(`leads?id=eq.${result.lead_id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ last_followed_at: new Date().toISOString() }),
       }).catch(() => {});
     }
 
@@ -2153,6 +2558,10 @@ function parseWorkflowSequence(wf) {
       steps.push({ type: 'connect_email', delayMs: accumulatedDelayMs,
                    addNote: data.addNote ?? false,
                    connectionNote: data.connectionNote ?? '' });
+    } else if (nodeType === 'follow') {
+      steps.push({ type: 'follow', delayMs: accumulatedDelayMs, payload: {} });
+    } else if (nodeType === 'unfollow') {
+      steps.push({ type: 'unfollow', delayMs: accumulatedDelayMs, payload: {} });
     }
     currentId = next.get(currentId);
   }
@@ -2529,6 +2938,26 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
                      connection_note: step.connectionNote ?? '',
                      require_email: true },
         });
+      } else if (step.type === 'follow') {
+        inserts.push({
+          workspace_id: wsId, campaign_id: campaignId, lead_id: lead.id,
+          task_type: 'follow', action_type: 'follow',
+          status: 'scheduled', priority: 5,
+          scheduled_at: scheduledAt.toISOString(),
+          payload: { lead_id: lead.id,
+                     linkedin_url: lead.linkedin_url ?? null,
+                     salesnav_url: lead.salesnav_url ?? null },
+        });
+      } else if (step.type === 'unfollow') {
+        inserts.push({
+          workspace_id: wsId, campaign_id: campaignId, lead_id: lead.id,
+          task_type: 'unfollow', action_type: 'unfollow',
+          status: 'scheduled', priority: 5,
+          scheduled_at: scheduledAt.toISOString(),
+          payload: { lead_id: lead.id,
+                     linkedin_url: lead.linkedin_url ?? null,
+                     salesnav_url: lead.salesnav_url ?? null },
+        });
       }
     }
   }
@@ -2874,6 +3303,33 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function sleepGaussian(mean, stdDev, min = 300) {
+  const u1 = Math.random() || 1e-10;
+  const u2 = Math.random();
+  const z  = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  const ms = Math.round(mean + z * stdDev);
+  return sleep(Math.max(min, ms));
+}
+
+let _wsSettingsCachedAt = 0;
+
+async function refreshWsSettingsCache(workspaceId) {
+  const now = Date.now();
+  if (now - _wsSettingsCachedAt < 15 * 60 * 1000) return;
+  try {
+    const data = await supabaseFetch(
+      `workspace_settings?workspace_id=eq.${workspaceId}&limit=1`,
+      { method: 'GET' }
+    );
+    if (data?.[0]) {
+      await chrome.storage.local.set({ ws_settings: data[0] });
+      _wsSettingsCachedAt = now;
+    }
+  } catch (e) {
+    console.warn('[cazary.ai] refreshWsSettingsCache error:', e.message);
+  }
+}
+
 async function interpolateVariables(template, leadId) {
   if (!template || !leadId) return template ?? '';
   if (!template.includes('{{')) return template;
@@ -2990,11 +3446,32 @@ async function triggerSelectorAnalysis(failureId) {
 // ── Procesar cola de emails pendientes ───────────────────────────────────────
 async function processEmailQueue(wsId) {
   const now = new Date().toISOString();
+
+  // Verificar límite diario de emails
+  const { ws_settings } = await chrome.storage.local.get('ws_settings');
+  const dailyLimit = ws_settings?.daily_emails_limit ?? 50;
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const sentToday = await supabaseFetch(
+    `email_queue?workspace_id=eq.${wsId}` +
+    `&status=eq.sent&sent_at=gte.${todayStart.toISOString()}&select=id`,
+    { method: 'GET' }
+  ).catch(() => []);
+
+  const sentCount = sentToday?.length ?? 0;
+  if (sentCount >= dailyLimit) {
+    console.log(`[cazary.ai] processEmailQueue: límite diario alcanzado (${sentCount}/${dailyLimit})`);
+    return;
+  }
+
+  const remaining = Math.min(5, dailyLimit - sentCount);
+
   const pending = await supabaseFetch(
     `email_queue?workspace_id=eq.${wsId}` +
     `&status=eq.pending` +
     `&scheduled_at=lte.${now}` +
-    `&select=id&limit=5`,
+    `&select=id,lead_id&limit=${remaining}`,
     { method: 'GET' }
   ).catch(() => []);
 
@@ -3012,11 +3489,27 @@ async function processEmailQueue(wsId) {
       });
       if (res.ok) {
         console.log(`[cazary.ai] Email enviado: ${job.id}`);
+        if (job.lead_id) {
+          await supabaseFetch(`leads?id=eq.${job.lead_id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ last_email_sent_at: new Date().toISOString() }),
+          }).catch(() => {});
+        }
       } else {
-        console.warn(`[cazary.ai] Error enviando email ${job.id}: ${res.status}`);
+        let errMsg = `HTTP ${res.status}`;
+        try { const d = await res.json(); errMsg = d.error ?? errMsg; } catch (_) {}
+        console.warn(`[cazary.ai] Error enviando email ${job.id}: ${errMsg}`);
+        await supabaseFetch(`email_queue?id=eq.${job.id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: JSON.stringify({ status: 'failed', last_error: errMsg }),
+        }).catch(() => {});
       }
     } catch (e) {
       console.error(`[cazary.ai] Error enviando email ${job.id}:`, e.message);
+      await supabaseFetch(`email_queue?id=eq.${job.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ status: 'failed', last_error: e.message ?? 'network_error' }),
+      }).catch(() => {});
     }
   }
 }

@@ -81,6 +81,46 @@ export async function getAnalyticsData(range: "7d" | "30d" | "3m" | "6m" = "30d"
       reunion_to_cliente:         clientes    > 0 && reuniones > 0 ? Math.round(clientes  / reuniones  * 100) : 0,
     };
 
+    // Métricas de email outreach
+    const [emailSentRes, emailTotalRes] = await Promise.all([
+      supabase.from("email_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("status", "sent"),
+      supabase.from("email_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .neq("status", "pending"),
+    ]);
+
+    // Métricas de enrichment
+    const [leadsWithEmail, leadsWithPhone, totalLeadsForEnrich] = await Promise.all([
+      supabase.from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .not("email", "is", null),
+      supabase.from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .not("phone", "is", null),
+      supabase.from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId),
+    ]);
+
+    const totalLeadsN     = totalLeadsForEnrich.count ?? 0;
+    const emailsSent      = emailSentRes.count  ?? 0;
+    const emailsAttempted = emailTotalRes.count  ?? 0;
+    const emailDelivery   = emailsAttempted > 0
+      ? Math.round((emailsSent / emailsAttempted) * 100)
+      : 0;
+    const emailFoundRate  = totalLeadsN > 0
+      ? Math.round(((leadsWithEmail.count ?? 0) / totalLeadsN) * 100)
+      : 0;
+    const phoneFoundRate  = totalLeadsN > 0
+      ? Math.round(((leadsWithPhone.count ?? 0) / totalLeadsN) * 100)
+      : 0;
+
     // Real health warnings: leads in multiple campaigns
     const urlCount = new Map<string, string[]>();
     for (const l of multiCampLeadsRes.data ?? []) {
@@ -127,6 +167,16 @@ export async function getAnalyticsData(range: "7d" | "30d" | "3m" | "6m" = "30d"
         tasksPending:   queue.filter(t => t.status === "pending").length,
         conversionRates,
         healthWarnings,
+        enrichment: {
+          leadsWithEmail:  leadsWithEmail.count  ?? 0,
+          leadsWithPhone:  leadsWithPhone.count  ?? 0,
+          emailFoundRate,
+          phoneFoundRate,
+        },
+        email: {
+          sent:         emailsSent,
+          deliveryRate: emailDelivery,
+        },
       },
     };
   } catch (err) {

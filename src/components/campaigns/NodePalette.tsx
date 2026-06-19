@@ -2,7 +2,7 @@
 
 import {
   AtSign, Bot, Clock, Flag, GitBranch, Globe, Heart, Mail,
-  MailPlus, MessageSquare, Phone, Play, UserMinus, UserPlus,
+  MailPlus, MessageSquare, Phone, Play, UserCheck, UserMinus, UserPlus, UserX,
 } from "lucide-react";
 import type { ElementType } from "react";
 import type { NodeType } from "./types";
@@ -23,6 +23,8 @@ const ITEMS: PaletteItem[] = [
   { nodeType: "message",      rfType: "message",      label: "Enviar Mensaje",     description: "Texto con variables dinámicas",   Icon: MessageSquare, iconCls: "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",  group: "LinkedIn"   },
   { nodeType: "visit",        rfType: "visit",        label: "Visitar Perfil",     description: "Abre el perfil del lead",         Icon: Globe,        iconCls: "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",  group: "LinkedIn"   },
   { nodeType: "like",         rfType: "like",         label: "Like Post",          description: "Dar like a publicación",          Icon: Heart,        iconCls: "bg-[rgba(239,68,68,0.12)] text-[#EF4444]",  group: "LinkedIn"   },
+  { nodeType: "follow",       rfType: "follow",       label: "Seguir Perfil",      description: "Sigue al lead en LinkedIn",        Icon: UserCheck,    iconCls: "bg-[rgba(16,185,129,0.12)] text-[#10B981]", group: "LinkedIn"   },
+  { nodeType: "unfollow",     rfType: "unfollow",     label: "Dejar de Seguir",    description: "Deja de seguir al lead",           Icon: UserX,        iconCls: "bg-[rgba(239,68,68,0.12)] text-[#EF4444]",  group: "LinkedIn"   },
   { nodeType: "withdraw",     rfType: "withdraw",     label: "Quitar Conexión",    description: "Retira solicitud o desconecta",   Icon: UserMinus,    iconCls: "bg-[rgba(239,68,68,0.12)] text-[#EF4444]",  group: "LinkedIn"   },
   { nodeType: "email",        rfType: "email",        label: "Enviar Email",       description: "Email con asunto y cuerpo",       Icon: Mail,         iconCls: "bg-[rgba(37,99,235,0.12)] text-[#2563EB]",  group: "Email"      },
   { nodeType: "find_email",   rfType: "find_email",   label: "Buscar Email",       description: "Extrae email → guarda en BD",     Icon: AtSign,       iconCls: "bg-[rgba(6,182,212,0.12)] text-[#06B6D4]",  group: "Especiales" },

@@ -11,7 +11,7 @@ import { Check, MoreHorizontal, Palette, Pencil, Plus, Trash2, X } from "lucide-
 import { cn } from "@/lib/utils";
 import type { Column, ColumnColor, CrmLead } from "./types";
 import { LeadCard } from "./LeadCard";
-import { moveLead } from "@/app/dashboard/crm/actions";
+import { moveLead, triggerCrmAutomation } from "@/app/dashboard/crm/actions";
 
 // -- Column accent colors -----------------------------------------------------
 // Maps the ColumnColor token to a single accent hex used for the header strip
@@ -80,6 +80,9 @@ export function Board({
     );
     try {
       await moveLead(draggableId, destination.droppableId);
+      triggerCrmAutomation(draggableId, "moved_to_column", {
+        column: destination.droppableId,
+      }).catch(() => {});
     } catch (_) {}
   }
 

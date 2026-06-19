@@ -2,16 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { createClient } from '@/lib/supabase/server';
 
-function interpolate(text: string, name: string): string {
-  const first = name.split(' ')[0] ?? '';
-  return text
-    .replace(/\{\{nombre\}\}/gi, first)
-    .replace(/\{\{nombre_completo\}\}/gi, name);
+function interpolate(text: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce(
+    (acc, [k, v]) => acc.replaceAll(k, v),
+    text
+  );
 }
 
 export async function POST(req: NextRequest) {
+  let email_queue_id: string | null = null;
   try {
-    const { email_queue_id } = await req.json();
+    const body = await req.json();
+    email_queue_id = body.email_queue_id ?? null;
     if (!email_queue_id) {
       return NextResponse.json({ error: 'email_queue_id required' }, { status: 400 });
     }
@@ -45,10 +47,17 @@ export async function POST(req: NextRequest) {
     }
 
     const toName = emailJob.to_name ?? '';
-    const subject = interpolate(emailJob.subject, toName);
-    const bodyHtml = interpolate(emailJob.body_html, toName);
+    const meta = (emailJob.metadata ?? {}) as Record<string, string>;
+    const vars: Record<string, string> = {
+      '{{nombre}}':          toName.split(' ')[0] ?? '',
+      '{{nombre_completo}}': toName,
+      '{{empresa}}':         meta.company ?? '',
+      '{{cargo}}':           meta.job_title ?? '',
+    };
+    const subject  = interpolate(emailJob.subject,   vars);
+    const bodyHtml = interpolate(emailJob.body_html, vars);
     const bodyText = emailJob.body_text
-      ? interpolate(emailJob.body_text, toName)
+      ? interpolate(emailJob.body_text, vars)
       : bodyHtml.replace(/<[^>]+>/g, '');
 
     let messageId: string | undefined;
@@ -135,6 +144,14 @@ export async function POST(req: NextRequest) {
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (email_queue_id) {
+      const supabase = await createClient();
+      await supabase
+        .from('email_queue')
+        .update({ status: 'failed', last_error: msg })
+        .eq('id', email_queue_id)
+        .then(() => {}, () => {});
+    }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -609,6 +609,8 @@ function buildDefaultData(nodeType: NodeData["nodeType"], label: string): NodeDa
     case "condition": return { ...base };
     case "email":
     case "email_node": return { ...base, subject: "" };
+    case "follow":
+    case "unfollow":  return base;
     default:          return base;
   }
 }

@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { getAnalyticsData } from "@/app/dashboard/analytics/actions";
 import {
-  AlertTriangle, BarChart3, Calendar, CheckCircle2,
-  ChevronDown, Filter, MessageCircle, TrendingUp,
+  AlertTriangle, AtSign, BarChart3, Calendar, CheckCircle2,
+  ChevronDown, Filter, Mail, MessageCircle, Phone, TrendingUp,
   UserPlus, Zap,
 } from "lucide-react";
 import {
@@ -38,6 +38,16 @@ type AnalyticsData = {
   tasksPending: number;
   conversionRates?: Record<string, number>;
   healthWarnings?: HealthWarning[];
+  enrichment?: {
+    leadsWithEmail: number;
+    leadsWithPhone: number;
+    emailFoundRate: number;
+    phoneFoundRate: number;
+  };
+  email?: {
+    sent:         number;
+    deliveryRate: number;
+  };
 };
 
 // -- Design tokens (inline styles) ------------------------------------------
@@ -199,6 +209,45 @@ const STAGE_COLORS: Record<string, string> = {
   "Reunión Agendada":     "#7C3AED",
   "Clientes":             "#EF4444",
 };
+
+// -- MetricMini --------------------------------------------------------------
+
+function MetricMini({ label, value, pct, icon: Icon, color }: {
+  label: string;
+  value: string | number;
+  pct?: number;
+  icon: React.ElementType;
+  color: string;
+}) {
+  return (
+    <div
+      className="rounded-xl border p-4 flex flex-col gap-2"
+      style={{ borderColor: T.border, background: T.surface }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium" style={{ color: T.fgMuted }}>{label}</span>
+        <div
+          className="flex h-7 w-7 items-center justify-center rounded-lg"
+          style={{ background: `${color}18` }}
+        >
+          <Icon className="h-3.5 w-3.5" style={{ color }} />
+        </div>
+      </div>
+      <p className="text-2xl font-black tabular-nums" style={{ color: T.fg }}>{value}</p>
+      {pct !== undefined && (
+        <div className="flex items-center gap-1.5">
+          <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: T.surfaceHover }}>
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{ width: `${Math.min(pct, 100)}%`, background: color }}
+            />
+          </div>
+          <span className="text-[10px] font-semibold tabular-nums" style={{ color }}>{pct}%</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // MAIN VIEW
@@ -395,6 +444,36 @@ export function AnalyticsView({ data }: { data?: AnalyticsData }) {
               iconColor={T.amber}
               iconBg="rgba(245,158,11,0.10)"
               trendKey="replyRate"
+            />
+          </div>
+
+          {/* ── Enrichment & Email Row ───────────────────────────────────── */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <MetricMini
+              label="Leads con Email"
+              value={liveData?.enrichment?.leadsWithEmail ?? 0}
+              pct={liveData?.enrichment?.emailFoundRate}
+              icon={AtSign}
+              color={T.cyan}
+            />
+            <MetricMini
+              label="Leads con Teléfono"
+              value={liveData?.enrichment?.leadsWithPhone ?? 0}
+              pct={liveData?.enrichment?.phoneFoundRate}
+              icon={Phone}
+              color={T.green}
+            />
+            <MetricMini
+              label="Emails Enviados"
+              value={liveData?.email?.sent ?? 0}
+              icon={Mail}
+              color={T.primary}
+            />
+            <MetricMini
+              label="Tasa Entrega Email"
+              value={`${liveData?.email?.deliveryRate ?? 0}%`}
+              icon={CheckCircle2}
+              color={T.green}
             />
           </div>
 

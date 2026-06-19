@@ -4,8 +4,8 @@ import { useState, useMemo, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import {
-  CheckCircle2, ChevronDown, Columns3, Filter, LayoutList,
-  Megaphone, Plus, Search, Settings, TrendingUp, X, Zap,
+  AtSign, CheckCircle2, ChevronDown, Columns3, Filter, LayoutList,
+  Megaphone, Phone, Plus, Search, Settings, TrendingUp, X, Zap,
 } from "lucide-react";
 import type { Column, CrmLead, LeadSource, ColumnColor } from "./types";
 import { Board } from "./Board";
@@ -17,7 +17,7 @@ import { SettingsModal } from "./SettingsModal";
 import { CreateLeadModal } from "./CreateLeadModal";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
 import type { WizardData, Template } from "@/components/campaigns/types";
-import { archiveLead as dbArchiveLead, updateLeadStatus as dbUpdateLeadStatus, deleteLead as dbDeleteLead } from "@/app/dashboard/crm/actions";
+import { archiveLead as dbArchiveLead, updateLeadStatus as dbUpdateLeadStatus, deleteLead as dbDeleteLead, enqueueEnrichment } from "@/app/dashboard/crm/actions";
 import type {
   CrmLead as DbLead,
   CrmColumn as DbColumn,
@@ -150,6 +150,8 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
   }, [workspaceId]);
 
   const [view,              setView]              = useState<View>("kanban");
+  const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set());
+  const [bulkStatus,        setBulkStatus]        = useState<"idle" | "running" | "done">("idle");
   const [selectedLead,      setSelectedLead]      = useState<CrmLead | null>(null);
   const [selectedLeadId,    setSelectedLeadId]    = useState<string | null>(null);
   const [settingsOpen,      setSettingsOpen]      = useState(false);
@@ -276,6 +278,40 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
         setCrmError(res.error ?? "Error al archivar lead");
       }
     });
+  }
+
+  // -- Bulk enrichment ----------------------------------------------------------
+
+  function handleToggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function handleToggleAll(ids: string[]) {
+    setSelectedIds((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  async function handleBulkEnrich(type: "find_email" | "find_phone") {
+    if (!selectedIds.size) return;
+    setBulkStatus("running");
+    const targets = filteredLeads.filter((l) =>
+      selectedIds.has(l.id) &&
+      l.linkedinUrl &&
+      (type === "find_email" ? !l.email : !l.phone)
+    );
+    await Promise.all(
+      targets.map((l) => enqueueEnrichment(l.id, type, l.linkedinUrl!).catch(() => {}))
+    );
+    setBulkStatus("done");
+    setSelectedIds(new Set());
+    setTimeout(() => setBulkStatus("idle"), 3000);
   }
 
   // -- Lead modal stage change ---------------------------------------------------
@@ -527,6 +563,46 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
               </span>
             </div>
 
+            {selectedIds.size > 0 && (
+              <div className="flex flex-shrink-0 items-center gap-3 rounded-xl border border-[var(--border)]
+                              bg-[var(--surface)] px-4 py-2.5 shadow-sm">
+                <span className="text-xs font-semibold text-[var(--foreground)]">
+                  {selectedIds.size} seleccionado{selectedIds.size > 1 ? "s" : ""}
+                </span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    onClick={() => handleBulkEnrich("find_email")}
+                    disabled={bulkStatus === "running"}
+                    className="flex items-center gap-1.5 rounded-lg bg-[var(--primary-soft)] px-3 py-1.5
+                               text-xs font-semibold text-[var(--primary)] hover:opacity-80
+                               disabled:opacity-40 transition-opacity"
+                  >
+                    <AtSign className="h-3 w-3" />
+                    {bulkStatus === "running" ? "Encolando..." : "Buscar Email"}
+                  </button>
+                  <button
+                    onClick={() => handleBulkEnrich("find_phone")}
+                    disabled={bulkStatus === "running"}
+                    className="flex items-center gap-1.5 rounded-lg bg-[var(--surface-hover)] px-3 py-1.5
+                               text-xs font-semibold text-[var(--foreground-muted)] hover:bg-[var(--border)]
+                               disabled:opacity-40 transition-colors"
+                  >
+                    <Phone className="h-3 w-3" />
+                    {bulkStatus === "running" ? "Encolando..." : "Buscar Teléfono"}
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="ml-1 text-xs text-[var(--foreground-faint)] hover:text-[var(--foreground)] transition-colors"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+                {bulkStatus === "done" && (
+                  <span className="text-xs text-[var(--success)]">✓ Tareas encoladas en el motor</span>
+                )}
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto">
               <LeadsListView
                 leads={filteredLeads}
@@ -538,6 +614,9 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
                   if (sortBy === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
                   else { setSortBy(field); setSortDir("desc"); }
                 }}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onToggleAll={handleToggleAll}
               />
             </div>
           </div>

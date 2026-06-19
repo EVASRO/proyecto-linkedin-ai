@@ -554,6 +554,32 @@ function AutopilotPanel({ data, update }: { data: NodeData; update: (p: Partial<
   );
 }
 
+function FollowPanel() {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.08)] px-3 py-3 text-[11px] leading-relaxed text-[#10B981]">
+        cazary.ai seguirá al lead en LinkedIn. Si el lead ya está siendo seguido,
+        la acción se omite automáticamente.
+      </div>
+      <div className="rounded-lg border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] px-3 py-2.5 text-[11px] leading-relaxed text-[#F59E0B]">
+        <span className="font-bold">Tip:</span> Seguir antes de conectar aumenta la visibilidad del perfil sin
+        generar notificación de solicitud de conexión.
+      </div>
+    </div>
+  );
+}
+
+function UnfollowPanel() {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] px-3 py-3 text-[11px] leading-relaxed text-[#EF4444]">
+        cazary.ai dejará de seguir al lead en LinkedIn. Útil para limpiar el
+        feed después de que el lead pasa a una etapa específica del CRM.
+      </div>
+    </div>
+  );
+}
+
 function WithdrawPanel() {
   return (
     <div className="rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] px-3 py-3 text-[11px] leading-relaxed text-[#EF4444]">
@@ -655,6 +681,8 @@ const TYPE_LABELS: Record<string, string> = {
   find_email:    "Buscar Email",
   find_phone:    "Buscar Teléfono",
   connect_email: "Conexión via Email",
+  follow:        "Seguir Perfil",
+  unfollow:      "Dejar de Seguir",
 };
 
 // -- Main export ---------------------------------------------------------------
@@ -711,6 +739,8 @@ export function PropertyPanel({ node, onUpdate, onDelete, onClose }: PropertyPan
         {nodeType === "find_email"                 && <FindEmailPanel     data={data} update={update} />}
         {nodeType === "find_phone"                 && <FindPhonePanel     data={data} update={update} />}
         {nodeType === "connect_email"              && <ConnectEmailPanel  data={data} update={update} />}
+        {nodeType === "follow"                     && <FollowPanel                                     />}
+        {nodeType === "unfollow"                   && <UnfollowPanel                                   />}
         {(isStart || isEnd || ["visit", "like"].includes(nodeType)) && (
           <p className="pt-4 text-center text-xs text-[var(--foreground-muted)]">
             Este nodo no requiere configuración adicional.

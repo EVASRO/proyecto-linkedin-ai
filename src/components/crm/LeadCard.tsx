@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Archive, ClipboardCopy, Clock, Eye,
-  MessageSquare, Trash2, X, Zap,
+  Archive, AtSign, ClipboardCopy, Clock, Eye,
+  MessageSquare, Phone, Trash2, X, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CrmLead } from "./types";
+import { enqueueEnrichment } from "@/app/dashboard/crm/actions";
 
 // -- Helpers -------------------------------------------------------------------
 
@@ -99,6 +100,16 @@ interface LeadCardProps {
 
 export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: LeadCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [enrichStatus, setEnrichStatus] = useState<"idle" | "queued" | "error">("idle");
+
+  async function handleEnrich(e: React.MouseEvent, type: "find_email" | "find_phone") {
+    e.stopPropagation();
+    if (!lead.linkedinUrl) return;
+    setEnrichStatus("queued");
+    const res = await enqueueEnrichment(lead.id, type, lead.linkedinUrl);
+    if (!res.success) setEnrichStatus("error");
+    setTimeout(() => setEnrichStatus("idle"), 3000);
+  }
 
   function copyUrl(e: React.MouseEvent) {
     e.stopPropagation();
@@ -287,6 +298,36 @@ export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: Lead
                        hover:text-[var(--foreground)] transition-colors"
           >
             <ClipboardCopy className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {!lead.email && lead.linkedinUrl && (
+          <button
+            onClick={(e) => handleEnrich(e, "find_email")}
+            title={enrichStatus === "queued" ? "Email encolado ✓" : "Buscar Email"}
+            disabled={enrichStatus === "queued"}
+            className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+              enrichStatus === "queued"
+                ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                : "text-[var(--foreground-muted)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]"
+            )}
+          >
+            <AtSign className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {!lead.phone && lead.linkedinUrl && (
+          <button
+            onClick={(e) => handleEnrich(e, "find_phone")}
+            title={enrichStatus === "queued" ? "Teléfono encolado ✓" : "Buscar Teléfono"}
+            disabled={enrichStatus === "queued"}
+            className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+              enrichStatus === "queued"
+                ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                : "text-[var(--foreground-muted)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]"
+            )}
+          >
+            <Phone className="h-3.5 w-3.5" />
           </button>
         )}
         {onArchive && (

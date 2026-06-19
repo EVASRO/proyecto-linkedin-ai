@@ -85,18 +85,22 @@ const COLS: ColDef[] = [
 // -- Props --------------------------------------------------------------------
 
 interface LeadsListViewProps {
-  leads:        CrmLead[];
-  columns:      Column[];
-  onLeadClick?: (lead: CrmLead) => void;
-  sortBy?:      SortField;
-  sortDir?:     "asc" | "desc";
-  onSort?:      (field: SortField) => void;
+  leads:            CrmLead[];
+  columns:          Column[];
+  onLeadClick?:     (lead: CrmLead) => void;
+  sortBy?:          SortField;
+  sortDir?:         "asc" | "desc";
+  onSort?:          (field: SortField) => void;
+  selectedIds?:     Set<string>;
+  onToggleSelect?:  (id: string) => void;
+  onToggleAll?:     (ids: string[]) => void;
 }
 
 // -- Component ----------------------------------------------------------------
 
 export function LeadsListView({
   leads, columns, onLeadClick, sortBy, sortDir, onSort,
+  selectedIds, onToggleSelect, onToggleAll,
 }: LeadsListViewProps) {
   const colMap = Object.fromEntries(columns.map((c) => [c.key ?? c.id, c.title]));
 
@@ -127,6 +131,8 @@ export function LeadsListView({
                 <input
                   type="checkbox"
                   className="rounded border-[var(--border)] bg-[var(--surface-hover)]"
+                  checked={selectedIds ? leads.length > 0 && leads.every((l) => selectedIds.has(l.id)) : false}
+                  onChange={() => onToggleAll?.(leads.map((l) => l.id))}
                 />
               </th>
               {COLS.map((col) => (
@@ -169,6 +175,8 @@ export function LeadsListView({
                     <input
                       type="checkbox"
                       className="rounded border-[var(--border)] bg-[var(--surface-hover)]"
+                      checked={selectedIds?.has(lead.id) ?? false}
+                      onChange={() => onToggleSelect?.(lead.id)}
                     />
                   </td>
 

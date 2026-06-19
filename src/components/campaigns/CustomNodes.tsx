@@ -4,7 +4,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   AlertCircle, AtSign, Bot, CheckCircle2, Clock, Flag,
   GitBranch, Globe, Heart, Mail, MailPlus, MessageSquare,
-  Phone, Play, UserMinus, UserPlus,
+  Phone, Play, UserCheck, UserMinus, UserPlus, UserX,
 } from "lucide-react";
 import type { NodeData, NodeType } from "./types";
 
@@ -51,6 +51,8 @@ const ACCENT: Record<NodeType, string> = {
   find_email:   "#14B8A6",
   find_phone:   "#14B8A6",
   connect_email:"#8B5CF6",
+  follow:       "#10B981",
+  unfollow:     "#EF4444",
 };
 
 function accent(type: NodeType): string {
@@ -638,7 +640,10 @@ export function AutopilotNode({ data, selected }: NodeProps) {
 
 export function GenericNode({ data, selected }: NodeProps) {
   const d    = data as NodeData;
-  const Icon = d.nodeType === "like" ? Heart : Globe;
+  const Icon = d.nodeType === "like"     ? Heart
+             : d.nodeType === "follow"   ? UserCheck
+             : d.nodeType === "unfollow" ? UserX
+             : Globe;
   return (
     <BaseNode data={d} selected={selected} icon={Icon}>
       <p className="text-[10px]" style={{ color: "var(--foreground-faint)" }}>{d.label}</p>
@@ -776,6 +781,8 @@ export const nodeTypes = {
   autopilot:    AutopilotNode,
   visit:        GenericNode,
   like:         GenericNode,
+  follow:       GenericNode,
+  unfollow:     GenericNode,
   withdraw:     WithdrawNode,
   find_email:   FindEmailNode,
   find_phone:   FindPhoneNode,
