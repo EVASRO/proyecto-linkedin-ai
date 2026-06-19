@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertOctagon, Archive, Check, Clock, Link2, Loader2, Mail, MoreVertical,
-  Pause, Play, Plus, Sparkles, X,
+  AlertOctagon, AlertTriangle, Archive, Check, Clock, Link2, Loader2,
+  Mail, MoreVertical, Pause, Play, Plus, Sparkles, Trash2, Users, X,
 } from "lucide-react";
 import type { Campaign, CampaignStatus, CampaignType } from "./types";
 import {
   archiveCampaign, updateCampaignStatus, launchCampaign,
+  deleteCampaignFull, getLeadCountForCampaign,
 } from "@/app/dashboard/campanas/actions";
 
 // -- Helpers -------------------------------------------------------------------
@@ -75,16 +76,149 @@ function ConfirmModal({ title, body, confirmLabel, confirmCls, loading, onConfir
   );
 }
 
+// -- DeleteCampaignDialog ------------------------------------------------------
+
+interface DeleteCampaignDialogProps {
+  name: string;
+  leadCount: number;
+  loadingCount: boolean;
+  deleteLeads: boolean;
+  onDeleteLeadsChange: (v: boolean) => void;
+  loading: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function DeleteCampaignDialog({
+  name, leadCount, loadingCount, deleteLeads, onDeleteLeadsChange,
+  loading, onConfirm, onCancel,
+}: DeleteCampaignDialogProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[rgba(239,68,68,0.12)]">
+            <Trash2 className="h-4 w-4 text-[#EF4444]" />
+          </div>
+          <h3 className="text-sm font-bold text-[var(--foreground)]">¿Eliminar campaña?</h3>
+          <button onClick={onCancel} className="ml-auto rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[var(--border)] transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-sm text-[var(--foreground-muted)]">
+            Vas a eliminar permanentemente <strong className="text-[var(--foreground)]">{name}</strong>.
+            Esta acción no se puede deshacer.
+          </p>
+
+          {/* Lead count badge */}
+          <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3">
+            <Users className="h-4 w-4 text-[var(--foreground-faint)]" />
+            <span className="text-sm text-[var(--foreground-muted)]">
+              {loadingCount ? (
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Contando leads…
+                </span>
+              ) : (
+                <>
+                  <strong className="text-[var(--foreground)]">{leadCount}</strong> lead{leadCount !== 1 ? "s" : ""} vinculado{leadCount !== 1 ? "s" : ""}
+                </>
+              )}
+            </span>
+          </div>
+
+          {/* Options */}
+          <div className="space-y-2">
+            <label className={[
+              "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
+              !deleteLeads
+                ? "border-[rgba(37,99,235,0.4)] bg-[rgba(37,99,235,0.06)]"
+                : "border-[var(--border)] hover:bg-[var(--surface-hover)]",
+            ].join(" ")}>
+              <input
+                type="radio"
+                name="deleteLeads"
+                checked={!deleteLeads}
+                onChange={() => onDeleteLeadsChange(false)}
+                className="mt-0.5 accent-[#2563EB]"
+              />
+              <div>
+                <p className="text-xs font-semibold text-[var(--foreground)]">Eliminar campaña y mantener leads</p>
+                <p className="mt-0.5 text-[10px] text-[var(--foreground-faint)]">
+                  Los leads se desvinculan de la campaña y permanecen en el CRM.
+                </p>
+              </div>
+            </label>
+
+            <label className={[
+              "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
+              deleteLeads
+                ? "border-[rgba(239,68,68,0.4)] bg-[rgba(239,68,68,0.06)]"
+                : "border-[var(--border)] hover:bg-[var(--surface-hover)]",
+            ].join(" ")}>
+              <input
+                type="radio"
+                name="deleteLeads"
+                checked={deleteLeads}
+                onChange={() => onDeleteLeadsChange(true)}
+                className="mt-0.5 accent-[#EF4444]"
+              />
+              <div>
+                <p className="text-xs font-semibold text-[#EF4444]">Eliminar campaña y todos sus leads</p>
+                <p className="mt-0.5 text-[10px] text-[var(--foreground-faint)]">
+                  Se eliminarán permanentemente {loadingCount ? "…" : leadCount} leads. Irreversible.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {deleteLeads && leadCount > 0 && (
+            <div className="flex items-start gap-2 rounded-xl border border-[rgba(239,68,68,0.25)] bg-[rgba(239,68,68,0.06)] px-3 py-2.5">
+              <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-[#EF4444]" />
+              <p className="text-[11px] text-[#EF4444] font-medium">
+                Se eliminarán {leadCount} lead{leadCount !== 1 ? "s" : ""} de forma permanente.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 border-t border-[var(--border)] bg-[var(--background)] px-5 py-4">
+          <button onClick={onCancel} className="flex-1 rounded-xl border border-[var(--border)] py-2.5 text-xs font-semibold text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] transition-colors">
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading || loadingCount}
+            className={[
+              "flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold text-white disabled:opacity-60 transition-colors",
+              deleteLeads ? "bg-[#EF4444] hover:opacity-90" : "bg-[#F59E0B] hover:opacity-90",
+            ].join(" ")}
+          >
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {deleteLeads ? "Eliminar todo" : "Eliminar campaña"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // -- Campaign Card -------------------------------------------------------------
 
 interface CampaignCardProps {
   campaign: Campaign;
   onOpen: (c: Campaign) => void;
   onArchive: (id: string, name: string) => void;
+  onDelete: (id: string, name: string) => void;
   onToggleStatus: (id: string, current: CampaignStatus) => void;
 }
 
-function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignCardProps) {
+function CampaignCard({ campaign, onOpen, onArchive, onDelete, onToggleStatus }: CampaignCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const type     = TYPE_META[campaign.type] ?? TYPE_META["linkedin"];
@@ -166,6 +300,13 @@ function CampaignCard({ campaign, onOpen, onArchive, onToggleStatus }: CampaignC
                   <Archive className="h-3.5 w-3.5" />
                   Archivar
                 </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(campaign.id, campaign.name); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-[#EF4444] hover:bg-[rgba(239,68,68,0.08)]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Eliminar
+                </button>
               </div>
             )}
           </div>
@@ -230,8 +371,10 @@ interface CampaignListViewProps {
 }
 
 type ConfirmState = { open: boolean; action: "archive"; id: string; name: string };
+type DeleteState  = { open: boolean; id: string; name: string };
 
 const EMPTY_CONFIRM: ConfirmState = { open: false, action: "archive", id: "", name: "" };
+const EMPTY_DELETE:  DeleteState  = { open: false, id: "", name: "" };
 
 const STATUS_ORDER = ["active", "paused", "draft", "completed", "archived"];
 
@@ -241,6 +384,10 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
   const [emergencyBrakeUsed, setEmergencyBrakeUsed] = useState(false);
   const [showBrakeConfirm, setShowBrakeConfirm]     = useState(false);
   const [confirm, setConfirm]         = useState<ConfirmState>(EMPTY_CONFIRM);
+  const [deleteState, setDeleteState] = useState<DeleteState>(EMPTY_DELETE);
+  const [deleteLeads, setDeleteLeads] = useState(false);
+  const [leadCount, setLeadCount]     = useState(0);
+  const [loadingCount, setLoadingCount] = useState(false);
   const [toast, setToast]             = useState<ToastState>(null);
 
   const sorted      = [...campaigns].sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
@@ -309,6 +456,35 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
         router.refresh();
       } else {
         showToast("error", res.error ?? "Error al archivar");
+      }
+    });
+  }
+
+  async function openDeleteDialog(id: string, name: string) {
+    setDeleteLeads(false);
+    setLeadCount(0);
+    setDeleteState({ open: true, id, name });
+    setLoadingCount(true);
+    const count = await getLeadCountForCampaign(id);
+    setLeadCount(count);
+    setLoadingCount(false);
+  }
+
+  function handleDeleteConfirm() {
+    const { id, name } = deleteState;
+    setDeleteState(EMPTY_DELETE);
+
+    startTransition(async () => {
+      const res = await deleteCampaignFull(id, deleteLeads);
+      if (res.success) {
+        onCampaignsChange(campaigns.filter((c) => c.id !== id));
+        const msg = deleteLeads && (res.data?.deletedLeads ?? 0) > 0
+          ? `Campaña "${name}" eliminada · ${res.data!.deletedLeads} leads eliminados`
+          : `Campaña "${name}" eliminada · leads desvinculados`;
+        showToast("success", msg);
+        router.refresh();
+      } else {
+        showToast("error", res.error ?? "Error al eliminar");
       }
     });
   }
@@ -388,6 +564,7 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
                 onOpen={onOpen}
                 onToggleStatus={toggleCampaignStatus}
                 onArchive={(id, name) => setConfirm({ open: true, action: "archive", id, name })}
+                onDelete={openDeleteDialog}
               />
             ))}
             <button
@@ -412,6 +589,19 @@ export function CampaignListView({ campaigns, onOpen, onNew, onCampaignsChange }
           loading={isPending}
           onConfirm={handleConfirmAction}
           onCancel={() => setConfirm(EMPTY_CONFIRM)}
+        />
+      )}
+
+      {deleteState.open && (
+        <DeleteCampaignDialog
+          name={deleteState.name}
+          leadCount={leadCount}
+          loadingCount={loadingCount}
+          deleteLeads={deleteLeads}
+          onDeleteLeadsChange={setDeleteLeads}
+          loading={isPending}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteState(EMPTY_DELETE)}
         />
       )}
 

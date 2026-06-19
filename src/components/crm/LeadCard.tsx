@@ -300,7 +300,14 @@ export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: Lead
             <ClipboardCopy className="h-3.5 w-3.5" />
           </button>
         )}
-        {!lead.email && lead.linkedinUrl && (
+        {lead.email ? (
+          <span
+            title={lead.email}
+            className="flex h-6 w-6 items-center justify-center rounded-md bg-[rgba(16,185,129,0.12)] text-[#10B981]"
+          >
+            <AtSign className="h-3.5 w-3.5" />
+          </span>
+        ) : lead.linkedinUrl ? (
           <button
             onClick={(e) => handleEnrich(e, "find_email")}
             title={enrichStatus === "queued" ? "Email encolado ✓" : "Buscar Email"}
@@ -314,8 +321,15 @@ export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: Lead
           >
             <AtSign className="h-3.5 w-3.5" />
           </button>
-        )}
-        {!lead.phone && lead.linkedinUrl && (
+        ) : null}
+        {lead.phone ? (
+          <span
+            title={lead.phone}
+            className="flex h-6 w-6 items-center justify-center rounded-md bg-[rgba(16,185,129,0.12)] text-[#10B981]"
+          >
+            <Phone className="h-3.5 w-3.5" />
+          </span>
+        ) : lead.linkedinUrl ? (
           <button
             onClick={(e) => handleEnrich(e, "find_phone")}
             title={enrichStatus === "queued" ? "Teléfono encolado ✓" : "Buscar Teléfono"}
@@ -329,7 +343,7 @@ export function LeadCard({ lead, isDragging, onView, onDelete, onArchive }: Lead
           >
             <Phone className="h-3.5 w-3.5" />
           </button>
-        )}
+        ) : null}
         {onArchive && (
           <button
             onClick={(e) => { e.stopPropagation(); onArchive(lead); }}

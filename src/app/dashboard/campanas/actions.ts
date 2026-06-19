@@ -377,6 +377,71 @@ export async function permanentlyDeleteCampaign(id: string): Promise<Result> {
   }
 }
 
+// -- getLeadCountForCampaign ---------------------------------------------------
+
+export async function getLeadCountForCampaign(campaignId: string): Promise<number> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+    const { count } = await supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", campaignId)
+      .eq("workspace_id", workspaceId);
+    return count ?? 0;
+  } catch { return 0; }
+}
+
+// -- deleteCampaignFull --------------------------------------------------------
+
+export async function deleteCampaignFull(
+  campaignId: string,
+  deleteLeads: boolean
+): Promise<Result<{ deletedLeads: number }>> {
+  try {
+    const { supabase, workspaceId } = await getAuthContext();
+
+    // 1. Cancel all pending/processing tasks
+    await supabase
+      .from("engine_queue")
+      .update({ status: "cancelled", last_error: "Campaña eliminada" })
+      .eq("campaign_id", campaignId)
+      .in("status", ["pending", "processing", "scheduled", "paused"]);
+
+    let deletedLeads = 0;
+
+    if (deleteLeads) {
+      const { data: deleted } = await supabase
+        .from("leads")
+        .delete()
+        .eq("campaign_id", campaignId)
+        .eq("workspace_id", workspaceId)
+        .select("id");
+      deletedLeads = deleted?.length ?? 0;
+    } else {
+      // Desvincular leads sin borrarlos
+      await supabase
+        .from("leads")
+        .update({ campaign_id: null })
+        .eq("campaign_id", campaignId)
+        .eq("workspace_id", workspaceId);
+    }
+
+    const { error } = await supabase
+      .from("campaigns")
+      .delete()
+      .eq("id", campaignId)
+      .eq("workspace_id", workspaceId);
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath("/dashboard/campanas");
+    revalidatePath("/dashboard");
+    return { success: true, data: { deletedLeads } };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
 // -- 7 (legacy). deleteCampaign → now delegates to archiveCampaign ------------
 
 export async function deleteCampaign(id: string): Promise<Result> {
