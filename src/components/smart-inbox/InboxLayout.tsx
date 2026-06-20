@@ -192,6 +192,20 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
         );
       })
       .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "conversations",
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, async (_payload) => {
+        const result = await getConversationsWithMessages();
+        if (result.success && result.data) {
+          setConversations((prev) => {
+            const existingIds = new Set(prev.map((c) => c.id));
+            const newOnes = result.data!.conversations.filter((c) => !existingIds.has(c.id));
+            if (newOnes.length === 0) return prev;
+            return [...newOnes, ...prev];
+          });
+        }
+      })
+      .on("postgres_changes", {
         event: "UPDATE", schema: "public", table: "leads",
         filter: `workspace_id=eq.${workspaceId}`,
       }, (payload) => {
@@ -347,10 +361,33 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
   async function handleSync() {
     setSyncing(true);
     try {
-      window.postMessage({ type: "NEXUSAI_FORCE_INBOX_CHECK" }, "*");
-      await new Promise((r) => setTimeout(r, 4000));
-      const result = await getConversationsWithMessages();
-      if (result.success && result.data) setConversations(result.data.conversations);
+      const bridgeAvailable = (window as Window & { __cazaryBridgeLoaded?: boolean }).__cazaryBridgeLoaded;
+
+      if (bridgeAvailable) {
+        const requestId = Math.random().toString(36).slice(2);
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            window.removeEventListener("message", handler);
+            resolve();
+          }, 8000);
+          function handler(event: MessageEvent) {
+            if (event.source !== window) return;
+            if (event.data?.type !== `CAZARY_RES_${requestId}`) return;
+            clearTimeout(timeout);
+            window.removeEventListener("message", handler);
+            resolve();
+          }
+          window.addEventListener("message", handler);
+          window.postMessage({ type: "CAZARY_REQ_FORCE_INBOX_SYNC", requestId }, "*");
+        });
+        // Dar tiempo a Supabase Realtime para entregar los cambios
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+
+      startTransition(async () => {
+        const result = await getConversationsWithMessages();
+        if (result.success && result.data) setConversations(result.data.conversations);
+      });
       setLastSync(new Date());
     } finally {
       setSyncing(false);

@@ -146,11 +146,12 @@ export async function sendInboxMessage(data: {
       priority:     1,
       scheduled_at: new Date().toISOString(),
       payload: {
-        message_text: data.text,
-        profile_url:  profileUrl,
-        lead_id:      data.lead_id,
-        campaign_id:  null,
-        source:       profileUrl.includes("sales/lead") ? "salesnav" : "linkedin",
+        message_text:     data.text,
+        profile_url:      profileUrl,
+        lead_id:          data.lead_id,
+        campaign_id:      null,
+        source:           profileUrl.includes("sales/lead") ? "salesnav" : "linkedin",
+        inbox_message_id: String(msg.id),
       },
     });
 

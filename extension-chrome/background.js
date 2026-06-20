@@ -189,6 +189,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
 
+      case 'FORCE_INBOX_SYNC': {
+        const wsId = await getWorkspaceId();
+        if (wsId) {
+          await syncInboxViaVoyager(wsId).catch(e =>
+            console.warn('[cazary.ai] FORCE_INBOX_SYNC error:', e)
+          );
+        }
+        sendResponse({ ok: true });
+        break;
+      }
+
       case 'LINKEDIN_PROFILE_DETECTED': {
         await chrome.storage.local.set({ linkedin_profile: msg.profile });
         await syncLinkedInAccount();
@@ -2469,19 +2480,26 @@ async function handleActionDone(taskId, result) {
       }).catch(() => {});
     }
 
-    // Actualizar messages.status de 'sending' → 'sent' para mensajes del inbox
+    // Actualizar messages.status de 'sending' → 'delivered' para mensajes del inbox
     if (result.action === 'message' && result.lead_id) {
       const taskRow = await supabaseFetch(
         `engine_queue?id=eq.${taskId}&select=payload`, { method: 'GET' }
       ).catch(() => null);
-      const draftMsgId = taskRow?.[0]?.payload?.draft_msg_id ?? null;
-      const msgFilter = draftMsgId
-        ? `messages?id=eq.${draftMsgId}`
-        : `messages?lead_id=eq.${result.lead_id}&status=eq.sending&sender=eq.user`;
+      const payload      = taskRow?.[0]?.payload ?? {};
+      const inboxMsgId   = payload.inbox_message_id ?? null;
+      const draftMsgId   = payload.draft_msg_id     ?? null;
+      const msgFilter    = inboxMsgId
+        ? `messages?id=eq.${inboxMsgId}`
+        : draftMsgId
+          ? `messages?id=eq.${draftMsgId}`
+          : `messages?lead_id=eq.${result.lead_id}&status=eq.sending&sender=eq.user`;
       await supabaseFetch(msgFilter, {
         method: 'PATCH', prefer: 'return=minimal',
-        body: JSON.stringify({ status: 'sent', is_read: true }),
+        body: JSON.stringify({ status: 'delivered', is_read: true }),
       }).catch(e => console.warn('[cazary.ai] messages status update failed:', e));
+      if (inboxMsgId) {
+        console.log(`[cazary.ai] Mensaje ${inboxMsgId} marcado como delivered ✓`);
+      }
     }
   }
 }
