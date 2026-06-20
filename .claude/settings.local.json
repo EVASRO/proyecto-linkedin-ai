@@ -22,7 +22,8 @@
       "Bash(node --check /Users/ernesto/proyecto-linkedin-ai/extension-chrome/background.js)",
       "Bash(awk 'NR>=1155 && NR<=1165 {print NR\": \"$0}' /Users/ernesto/proyecto-linkedin-ai/extension-chrome/background.js)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(rm /Users/ernesto/proyecto-linkedin-ai/.git/HEAD.lock)"
     ],
     "additionalDirectories": [
       "/Users/ernesto/proyecto-linkedin-ai/src/app/api/auth/[...nextauth]"
