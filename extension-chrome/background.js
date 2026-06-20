@@ -310,16 +310,80 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           break;
         }
         try {
-          // Abrir o reutilizar tab con la URL de búsqueda (en background, no activa)
+          // Función autónoma que lee el conteo inyectando código directamente en la tab
+          // (no depende del content script — más confiable)
+          async function readCountFromTab(tabId) {
+            try {
+              const results = await chrome.scripting.executeScript({
+                target: { tabId },
+                func: () => {
+                  function parseCount(txt) {
+                    if (!txt) return null;
+                    // "65 mills.+ resultados" → 65000000
+                    const millsM = txt.match(/([\d,.]+)\s*mills?\.\+?/i);
+                    if (millsM) return Math.round(parseFloat(millsM[1].replace(/[,.]/g, '')) * 1_000_000);
+                    const m = txt.match(/([\d,.]+)/);
+                    if (m) {
+                      const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
+                      if (!isNaN(n) && n > 0) return n;
+                    }
+                    return null;
+                  }
+                  // SalesNav post-rebrand 2025 (confirmado por inspección DOM)
+                  const snNew = document.querySelector('[class*="_regular-search-count"]');
+                  if (snNew) { const n = parseCount(snNew.innerText); if (n) return n; }
+                  // Selectores legacy
+                  for (const sel of [
+                    '.search-results__total-results', '.list-header-count',
+                    '[data-anonymize="result-count"]', '.search-results-container h2',
+                    '[class*="result-count"]', '[class*="results-count"]',
+                    '[class*="total-results"]', '[class*="search-count"]',
+                  ]) {
+                    const el = document.querySelector(sel);
+                    if (el) { const n = parseCount(el.innerText); if (n) return n; }
+                  }
+                  // TreeWalker: escanear todos los nodos de texto visibles
+                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                  let node;
+                  while ((node = walker.nextNode())) {
+                    const t = (node.nodeValue || '').trim();
+                    if (t.length > 1 && t.length < 80 && /resultado|result/i.test(t) && /\d/.test(t)) {
+                      const n = parseCount(t);
+                      if (n) return n;
+                    }
+                  }
+                  return null;
+                },
+              });
+              return results?.[0]?.result ?? null;
+            } catch (e) {
+              console.warn('[cazary.ai] scripting.executeScript error:', e.message);
+              return null;
+            }
+          }
+
+          // 1. Buscar tab existente de SalesNav/LinkedIn ya abierta
           const existingTabs = await chrome.tabs.query({
             url: ['*://*.linkedin.com/sales/search/*', '*://*.linkedin.com/search/results/*']
           });
+
+          // 2. Intentar leer SIN navegar primero (si el usuario ya tiene la búsqueda abierta)
+          if (existingTabs.length > 0) {
+            const quickCount = await readCountFromTab(existingTabs[0].id);
+            if (quickCount) {
+              console.log('[cazary.ai] count_leads: leído de tab existente sin navegar →', quickCount);
+              sendResponse({ count: quickCount });
+              break;
+            }
+          }
+
+          // 3. Navegar a la URL de búsqueda — ACTIVA para que SalesNav renderice
           let tabId;
           if (existingTabs.length > 0) {
             tabId = existingTabs[0].id;
-            await chrome.tabs.update(tabId, { url: searchUrl });
+            await chrome.tabs.update(tabId, { url: searchUrl, active: true });
           } else {
-            const newTab = await chrome.tabs.create({ url: searchUrl, active: false });
+            const newTab = await chrome.tabs.create({ url: searchUrl, active: true });
             tabId = newTab.id;
           }
 
@@ -332,32 +396,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               }
             };
             chrome.tabs.onUpdated.addListener(listener);
-            setTimeout(resolve, 10000); // timeout máximo 10s
+            setTimeout(resolve, 12000);
           });
 
-          // SalesNav es React SPA: esperar que renderice el conteo (3.5s)
-          await new Promise(r => setTimeout(r, 3500));
-
-          // Reintentar hasta 4 veces con 2s entre intentos
+          // 4. Reintentar con scripting.executeScript hasta 5 veces
+          //    (SalesNav tarda hasta ~4s en renderizar el conteo tras carga)
           let count = null;
-          for (let attempt = 1; attempt <= 4; attempt++) {
-            try {
-              const resp = await Promise.race([
-                chrome.tabs.sendMessage(tabId, { action: 'count_leads_quick' }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
-              ]);
-              if (resp?.count && resp.count > 0) {
-                count = resp.count;
-                break;
-              }
-            } catch (e) {
-              console.warn(`[cazary.ai] count attempt ${attempt} failed:`, e.message);
-            }
-            if (attempt < 4) await new Promise(r => setTimeout(r, 2000));
+          for (let attempt = 1; attempt <= 5; attempt++) {
+            await new Promise(r => setTimeout(r, attempt === 1 ? 2000 : 1500));
+            count = await readCountFromTab(tabId);
+            console.log(`[cazary.ai] count attempt ${attempt}:`, count);
+            if (count) break;
           }
 
           sendResponse({ count, error: count ? null : 'COUNT_NOT_FOUND' });
         } catch (e) {
+          console.error('[cazary.ai] NEXUSAI_COUNT_LEADS error:', e);
           sendResponse({ count: null, error: e.message });
         }
         break;
