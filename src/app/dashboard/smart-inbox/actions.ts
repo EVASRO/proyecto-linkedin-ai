@@ -35,12 +35,30 @@ export async function getConversationsWithMessages(): Promise<Result<{ conversat
       (convRows ?? []).map(async (row) => {
         const lead = row.leads as Record<string, unknown>;
 
-        const { data: msgRows } = await supabase
-          .from("messages")
-          .select("*")
-          .eq("lead_id", lead.id)
-          .order("created_at", { ascending: true })
-          .limit(50);
+        // Estrategia dual: buscar por conversation_id (más preciso) + lead_id (fallback)
+        const [{ data: byConv }, { data: byLead }] = await Promise.all([
+          supabase
+            .from("messages")
+            .select("*")
+            .eq("conversation_id", row.id)
+            .order("created_at", { ascending: true })
+            .limit(50),
+          supabase
+            .from("messages")
+            .select("*")
+            .eq("lead_id", lead.id)
+            .order("created_at", { ascending: true })
+            .limit(50),
+        ]);
+
+        const seenIds = new Set<string>();
+        const msgRows = [...(byConv ?? []), ...(byLead ?? [])]
+          .filter((m) => {
+            if (seenIds.has(String(m.id))) return false;
+            seenIds.add(String(m.id));
+            return true;
+          })
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
         const messages: Message[] = (msgRows ?? []).map((m) => ({
           id:        String(m.id),

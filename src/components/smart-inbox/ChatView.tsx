@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Bot, Check, CheckCheck, ChevronDown,
   ExternalLink, LayoutTemplate, Loader2, Send, Sparkles, User, X, XCircle,
@@ -44,6 +44,21 @@ function initials(name: string): string {
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function getDateLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const today  = new Date(now.getFullYear(),  now.getMonth(),  now.getDate());
+  const msgDay = new Date(d.getFullYear(),    d.getMonth(),    d.getDate());
+  const diffDays = Math.round((today.getTime() - msgDay.getTime()) / 86400000);
+  if (diffDays === 0) return "Hoy";
+  if (diffDays === 1) return "Ayer";
+  if (diffDays < 7) {
+    const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+    return days[d.getDay()];
+  }
+  return d.toLocaleDateString("es-PE", { day: "2-digit", month: "long", year: "numeric" });
 }
 
 // -- Message Status Icon -------------------------------------------------------
@@ -421,19 +436,39 @@ export function ChatView({
       {/* -- Messages area -- */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="flex flex-col gap-3">
-          {conv.messages.map((msg) =>
-            msg.sender === "ai" &&
-            (msg.status === "draft" || msg.status === "rejected" || msg.status === "approved" || msg.status === "pending_send") ? (
-              <DraftBubble
-                key={msg.id}
-                msg={msg}
-                onApprove={handleApproveDraft}
-                onReject={handleRejectDraft}
-              />
-            ) : (
-              <Bubble key={msg.id} msg={msg} leadName={conv.lead.name} />
-            )
-          )}
+          {conv.messages.reduce<React.ReactNode[]>((acc, msg, i) => {
+            const prevMsg = conv.messages[i - 1];
+            const currentLabel = getDateLabel(msg.timestamp);
+            const prevLabel    = prevMsg ? getDateLabel(prevMsg.timestamp) : null;
+
+            if (i === 0 || currentLabel !== prevLabel) {
+              acc.push(
+                <div key={`sep-${i}`} className="flex items-center gap-3 my-2">
+                  <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
+                  <span className="flex-shrink-0 rounded-full px-3 py-1 text-[10px] font-semibold" style={{ background: "var(--surface)", color: "var(--foreground-faint)", border: "1px solid var(--border)" }}>
+                    {currentLabel}
+                  </span>
+                  <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
+                </div>
+              );
+            }
+
+            const node =
+              msg.sender === "ai" &&
+              (msg.status === "draft" || msg.status === "rejected" || msg.status === "approved" || msg.status === "pending_send") ? (
+                <DraftBubble
+                  key={msg.id}
+                  msg={msg}
+                  onApprove={handleApproveDraft}
+                  onReject={handleRejectDraft}
+                />
+              ) : (
+                <Bubble key={msg.id} msg={msg} leadName={conv.lead.name} />
+              );
+
+            acc.push(node);
+            return acc;
+          }, [])}
           <div ref={bottomRef} />
         </div>
       </div>

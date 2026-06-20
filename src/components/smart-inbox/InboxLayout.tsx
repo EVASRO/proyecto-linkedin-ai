@@ -14,6 +14,7 @@ import {
   toggleAutopilot as toggleAutopilotAction,
   markConversationRead,
   setAutopilotMode as setAutopilotModeAction,
+  archiveConversation as archiveConversationAction,
 } from "@/app/dashboard/smart-inbox/actions";
 import {
   getAgents,
@@ -349,6 +350,7 @@ export function InboxLayout({ initialConversations, workspaceId }: InboxLayoutPr
     setConversations((prev) =>
       prev.map((c) => c.id === id ? { ...c, status: "archived", resolvedAt: new Date().toISOString() } : c)
     );
+    startTransition(async () => { await archiveConversationAction(id); });
   }
 
   function getAssignedAgent(conv: Conversation) {
