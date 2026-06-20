@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import {
-  ArrowLeft, ArrowRight, Check, Link2, Loader2, Mail, X, FileText,
+  ArrowLeft, ArrowRight, Check, Link2, Mail, X, FileText,
   Sparkles, Users,
 } from "lucide-react";
 import type { CampaignType, WizardData, Template } from "./types";
@@ -146,8 +146,17 @@ function Step2({
   const urlTouched = data.segmentationUrl.length > 0;
   const urlError   = urlTouched && !urlValid;
 
+  // Auto-contar cuando la URL es válida (con debounce de 800ms)
   useEffect(() => {
     setCountState({ status: "idle" });
+    if (!urlValid || !data.segmentationUrl) return;
+
+    const timer = setTimeout(() => {
+      handleCount();
+    }, 800);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.segmentationUrl]);
 
   async function handleCount() {
@@ -171,7 +180,7 @@ function Step2({
       }
       if (resp.count && resp.count > 0) {
         setCountState({ status: "done", count: resp.count });
-        onChange({ estimatedLeads: resp.count });
+        onChange({ estimatedLeads: resp.count, maxLeads: null });
       } else {
         setCountState({ status: "manual" });
       }
@@ -265,132 +274,113 @@ function Step2({
         </ol>
       </div>
 
-      {/* Máximo de leads a contactar */}
-      <div className="space-y-1.5">
-        <label className="block text-xs font-medium text-[var(--foreground-muted)]">
-          Máximo de leads a contactar
-          <span className="ml-1 text-[var(--foreground-muted)] font-normal">(opcional — deja vacío para usar todos)</span>
-        </label>
-        <input
-          type="number"
-          min={1}
-          max={data.estimatedLeads > 0 ? data.estimatedLeads : undefined}
-          placeholder={data.estimatedLeads > 0 ? `Máx: ${data.estimatedLeads}` : "Ej: 100"}
-          value={data.maxLeads ?? ""}
-          onChange={(e) => {
-            const val = e.target.value ? parseInt(e.target.value, 10) : null;
-            onChange({ maxLeads: val });
-          }}
-          className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-        {data.maxLeads !== null && data.estimatedLeads > 0 && data.maxLeads > data.estimatedLeads && (
-          <p className="text-xs text-amber-500">El máximo supera los leads estimados</p>
-        )}
-      </div>
-
-      {/* Count leads panel */}
+      {/* Conteo automático de leads */}
       {urlValid && (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-[var(--foreground-muted)]">Número estimado de leads</p>
-            {countState.status === "idle" && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] overflow-hidden">
+          {/* Estado: contando / idle — ambos muestran spinner */}
+          {(countState.status === "counting" || countState.status === "idle") && (
+            <div className="flex items-center gap-3 px-4 py-3">
+              <svg className="animate-spin h-4 w-4 text-[#2563EB] shrink-0" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+              </svg>
+              <span className="text-xs text-[var(--foreground-muted)]">Leyendo tamaño de la lista desde Sales Navigator...</span>
+            </div>
+          )}
+
+          {/* Estado: resultado exitoso */}
+          {countState.status === "done" && (
+            <div className="px-4 py-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--foreground-muted)]">Total en la lista</span>
+                </div>
+                <span className="text-lg font-bold text-[var(--foreground)]">
+                  {countState.count.toLocaleString("es-PE")}
+                  <span className="ml-1 text-xs font-normal text-[var(--foreground-muted)]">contactos</span>
+                </span>
+              </div>
+
+              {/* Slider / input: ¿cuántos quieres contactar? */}
+              <div className="space-y-1.5 pt-1 border-t border-[var(--border)]">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-[var(--foreground-muted)]">¿A cuántos contactar?</label>
+                  <span className="text-xs font-semibold text-[#2563EB]">
+                    {(data.maxLeads ?? countState.count).toLocaleString("es-PE")} de {countState.count.toLocaleString("es-PE")}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={countState.count}
+                  step={Math.max(1, Math.floor(countState.count / 100))}
+                  value={data.maxLeads ?? countState.count}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    onChange({
+                      maxLeads: val >= countState.count ? null : val,
+                      estimatedLeads: val,
+                    });
+                  }}
+                  className="w-full accent-[#2563EB] cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-[var(--foreground-faint)]">
+                  <span>1</span>
+                  <span>{countState.count.toLocaleString("es-PE")}</span>
+                </div>
+              </div>
+
+              {estimatedDays && (
+                <p className="text-[11px] text-[var(--foreground-muted)]">
+                  A 30 conexiones/día → aproximadamente <strong>{estimatedDays} días</strong>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Estado: no se pudo leer (manual fallback) */}
+          {countState.status === "manual" && (
+            <div className="px-4 py-3 space-y-2">
+              <p className="text-xs text-[var(--foreground-muted)]">
+                No se pudo leer automáticamente. Ingresa el número:
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="Ej: 1500"
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && applyManual()}
+                  className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <button
+                  onClick={applyManual}
+                  className="rounded-lg bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600"
+                >
+                  Aplicar
+                </button>
+              </div>
               <button
                 onClick={handleCount}
-                className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-bold text-[var(--foreground-muted)] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
+                className="text-xs text-[#2563EB] hover:underline"
               >
-                Contar leads
-              </button>
-            )}
-          </div>
-
-          {countState.status === "counting" && (
-            <div className="flex items-center gap-2 text-[#2563EB]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span className="text-[11px]">Consultando LinkedIn…</span>
-            </div>
-          )}
-
-          {countState.status === "done" && (
-            <div className="flex items-center gap-4">
-              <div className="flex flex-col">
-                <span className="text-xl font-black tabular-nums text-[var(--foreground)]">~{countState.count.toLocaleString("es-PE")}</span>
-                <span className="text-[10px] text-[var(--foreground-muted)]">leads estimados</span>
-              </div>
-              {estimatedDays && (
-                <>
-                  <div className="h-8 w-px bg-[var(--border)]" />
-                  <div className="flex flex-col">
-                    <span className="text-xl font-black tabular-nums text-[var(--foreground)]">~{estimatedDays}d</span>
-                    <span className="text-[10px] text-[var(--foreground-muted)]">duración estimada</span>
-                  </div>
-                  <div className="h-8 w-px bg-[var(--border)]" />
-                  <div className="flex flex-col">
-                    <span className="text-xl font-black tabular-nums text-[var(--foreground)]">{DAILY_RATE}/día</span>
-                    <span className="text-[10px] text-[var(--foreground-muted)]">velocidad segura</span>
-                  </div>
-                </>
-              )}
-              <button
-                onClick={() => setCountState({ status: "idle" })}
-                className="ml-auto text-[10px] text-[var(--foreground-muted)] hover:text-[var(--foreground)] underline"
-              >
-                Recontar
+                ↺ Reintentar lectura automática
               </button>
             </div>
           )}
 
+          {/* Estado: necesita navegación */}
           {countState.status === "needs_nav" && (
-            <div className="space-y-2">
-              <p className="text-[11px] text-[#F59E0B] bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.2)] rounded-lg px-3 py-2 leading-relaxed">
-                Abre la URL del segmento en LinkedIn y vuelve a hacer click en "Contar leads", o ingresa el número manualmente.
+            <div className="px-4 py-3">
+              <p className="text-xs text-[var(--foreground-muted)]">
+                Asegúrate de tener Sales Navigator abierto en el navegador y vuelve a intentarlo.
               </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={manualInput}
-                  onChange={(e) => setManualInput(e.target.value)}
-                  placeholder="Nº estimado de leads"
-                  className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
-                />
-                <button
-                  onClick={applyManual}
-                  disabled={!manualInput}
-                  className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90 disabled:opacity-40"
-                >
-                  Aplicar
-                </button>
-                <button onClick={handleCount} className="text-[11px] text-[#2563EB] hover:underline">Reintentar</button>
-              </div>
+              <button onClick={handleCount} className="mt-2 text-xs text-[#2563EB] hover:underline">
+                ↺ Reintentar
+              </button>
             </div>
           )}
-
-          {(countState.status === "manual" || countState.status === "error") && (
-            <div className="space-y-2">
-              <p className="text-[11px] text-[var(--foreground-muted)]">
-                La extensión no pudo leer el conteo automáticamente. Ingresa el número estimado:
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={manualInput}
-                  onChange={(e) => setManualInput(e.target.value)}
-                  placeholder="Ej: 1500"
-                  className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[rgba(37,99,235,0.3)]"
-                />
-                <button
-                  onClick={applyManual}
-                  disabled={!manualInput}
-                  className="rounded-lg bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90 disabled:opacity-40"
-                >
-                  Aplicar
-                </button>
-              </div>
-            </div>
-          )}
-
-          <p className="text-[10px] text-[var(--foreground-faint)] italic">
-            Número estimado — la extensión contará con precisión al lanzar la campaña.
-          </p>
         </div>
       )}
     </div>

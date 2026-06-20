@@ -310,19 +310,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           break;
         }
         try {
-          // Abrir o reutilizar tab con la URL de búsqueda
+          // Abrir o reutilizar tab con la URL de búsqueda (en background, no activa)
           const existingTabs = await chrome.tabs.query({
-            url: ['*://*.linkedin.com/sales/search/*', '*://*.linkedin.com/search/*']
+            url: ['*://*.linkedin.com/sales/search/*', '*://*.linkedin.com/search/results/*']
           });
           let tabId;
           if (existingTabs.length > 0) {
             tabId = existingTabs[0].id;
-            await chrome.tabs.update(tabId, { url: searchUrl, active: false });
+            await chrome.tabs.update(tabId, { url: searchUrl });
           } else {
             const newTab = await chrome.tabs.create({ url: searchUrl, active: false });
             tabId = newTab.id;
           }
-          // Esperar que la tab cargue
+
+          // Esperar que la tab termine de cargar HTML
           await new Promise((resolve) => {
             const listener = (updatedId, changeInfo) => {
               if (updatedId === tabId && changeInfo.status === 'complete') {
@@ -331,14 +332,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               }
             };
             chrome.tabs.onUpdated.addListener(listener);
-            setTimeout(resolve, 8000); // timeout safety
+            setTimeout(resolve, 10000); // timeout máximo 10s
           });
-          await new Promise(r => setTimeout(r, 1500)); // esperar render JS
-          const resp = await Promise.race([
-            chrome.tabs.sendMessage(tabId, { action: 'count_leads_quick' }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 7000)),
-          ]);
-          sendResponse(resp ?? { count: null, error: 'NO_RESPONSE' });
+
+          // SalesNav es React SPA: esperar que renderice el conteo (3.5s)
+          await new Promise(r => setTimeout(r, 3500));
+
+          // Reintentar hasta 4 veces con 2s entre intentos
+          let count = null;
+          for (let attempt = 1; attempt <= 4; attempt++) {
+            try {
+              const resp = await Promise.race([
+                chrome.tabs.sendMessage(tabId, { action: 'count_leads_quick' }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+              ]);
+              if (resp?.count && resp.count > 0) {
+                count = resp.count;
+                break;
+              }
+            } catch (e) {
+              console.warn(`[cazary.ai] count attempt ${attempt} failed:`, e.message);
+            }
+            if (attempt < 4) await new Promise(r => setTimeout(r, 2000));
+          }
+
+          sendResponse({ count, error: count ? null : 'COUNT_NOT_FOUND' });
         } catch (e) {
           sendResponse({ count: null, error: e.message });
         }

@@ -4386,107 +4386,99 @@
               sendResponse({ count: null, error: 'NOT_ON_LINKEDIN', needsNavigation: true });
               break;
             }
-            await sleep(800 + Math.random() * 800);
 
-            // Función robusta: extrae el número de resultados del DOM
-            function readResultCount() {
-              // 1. Selectores específicos conocidos (orden de confiabilidad)
-              // NOTA: SalesNav post-rebrand 2025 usa clases CSS modules con hash
-              // ej: span._regular-search-count_lkl67o → usar [class*="_regular-search-count"]
-              const knownSelectors = [
-                // SalesNav post-rebrand 2025 (confirmado por inspección DOM)
-                '[class*="_regular-search-count"]',
-                // SalesNav legacy
+            // Función que extrae el número del texto del elemento
+            function parseCount(txt) {
+              if (!txt) return null;
+              // "65 mills.+ resultados" → 65000000
+              const millsM = txt.match(/([\d,.]+)\s*mills?\.\+?\s*/i);
+              if (millsM) return Math.round(parseFloat(millsM[1].replace(/[,.]/g, '')) * 1_000_000);
+              // "1,500 resultados" / "6 resultados" → número directo
+              const m = txt.match(/([\d,.]+)/);
+              if (m) {
+                const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
+                if (!isNaN(n) && n > 0) return n;
+              }
+              return null;
+            }
+
+            // Intentar leer el conteo ya visible
+            function tryReadNow() {
+              // SalesNav post-rebrand 2025: span[class*="_regular-search-count"]
+              const snNew = document.querySelector('[class*="_regular-search-count"]');
+              if (snNew) {
+                const n = parseCount(snNew.innerText || snNew.textContent);
+                if (n) return n;
+              }
+              // LinkedIn regular / SalesNav legacy
+              const legacySelectors = [
                 '.search-results__total-results',
                 '.list-header-count',
                 '[data-anonymize="result-count"]',
-                // LinkedIn regular
-                '.search-results-container .pb2 h2',
                 '.search-results-container h2',
-                '.artdeco-card h2',
-                '[data-view-name="search-results-header"] span',
-                // Genéricos
                 '[class*="result-count"]',
                 '[class*="results-count"]',
                 '[class*="total-results"]',
                 '[class*="search-count"]',
               ];
-              for (const sel of knownSelectors) {
+              for (const sel of legacySelectors) {
                 const el = document.querySelector(sel);
                 if (!el) continue;
-                const txt = (el.innerText || el.textContent || '').trim();
-                // Manejar formatos: "6 resultados", "65 mills.+ resultados", "1,500 results"
-                // "mills." = millones abreviado en SalesNav en español
-                const millsMatch = txt.match(/([\d,.]+)\s*mills?\.\+?\s*resultado/i);
-                if (millsMatch) {
-                  const n = parseFloat(millsMatch[1].replace(/[,.]/g, '')) * 1_000_000;
-                  if (n > 0) return Math.round(n);
-                }
-                const m = txt.match(/([\d,. ]+)/);
-                if (m) {
-                  const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
-                  if (!isNaN(n) && n > 0) return n;
-                }
+                const n = parseCount(el.innerText || el.textContent);
+                if (n) return n;
               }
-
-              // 2. TreeWalker: escanear TODOS los nodos de texto visibles
-              //    buscando el patrón "X resultados" / "X results"
-              const patterns = [
-                /^([\d,.]+)\s+resultado/i,
-                /^([\d,.]+)\s+result/i,
-                /resultado[s]?\s*[:\-]?\s*([\d,.]+)/i,
-                /^Aproximadamente\s+([\d,.]+)/i,
-                /^About\s+([\d,.]+)/i,
-              ];
+              // TreeWalker fallback: escanear todos los nodos de texto
               const walker = document.createTreeWalker(
-                document.body,
-                NodeFilter.SHOW_TEXT,
-                {
-                  acceptNode(node) {
-                    const txt = (node.nodeValue || '').trim();
-                    if (txt.length < 2 || txt.length > 80) return NodeFilter.FILTER_REJECT;
+                document.body, NodeFilter.SHOW_TEXT,
+                { acceptNode(node) {
+                    const t = (node.nodeValue || '').trim();
+                    if (t.length < 2 || t.length > 80) return NodeFilter.FILTER_REJECT;
                     const el = node.parentElement;
                     if (!el) return NodeFilter.FILTER_REJECT;
-                    const style = window.getComputedStyle(el);
-                    if (style.display === 'none' || style.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
+                    const s = window.getComputedStyle(el);
+                    if (s.display === 'none' || s.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
                     return NodeFilter.FILTER_ACCEPT;
                   }
                 }
               );
               let node;
               while ((node = walker.nextNode())) {
-                const txt = (node.nodeValue || '').trim();
-                for (const pat of patterns) {
-                  const m = txt.match(pat);
-                  if (m) {
-                    const raw = m[1] || m[0];
-                    const n = parseInt(raw.replace(/[^0-9]/g, ''), 10);
-                    if (!isNaN(n) && n > 0 && n < 10_000_000) return n;
-                  }
+                const t = (node.nodeValue || '').trim();
+                if (/resultado|result/i.test(t)) {
+                  const n = parseCount(t);
+                  if (n) return n;
                 }
               }
-
-              // 3. Último recurso: regex en innerText del body completo
-              const bodyText = document.body.innerText || '';
-              const bodyPatterns = [
-                /([\d,.]+)\s+resultado/i,
-                /([\d,.]+)\s+result/i,
-                /Aproximadamente\s+([\d,.]+)/i,
-                /About\s+([\d,.]+)/i,
-              ];
-              for (const pat of bodyPatterns) {
-                const m = bodyText.match(pat);
-                if (m) {
-                  const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
-                  if (!isNaN(n) && n > 0) return n;
-                }
-              }
-
               return null;
             }
 
-            const count = readResultCount();
-            console.log('[cazary.ai] count_leads_quick:', count);
+            // Intentar inmediatamente
+            const immediate = tryReadNow();
+            if (immediate) {
+              sendResponse({ count: immediate });
+              break;
+            }
+
+            // Si no hay resultado aún, esperar con MutationObserver hasta 8s
+            const count = await new Promise((resolve) => {
+              const timeout = setTimeout(() => {
+                observer.disconnect();
+                resolve(tryReadNow()); // último intento antes de rendirse
+              }, 8000);
+
+              const observer = new MutationObserver(() => {
+                const n = tryReadNow();
+                if (n) {
+                  clearTimeout(timeout);
+                  observer.disconnect();
+                  resolve(n);
+                }
+              });
+
+              observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+            });
+
+            console.log('[cazary.ai] count_leads_quick result:', count);
             sendResponse({ count, error: count ? null : 'COUNT_NOT_FOUND' });
             break;
           }
