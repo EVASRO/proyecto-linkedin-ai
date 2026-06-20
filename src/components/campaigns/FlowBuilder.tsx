@@ -441,6 +441,9 @@ function FlowCanvas({ campaign, segments, initialFlow, abStats, onBack, onLaunch
 
   const isEmpty = nodes.filter((n) => n.type !== "start").length === 0;
 
+  const totalFlowLeads     = segments.reduce((acc, s) => acc + (s.metrics?.totalLeads ?? 0), 0);
+  const completedFlowLeads = segments.reduce((acc, s) => acc + (s.metrics?.connected ?? 0) + (s.metrics?.replied ?? 0), 0);
+
   return (
     <div className="flex flex-1 overflow-hidden min-h-0 flex-col">
       <FlowToolbar
@@ -456,6 +459,8 @@ function FlowCanvas({ campaign, segments, initialFlow, abStats, onBack, onLaunch
         onToggleAB={toggleAB}
         onPreview={() => setPreviewOpen(true)}
         onLaunch={() => setLaunchOpen(true)}
+        totalLeads={totalFlowLeads}
+        completedLeads={completedFlowLeads}
       />
 
       <div className="flex flex-1 overflow-hidden min-h-0">

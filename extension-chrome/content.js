@@ -4386,16 +4386,93 @@
               sendResponse({ count: null, error: 'NOT_ON_LINKEDIN', needsNavigation: true });
               break;
             }
-            await sleep(500 + Math.random() * 1000);
-            const snEl = document.querySelector('.search-results__total-results')
-              || document.querySelector('[data-view-name="search-results-header"] span')
-              || document.querySelector('.list-header-count')
-              || document.querySelector('[data-anonymize="result-count"]');
-            const liEl = document.querySelector('.search-results-container .pb2 h2')
-              || document.querySelector('.search-results-container h2')
-              || document.querySelector('.artdeco-card h2');
-            const raw = (snEl || liEl)?.textContent?.trim() ?? '';
-            const count = parseInt(raw.replace(/[^0-9]/g, ''), 10) || null;
+            await sleep(800 + Math.random() * 800);
+
+            // Función robusta: extrae el número de resultados del DOM
+            function readResultCount() {
+              // 1. Selectores específicos conocidos (orden de confiabilidad)
+              const knownSelectors = [
+                '[data-view-name="search-results-header"] span',
+                '.search-results__total-results',
+                '.list-header-count',
+                '[data-anonymize="result-count"]',
+                '.search-results-container .pb2 h2',
+                '.search-results-container h2',
+                '.artdeco-card h2',
+                '.search-result-count',
+                '[class*="result-count"]',
+                '[class*="results-count"]',
+                '[class*="total-results"]',
+              ];
+              for (const sel of knownSelectors) {
+                const el = document.querySelector(sel);
+                if (!el) continue;
+                const txt = (el.innerText || el.textContent || '').trim();
+                const m = txt.match(/([\d,. ]+)/);
+                if (m) {
+                  const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
+                  if (!isNaN(n) && n > 0) return n;
+                }
+              }
+
+              // 2. TreeWalker: escanear TODOS los nodos de texto visibles
+              //    buscando el patrón "X resultados" / "X results"
+              const patterns = [
+                /^([\d,.]+)\s+resultado/i,
+                /^([\d,.]+)\s+result/i,
+                /resultado[s]?\s*[:\-]?\s*([\d,.]+)/i,
+                /^Aproximadamente\s+([\d,.]+)/i,
+                /^About\s+([\d,.]+)/i,
+              ];
+              const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                {
+                  acceptNode(node) {
+                    const txt = (node.nodeValue || '').trim();
+                    if (txt.length < 2 || txt.length > 80) return NodeFilter.FILTER_REJECT;
+                    const el = node.parentElement;
+                    if (!el) return NodeFilter.FILTER_REJECT;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                  }
+                }
+              );
+              let node;
+              while ((node = walker.nextNode())) {
+                const txt = (node.nodeValue || '').trim();
+                for (const pat of patterns) {
+                  const m = txt.match(pat);
+                  if (m) {
+                    const raw = m[1] || m[0];
+                    const n = parseInt(raw.replace(/[^0-9]/g, ''), 10);
+                    if (!isNaN(n) && n > 0 && n < 10_000_000) return n;
+                  }
+                }
+              }
+
+              // 3. Último recurso: regex en innerText del body completo
+              const bodyText = document.body.innerText || '';
+              const bodyPatterns = [
+                /([\d,.]+)\s+resultado/i,
+                /([\d,.]+)\s+result/i,
+                /Aproximadamente\s+([\d,.]+)/i,
+                /About\s+([\d,.]+)/i,
+              ];
+              for (const pat of bodyPatterns) {
+                const m = bodyText.match(pat);
+                if (m) {
+                  const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
+                  if (!isNaN(n) && n > 0) return n;
+                }
+              }
+
+              return null;
+            }
+
+            const count = readResultCount();
+            console.log('[cazary.ai] count_leads_quick:', count);
             sendResponse({ count, error: count ? null : 'COUNT_NOT_FOUND' });
             break;
           }
