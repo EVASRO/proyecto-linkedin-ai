@@ -542,7 +542,7 @@ async function processTick() {
       const minsSinceCheck = last_inbox_check
         ? (Date.now() - last_inbox_check) / 60000
         : 99;
-      if (minsSinceCheck >= 15) {
+      if (minsSinceCheck >= 5) {
         await scheduleInboxCheck(wsId);
         await chrome.storage.local.set({ last_inbox_check: Date.now() });
       }
@@ -2603,7 +2603,7 @@ async function handleMessageReceived(data) {
         conversation_id:     convId,
         sender:              'prospect',
         message_text:        data.text,
-        linkedin_message_id: data.linkedin_id ?? null,
+        linkedin_message_id: data.linkedin_id ?? data.linkedin_message_id ?? null,
         status:              'delivered',
         is_read:             false,
         timestamp:           data.timestamp ?? new Date().toISOString(),
@@ -2624,6 +2624,18 @@ async function handleMessageReceived(data) {
   } catch (err) {
     console.error('[cazary.ai] handleMessageReceived error:', err);
   }
+}
+
+async function handleInboxMessage(data) {
+  // Deduplicación por linkedin_message_id antes de cualquier operación
+  if (data.linkedin_message_id) {
+    const existing = await supabaseFetch(
+      `messages?linkedin_message_id=eq.${encodeURIComponent(data.linkedin_message_id)}&select=id&limit=1`,
+      { method: 'GET' }
+    ).catch(() => null);
+    if (existing?.length) return; // ya procesado
+  }
+  await handleMessageReceived(data);
 }
 
 async function handleCountResult(campaignId, segmentId, count) {
@@ -3604,38 +3616,149 @@ async function interpolateVariables(template, leadId) {
   return result;
 }
 
+async function syncInboxViaVoyager(wsId) {
+  // 1. Obtener JSESSIONID via chrome.cookies (sin abrir tab)
+  const cookieObj = await chrome.cookies.get({ url: 'https://www.linkedin.com', name: 'JSESSIONID' });
+  if (!cookieObj) return; // usuario no logueado en LinkedIn
+  const csrfToken = cookieObj.value.replace(/"/g, '');
+
+  // 2. Headers comunes Voyager API
+  const voyagerHeaders = {
+    'accept':                     'application/vnd.linkedin.normalized+json+2.1',
+    'csrf-token':                 csrfToken,
+    'x-restli-protocol-version': '2.0.0',
+    'x-li-lang':                  'es_ES',
+  };
+
+  // 3. Fetch lista de conversaciones
+  let json;
+  try {
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 15000)
+    );
+    const res = await Promise.race([
+      fetch(
+        'https://www.linkedin.com/voyager/api/messaging/conversations' +
+        '?keyVersion=LEGACY_INBOX&count=20&start=0',
+        { headers: voyagerHeaders, credentials: 'include' }
+      ),
+      timeout,
+    ]);
+    if (!res.ok) {
+      console.warn(`[cazary.ai] syncInboxViaVoyager: HTTP ${res.status}`);
+      return;
+    }
+    json = await res.json();
+  } catch (e) {
+    console.warn('[cazary.ai] syncInboxViaVoyager: fetch falló —', e.message);
+    return;
+  }
+
+  // 4. Parsear respuesta normalizada de Voyager
+  const elements = json?.data?.elements ?? [];
+  const included = json?.included ?? [];
+
+  // Leer propio URN para detectar mensajes enviados por nosotros
+  const { linkedin_own_urn } = await chrome.storage.local.get('linkedin_own_urn');
+
+  let processedCount = 0;
+
+  for (const element of elements) {
+    const isUnread = !element.read || (element.unreadCount ?? 0) > 0;
+    if (!isUnread) continue;
+
+    const conversationUrn = element.entityUrn; // "urn:li:fs_conversation:XXXXXXXX"
+
+    // Filtrar eventos de messaging de esta conversación
+    const events = included.filter(item => {
+      if (!item.$type) return false;
+      const t = item.$type;
+      if (!t.includes('MessageEvent') && !t.includes('messaging.Event')) return false;
+      if (item.subtype === 'INMAIL') return false;
+      // El evento pertenece a esta conversación si su URN la referencia
+      const urn = item.entityUrn ?? '';
+      return urn.includes(conversationUrn.split(':').pop());
+    });
+
+    for (const item of events) {
+      const messageId = item.entityUrn;
+      if (!messageId) continue;
+
+      const text =
+        item.eventContent?.attributedBody?.text ??
+        item.eventContent?.body ??
+        null;
+      if (!text?.trim()) continue;
+
+      const sentAt    = item.createdAt;
+      const senderUrn =
+        item.from?.['com.linkedin.voyager.messaging.MessagingMember']?.miniProfile?.entityUrn ??
+        item.actor?.['com.linkedin.voyager.messaging.MessagingMember']?.miniProfile?.entityUrn ??
+        null;
+
+      // Saltar mensajes enviados por el propio usuario
+      if (linkedin_own_urn && senderUrn && senderUrn === linkedin_own_urn) continue;
+
+      // Buscar miniProfile del sender en included
+      const miniProfile = included.find(
+        inc => inc.entityUrn === senderUrn && inc.$type?.includes('miniProfile')
+      );
+      const firstName   = miniProfile?.firstName ?? '';
+      const lastName    = miniProfile?.lastName  ?? '';
+      const contactName = `${firstName} ${lastName}`.trim() || 'Contacto LinkedIn';
+      const publicId    = miniProfile?.publicIdentifier;
+      const profileUrl  = publicId
+        ? `https://www.linkedin.com/in/${publicId}/`
+        : null;
+
+      await handleInboxMessage({
+        text,
+        linkedin_message_id: messageId,
+        profile_url:         profileUrl,
+        contact_name:        contactName,
+        timestamp:           new Date(sentAt).toISOString(),
+        source:              'linkedin',
+      });
+      processedCount++;
+    }
+  }
+
+  console.log(`[cazary.ai] syncInboxViaVoyager: ${processedCount} mensajes nuevos procesados`);
+}
+
 async function scheduleInboxCheck(wsId) {
-  const snTabs  = await chrome.tabs.query({ url: '*://*.linkedin.com/sales/*' });
-  const hasSNav = snTabs.length > 0;
-
-  const inboxUrls = [
-    'https://www.linkedin.com/messaging/',
-    ...(hasSNav ? ['https://www.linkedin.com/sales/inbox/'] : []),
-  ];
-
-  for (const inboxUrl of inboxUrls) {
-    const platform = inboxUrl.includes('/sales/') ? 'salesnav' : 'linkedin';
-    const existing = await supabaseFetch(
-      `engine_queue?workspace_id=eq.${wsId}&task_type=eq.check_inbox` +
-      `&status=eq.pending&select=id&limit=1`,
-      { method: 'GET' }
-    ).catch(() => []);
-    if (existing?.length) continue;
-
-    await supabaseFetch('engine_queue', {
-      method: 'POST', prefer: 'return=minimal',
-      body: JSON.stringify({
-        workspace_id: wsId,
-        task_type:    'check_inbox',
-        action_type:  'check_inbox',
-        priority:     3,
-        scheduled_at: new Date().toISOString(),
-        payload: {
-          inbox_url: inboxUrl,
-          platform,
-        },
-      }),
-    }).catch(() => {});
+  // Intentar Voyager API directo (sin abrir tabs)
+  try {
+    await syncInboxViaVoyager(wsId);
+  } catch (e) {
+    console.warn('[cazary.ai] scheduleInboxCheck → syncInboxViaVoyager falló:', e.message);
+    // Fallback: encolar check_inbox clásico (DOM scraping via tab)
+    const snTabs  = await chrome.tabs.query({ url: '*://*.linkedin.com/sales/*' });
+    const hasSNav = snTabs.length > 0;
+    const inboxUrls = [
+      'https://www.linkedin.com/messaging/',
+      ...(hasSNav ? ['https://www.linkedin.com/sales/inbox/'] : []),
+    ];
+    for (const inboxUrl of inboxUrls) {
+      const platform = inboxUrl.includes('/sales/') ? 'salesnav' : 'linkedin';
+      const existing = await supabaseFetch(
+        `engine_queue?workspace_id=eq.${wsId}&task_type=eq.check_inbox` +
+        `&status=eq.pending&select=id&limit=1`,
+        { method: 'GET' }
+      ).catch(() => []);
+      if (existing?.length) continue;
+      await supabaseFetch('engine_queue', {
+        method: 'POST', prefer: 'return=minimal',
+        body: JSON.stringify({
+          workspace_id: wsId,
+          task_type:    'check_inbox',
+          action_type:  'check_inbox',
+          priority:     3,
+          scheduled_at: new Date().toISOString(),
+          payload: { inbox_url: inboxUrl, platform },
+        }),
+      }).catch(() => {});
+    }
   }
 }
 
