@@ -57,7 +57,7 @@ async function recoverStuckTasks() {
     // Buscar tareas atascadas en 'processing' por más de 5 minutos
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const stuck = await supabaseFetch(
-      `engine_queue?workspace_id=eq.${wsId}&status=eq.processing&updated_at=lt.${fiveMinAgo}&select=id`,
+      `engine_queue?workspace_id=eq.${wsId}&status=eq.processing&created_at=lt.${fiveMinAgo}&select=id`,
       { method: 'GET' }
     ).catch(() => []);
     if (!Array.isArray(stuck) || stuck.length === 0) return;
