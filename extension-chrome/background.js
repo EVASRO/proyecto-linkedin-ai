@@ -49,12 +49,41 @@ async function ensureInitialized() {
   } catch (_) {}
 }
 
+// ── Recuperar tareas atascadas en 'processing' al arrancar ───────────────────
+async function recoverStuckTasks() {
+  try {
+    const wsId = await getWorkspaceId();
+    if (!wsId) return;
+    // Buscar tareas atascadas en 'processing' por más de 5 minutos
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const stuck = await supabaseFetch(
+      `engine_queue?workspace_id=eq.${wsId}&status=eq.processing&updated_at=lt.${fiveMinAgo}&select=id`,
+      { method: 'GET' }
+    ).catch(() => []);
+    if (!Array.isArray(stuck) || stuck.length === 0) return;
+    const ids = stuck.map(r => r.id);
+    // Resetear a 'pending' para que el motor las retome
+    await supabaseFetch(
+      `engine_queue?id=in.(${ids.join(',')})`,
+      {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: JSON.stringify({ status: 'pending', last_error: 'recovered_from_stuck_processing' }),
+      }
+    ).catch(e => console.warn('[cazary.ai] recoverStuckTasks PATCH error:', e));
+    console.log(`[cazary.ai] recoverStuckTasks: ${ids.length} tarea(s) reseteadas a pending ✓`);
+  } catch (e) {
+    console.warn('[cazary.ai] recoverStuckTasks error:', e);
+  }
+}
+
 // ── Arranque ──────────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.alarms.clearAll();
   await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 0.5 });
   await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
   console.log('[cazary.ai] Alarms initialized on install/update');
+  await recoverStuckTasks();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -62,6 +91,7 @@ chrome.runtime.onStartup.addListener(async () => {
   await chrome.alarms.create(TICK_ALARM,      { periodInMinutes: 0.5 });
   await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
   console.log('[cazary.ai] Alarms initialized on startup');
+  await recoverStuckTasks();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -274,20 +304,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       case 'NEXUSAI_COUNT_LEADS': {
-        // Conteo rápido desde el wizard — usa tab de LinkedIn existente, sin abrir nueva
-        const liTabs = await chrome.tabs.query({ url: ['*://*.linkedin.com/search/*', '*://*.linkedin.com/sales/*'] });
-        if (!liTabs.length) {
-          sendResponse({ count: null, needsNavigation: true });
+        const searchUrl = msg.searchUrl;
+        if (!searchUrl) {
+          sendResponse({ count: null, error: 'NO_URL' });
           break;
         }
         try {
+          // Abrir o reutilizar tab con la URL de búsqueda
+          const existingTabs = await chrome.tabs.query({
+            url: ['*://*.linkedin.com/sales/search/*', '*://*.linkedin.com/search/*']
+          });
+          let tabId;
+          if (existingTabs.length > 0) {
+            tabId = existingTabs[0].id;
+            await chrome.tabs.update(tabId, { url: searchUrl, active: false });
+          } else {
+            const newTab = await chrome.tabs.create({ url: searchUrl, active: false });
+            tabId = newTab.id;
+          }
+          // Esperar que la tab cargue
+          await new Promise((resolve) => {
+            const listener = (updatedId, changeInfo) => {
+              if (updatedId === tabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+            setTimeout(resolve, 8000); // timeout safety
+          });
+          await new Promise(r => setTimeout(r, 1500)); // esperar render JS
           const resp = await Promise.race([
-            chrome.tabs.sendMessage(liTabs[0].id, { action: 'count_leads_quick' }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+            chrome.tabs.sendMessage(tabId, { action: 'count_leads_quick' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 7000)),
           ]);
           sendResponse(resp ?? { count: null, error: 'NO_RESPONSE' });
         } catch (e) {
-          sendResponse({ count: null, error: e.message === 'timeout' ? 'TIMEOUT' : e.message });
+          sendResponse({ count: null, error: e.message });
         }
         break;
       }
@@ -495,6 +548,29 @@ async function processTick() {
     }
 
     const task = tasks[0];
+
+    // Guard: verificar que la campaña sigue activa antes de ejecutar
+    // (puede haber sido pausada/archivada entre el fetch de campañas y el de tareas)
+    if (task.campaign_id) {
+      const MAINTENANCE_ACTIONS = ['check_connection', 'check_inbox', 'check_network_updates'];
+      if (!MAINTENANCE_ACTIONS.includes(task.action_type)) {
+        const campaignRows = await supabaseFetch(
+          `campaigns?id=eq.${task.campaign_id}&select=status`,
+          { method: 'GET' }
+        ).catch(() => []);
+        const campaignStatus = Array.isArray(campaignRows) && campaignRows[0]?.status;
+        if (campaignStatus && !['active', 'draft'].includes(campaignStatus)) {
+          console.log(`[cazary.ai] processTick: campaña ${task.campaign_id} en estado "${campaignStatus}" — saltando tarea ${task.id}`);
+          if (['archived', 'completed'].includes(campaignStatus)) {
+            await supabaseFetch(`engine_queue?id=eq.${task.id}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: JSON.stringify({ status: 'cancelled', last_error: `Campaña en estado: ${campaignStatus}` }),
+            }).catch(() => {});
+          }
+          return;
+        }
+      }
+    }
 
     // Inter-task delay humanizado (entre tareas consecutivas)
     await sleepGaussian(4500, 1200, 2000);
@@ -2526,29 +2602,40 @@ const SCRAPER_PAGE_DELAY_MIN = 10000;
 const SCRAPER_PAGE_DELAY_MAX = 20000;
 
 function parseWorkflowSequence(wf) {
-  const nodes = wf.nodes ?? [];
-  const edges = wf.edges ?? [];
+  const nodes = wf?.nodes ?? [];
+  const edges = wf?.edges ?? [];
 
   if (!nodes.length) {
     return [{
       type: 'connect',
       delayMs: 0,
-      note: wf.connection_note || wf.connection_message || '',
+      note: wf?.connection_note || wf?.connection_message || '',
       message: '',
     }];
   }
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  const next = new Map();
+
+  // Para condition nodes, construir mapa de yes/no targets
+  const nextYes     = new Map(); // sourceId → targetId (sourceHandle="yes")
+  const nextNo      = new Map(); // sourceId → targetId (sourceHandle="no")
+  const nextDefault = new Map(); // sourceId → targetId (primer edge sin handle)
+
   for (const e of edges) {
-    if (!next.has(e.source)) next.set(e.source, e.target);
+    if (e.sourceHandle === 'yes') {
+      if (!nextYes.has(e.source)) nextYes.set(e.source, e.target);
+    } else if (e.sourceHandle === 'no') {
+      if (!nextNo.has(e.source)) nextNo.set(e.source, e.target);
+    } else {
+      if (!nextDefault.has(e.source)) nextDefault.set(e.source, e.target);
+    }
   }
 
   const startNode = nodes.find(n => n.data?.nodeType === 'start' || n.type === 'start');
   if (!startNode) return [];
 
   const steps = [];
-  let currentId = next.get(startNode.id);
+  let currentId = nextDefault.get(startNode.id);
   let accumulatedDelayMs = 0;
   const visited = new Set();
 
@@ -2568,34 +2655,90 @@ function parseWorkflowSequence(wf) {
         message:         '',
         requirePageView: data.requirePageView ?? false,
       });
-    } else if (nodeType === 'delay') {
+      currentId = nextDefault.get(currentId);
+
+    } else if (nodeType === 'delay' || nodeType === 'wait') {
       const days = data.days ?? data.waitDays ?? 1;
       accumulatedDelayMs += days * 24 * 3600 * 1000;
+      currentId = nextDefault.get(currentId);
+
     } else if (nodeType === 'message') {
       steps.push({
-        type: 'message',
+        type:    'message',
         delayMs: accumulatedDelayMs,
-        note: '',
+        note:    '',
         message: data.bodyA || data.message || data.body || '',
       });
+      currentId = nextDefault.get(currentId);
+
+    } else if (nodeType === 'condition') {
+      // Mapear condition a una tarea de chequeo según conditionType
+      const condType = data.conditionType ?? 'accepted_connection';
+      let checkTaskType = 'check_connection'; // default: verificar si aceptó
+      let extraDelayNoMs = 0;
+
+      if (condType === 'replied' || condType === 'respondio') {
+        checkTaskType = 'check_inbox';
+      } else if (condType === 'no_respondio') {
+        checkTaskType = 'check_inbox';
+        const noDelayDays = data.noDelayDays ?? 0;
+        extraDelayNoMs = noDelayDays * 24 * 3600 * 1000;
+      }
+
+      steps.push({
+        type:           checkTaskType,
+        delayMs:        accumulatedDelayMs,
+        conditionType:  condType,
+        noDelayExtraMs: extraDelayNoMs,
+      });
+
+      // Continuar por el branch YES (camino principal de la secuencia lineal)
+      const yesTarget = nextYes.get(currentId) ?? nextDefault.get(currentId);
+      currentId = yesTarget;
+
     } else if (nodeType === 'withdraw') {
       steps.push({ type: 'withdraw', delayMs: accumulatedDelayMs });
+      currentId = nextDefault.get(currentId);
+
     } else if (nodeType === 'find_email') {
       steps.push({ type: 'find_email', delayMs: accumulatedDelayMs,
                    skipIfExists: data.skipIfExists ?? true });
+      currentId = nextDefault.get(currentId);
+
     } else if (nodeType === 'find_phone') {
       steps.push({ type: 'find_phone', delayMs: accumulatedDelayMs,
                    skipIfExists: data.skipIfExists ?? true });
+      currentId = nextDefault.get(currentId);
+
     } else if (nodeType === 'connect_email') {
       steps.push({ type: 'connect_email', delayMs: accumulatedDelayMs,
                    addNote: data.addNote ?? false,
                    connectionNote: data.connectionNote ?? '' });
+      currentId = nextDefault.get(currentId);
+
     } else if (nodeType === 'follow') {
       steps.push({ type: 'follow', delayMs: accumulatedDelayMs, payload: {} });
+      currentId = nextDefault.get(currentId);
+
     } else if (nodeType === 'unfollow') {
       steps.push({ type: 'unfollow', delayMs: accumulatedDelayMs, payload: {} });
+      currentId = nextDefault.get(currentId);
+
+    } else if (nodeType === 'autopilot') {
+      steps.push({
+        type:        'autopilot',
+        delayMs:     accumulatedDelayMs,
+        style:       data.autopilotStyle ?? 'professional',
+        maxTurns:    data.autopilotMaxTurns ?? 8,
+        calendarUrl: data.autopilotCalendar ?? '',
+        objective:   data.autopilotObjective ?? '',
+      });
+      currentId = nextDefault.get(currentId);
+
+    } else {
+      // end, start, desconocido — ignorar y avanzar
+      currentId = nextDefault.get(currentId);
     }
-    currentId = next.get(currentId);
   }
 
   if (!steps.find(s => s.type === 'connect')) {
@@ -2834,7 +2977,22 @@ async function enqueueBatchedConnects(campaignId, wsId, campaign) {
   const delayMin   = settings.delayMinSec    || 180;
   const delayMax   = settings.delayMaxSec    || 480;
 
-  const pendingLeads = leads.filter((l) => !enqueuedLeadIds.has(l.id));
+  let pendingLeads = leads.filter((l) => !enqueuedLeadIds.has(l.id));
+
+  // Respetar maxLeads del workflow
+  const maxLeadsLimit = fullWf.maxLeads ?? null;
+  if (maxLeadsLimit && maxLeadsLimit > 0) {
+    // Contar cuántos ya fueron encolados previamente para esta campaña
+    const alreadyEnqueued = enqueuedLeadIds.size;
+    const remaining = Math.max(0, maxLeadsLimit - alreadyEnqueued);
+    if (remaining <= 0) {
+      console.log(`[cazary.ai] enqueueBatchedConnects: maxLeads=${maxLeadsLimit} ya alcanzado, skip`);
+      return;
+    }
+    pendingLeads = pendingLeads.slice(0, remaining);
+    console.log(`[cazary.ai] enqueueBatchedConnects: maxLeads=${maxLeadsLimit}, procesando ${pendingLeads.length} de ${leads.length}`);
+  }
+
   console.log(`[NexusAI Scraper] Encolando ${pendingLeads.length} leads (secuencia de ${sequence.length} pasos, cuota ${dailyQuota}/día)`);
 
   const inserts = [];

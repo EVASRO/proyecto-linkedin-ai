@@ -17,8 +17,88 @@ import {
   updateCampaignStatus as dbUpdateStatus,
   launchCampaign,
   getActiveCampaignStats,
+  deleteCampaignFull,
+  getLeadCountForCampaign,
 } from "@/app/dashboard/campanas/actions";
 import type { CampaignRow } from "@/app/dashboard/campanas/actions";
+import { Trash2, X, Users, Loader2 } from "lucide-react";
+
+// -- DeleteCampaignModal -------------------------------------------------------
+
+function DeleteCampaignModal({
+  campaignName, leadCount, loadingCount, deleteLeads, onDeleteLeadsChange,
+  isDeleting, onConfirm, onCancel,
+}: {
+  campaignName: string;
+  leadCount: number;
+  loadingCount: boolean;
+  deleteLeads: boolean;
+  onDeleteLeadsChange: (v: boolean) => void;
+  isDeleting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        <div className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[rgba(239,68,68,0.12)]">
+            <Trash2 className="h-4 w-4 text-[#EF4444]" />
+          </div>
+          <h3 className="text-sm font-bold text-[var(--foreground)]">¿Eliminar campaña?</h3>
+          <button onClick={onCancel} className="ml-auto rounded-lg p-1.5 text-[var(--foreground-muted)] hover:bg-[var(--border)] transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-sm text-[var(--foreground-muted)]">
+            Vas a eliminar permanentemente{" "}
+            <strong className="text-[var(--foreground)]">{campaignName}</strong>.
+            Esta acción no se puede deshacer.
+          </p>
+          <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3">
+            <Users className="h-4 w-4 text-[var(--foreground-faint)]" />
+            <span className="text-sm text-[var(--foreground-muted)]">
+              {loadingCount ? (
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Contando leads…
+                </span>
+              ) : (
+                <><strong className="text-[var(--foreground)]">{leadCount}</strong>{" "}
+                lead{leadCount !== 1 ? "s" : ""} vinculado{leadCount !== 1 ? "s" : ""}</>
+              )}
+            </span>
+          </div>
+          <div className="space-y-2">
+            <label className={["flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors", !deleteLeads ? "border-[rgba(37,99,235,0.4)] bg-[rgba(37,99,235,0.06)]" : "border-[var(--border)] hover:bg-[rgba(255,255,255,0.03)]"].join(" ")}>
+              <input type="radio" name="del-leads" checked={!deleteLeads} onChange={() => onDeleteLeadsChange(false)} className="mt-0.5 accent-[#2563EB]" />
+              <div>
+                <p className="text-xs font-semibold text-[var(--foreground)]">Conservar contactos en el CRM</p>
+                <p className="text-[11px] text-[var(--foreground-muted)] mt-0.5">Los leads quedarán sin campaña asignada.</p>
+              </div>
+            </label>
+            <label className={["flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors", deleteLeads ? "border-[rgba(239,68,68,0.4)] bg-[rgba(239,68,68,0.06)]" : "border-[var(--border)] hover:bg-[rgba(255,255,255,0.03)]"].join(" ")}>
+              <input type="radio" name="del-leads" checked={deleteLeads} onChange={() => onDeleteLeadsChange(true)} className="mt-0.5 accent-[#EF4444]" />
+              <div>
+                <p className="text-xs font-semibold text-[var(--foreground)]">Eliminar también los contactos</p>
+                <p className="text-[11px] text-[var(--foreground-muted)] mt-0.5">Se borrarán {leadCount} lead{leadCount !== 1 ? "s" : ""} del CRM permanentemente.</p>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] px-5 py-3">
+          <button onClick={onCancel} disabled={isDeleting} className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground-muted)] hover:bg-[rgba(255,255,255,0.04)] disabled:opacity-40 transition-colors">
+            Cancelar
+          </button>
+          <button onClick={onConfirm} disabled={isDeleting} className="rounded-xl bg-[#EF4444] px-4 py-2 text-sm font-semibold text-white hover:bg-[#DC2626] disabled:opacity-50 transition-colors">
+            {isDeleting ? "Eliminando…" : deleteLeads ? "Eliminar campaña y contactos" : "Eliminar campaña"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // -- Props ----------------------------------------------------------------------
 
@@ -116,6 +196,13 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
   const [error,      setError]      = useState("");
   const [toast,      setToast]      = useState<string | null>(null);
   const pollRef                     = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean; campaignId: string; campaignName: string; deleteLeads: boolean;
+  }>({ open: false, campaignId: "", campaignName: "", deleteLeads: false });
+  const [isDeleting,    setIsDeleting]    = useState(false);
+  const [leadCount,     setLeadCount]     = useState(0);
+  const [loadingCount,  setLoadingCount]  = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -413,6 +500,7 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
       automationId:   autoId,
       automationName: data.automationName || "Nueva automatización",
       createdAt:      today,
+      maxLeads:       data.maxLeads ?? null,
     };
 
     let campaignId = `c_local_${Date.now()}`;
@@ -559,6 +647,38 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
     });
   }
 
+  // -- Delete campaign -------------------------------------------------------
+
+  async function openDeleteDialog(campaignId: string, campaignName: string) {
+    setDeleteDialog({ open: true, campaignId, campaignName, deleteLeads: false });
+    setLeadCount(0);
+    setLoadingCount(true);
+    const count = await getLeadCountForCampaign(campaignId);
+    setLeadCount(count);
+    setLoadingCount(false);
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteDialog.campaignId) return;
+    setIsDeleting(true);
+    try {
+      const res = await deleteCampaignFull(deleteDialog.campaignId, deleteDialog.deleteLeads);
+      if (res.success) {
+        setCampaigns((prev) => prev.filter((c) => c.id !== deleteDialog.campaignId));
+        setSegments((prev) => prev.filter((s) => s.campaignId !== deleteDialog.campaignId));
+        if (selected?.id === deleteDialog.campaignId) {
+          setSelected(null);
+          setView("list");
+        }
+      } else {
+        setError(res.error ?? "Error al eliminar campaña");
+      }
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialog({ open: false, campaignId: "", campaignName: "", deleteLeads: false });
+    }
+  }
+
   // -- Render ----------------------------------------------------------------
 
   if (view === "builder" && activeFlow) {
@@ -595,7 +715,18 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
           onSegmentDelete={(segId)                 => handleSegmentDelete(selected.id, segId)}
           onSegmentAdd={(seg)                      => handleSegmentAdd(selected.id, seg)}
           onLaunch={handleDirectLaunch}
+          onDeleteCampaign={openDeleteDialog}
         />
+        {deleteDialog.open && <DeleteCampaignModal
+          campaignName={deleteDialog.campaignName}
+          leadCount={leadCount}
+          loadingCount={loadingCount}
+          deleteLeads={deleteDialog.deleteLeads}
+          onDeleteLeadsChange={(v) => setDeleteDialog((d) => ({ ...d, deleteLeads: v }))}
+          isDeleting={isDeleting}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => !isDeleting && setDeleteDialog((d) => ({ ...d, open: false }))}
+        />}
       </div>
     );
   }
@@ -631,6 +762,17 @@ export default function CampanasClient({ initialData }: CampanasClientProps) {
           />
         )}
       </div>
+
+      {deleteDialog.open && <DeleteCampaignModal
+        campaignName={deleteDialog.campaignName}
+        leadCount={leadCount}
+        loadingCount={loadingCount}
+        deleteLeads={deleteDialog.deleteLeads}
+        onDeleteLeadsChange={(v) => setDeleteDialog((d) => ({ ...d, deleteLeads: v }))}
+        isDeleting={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => !isDeleting && setDeleteDialog((d) => ({ ...d, open: false }))}
+      />}
     </div>
   );
 }

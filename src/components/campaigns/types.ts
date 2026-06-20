@@ -26,6 +26,7 @@ export type WizardData = {
   automationName: string;
   selectedTemplateId: string | null;
   estimatedLeads: number;
+  maxLeads: number | null;
   _selectedTemplate?: Template | null;
 };
 
@@ -177,6 +178,7 @@ export type Segment = {
   automationId: string;
   automationName: string;
   createdAt: string;
+  maxLeads?: number | null;
 };
 
 // -- Templates -----------------------------------------------------------------

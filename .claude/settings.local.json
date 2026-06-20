@@ -15,7 +15,14 @@
       "Bash(grep -E \"^sharp$|^jimp$|^@squoosh\")",
       "Bash(node -e \"require\\('sharp'\\)\")",
       "Bash(rm /Users/ernesto/proyecto-linkedin-ai/src/components/crm/crm-view.tsx \\\\ *)",
-      "Bash(rmdir /Users/ernesto/proyecto-linkedin-ai/src/app/api/auth/[...nextauth] 2>/dev/null || true *)"
+      "Bash(rmdir /Users/ernesto/proyecto-linkedin-ai/src/app/api/auth/[...nextauth] 2>/dev/null || true *)",
+      "Bash(awk 'NR>=1414 && NR<=1960' /Users/ernesto/proyecto-linkedin-ai/extension-chrome/content.js)",
+      "Bash(node --check /Users/ernesto/proyecto-linkedin-ai/extension-chrome/content.js)",
+      "Bash(awk -F: 'NR>0 && $1>=1600 && $1<=1720')",
+      "Bash(node --check /Users/ernesto/proyecto-linkedin-ai/extension-chrome/background.js)",
+      "Bash(awk 'NR>=1155 && NR<=1165 {print NR\": \"$0}' /Users/ernesto/proyecto-linkedin-ai/extension-chrome/background.js)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ],
     "additionalDirectories": [
       "/Users/ernesto/proyecto-linkedin-ai/src/app/api/auth/[...nextauth]"

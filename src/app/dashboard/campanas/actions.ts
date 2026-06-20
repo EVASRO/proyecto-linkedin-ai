@@ -170,8 +170,14 @@ export async function updateCampaignWorkflow(
     };
 
     const segments = Array.isArray(merged.segments)
-      ? (merged.segments as Array<{ metrics?: { totalLeads?: number } }>)
+      ? (merged.segments as Array<{ metrics?: { totalLeads?: number }; maxLeads?: number | null }>)
       : [];
+
+    // Propagate maxLeads from segment to root of workflow_json so the engine can read it
+    const maxLeadsFromSegment = segments.find((s) => s.maxLeads != null)?.maxLeads ?? null;
+    if (maxLeadsFromSegment != null) {
+      merged.maxLeads = maxLeadsFromSegment;
+    }
 
     const segment_count = segments.length > 0
       ? segments.length

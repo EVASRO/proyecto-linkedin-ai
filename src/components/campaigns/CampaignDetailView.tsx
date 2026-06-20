@@ -807,6 +807,7 @@ interface CampaignDetailViewProps {
   onSegmentDelete: (segId: string) => void;
   onSegmentAdd: (seg: Segment) => void;
   onLaunch?: (campaignId: string) => void;
+  onDeleteCampaign?: (id: string, name: string) => void;
 }
 
 export function CampaignDetailView({
@@ -819,6 +820,7 @@ export function CampaignDetailView({
   onSegmentDelete,
   onSegmentAdd,
   onLaunch,
+  onDeleteCampaign,
 }: CampaignDetailViewProps) {
   const TypeIcon = TYPE_ICON[campaign.type];
   const [toast, setToast] = useState<string | null>(null);
@@ -895,6 +897,16 @@ export function CampaignDetailView({
           >
             <Play className="h-4 w-4" />
             {campaign.status === "active" ? "Campaña activa" : "Lanzar campaña"}
+          </button>
+        )}
+        {onDeleteCampaign && (
+          <button
+            title="Eliminar campaña"
+            onClick={() => onDeleteCampaign(campaign.id, campaign.name)}
+            className={`${onLaunch && campaign.status !== "paused" && campaign.status !== "completed" ? "" : "ml-auto"} flex items-center gap-1.5 rounded-xl border border-[rgba(239,68,68,0.3)] px-3 py-2 text-xs font-medium text-[#EF4444] hover:bg-[rgba(239,68,68,0.08)] transition-colors`}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Eliminar
           </button>
         )}
       </div>

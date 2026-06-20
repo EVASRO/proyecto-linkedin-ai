@@ -42,6 +42,22 @@
       .finally(() => clearTimeout(timer));
   }
 
+  // fetchWithRetry: reintentos con backoff exponencial para timing al arrancar
+  async function fetchWithRetry(url, options, maxRetries = 3, baseDelayMs = 1500) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetchWithTimeout(url, options);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res;
+      } catch (e) {
+        if (attempt === maxRetries) throw e;
+        const delay = baseDelayMs * Math.pow(2, attempt - 1); // 1.5s, 3s, 6s
+        console.warn(`[cazary.ai] fetchWithRetry attempt ${attempt} failed (${e.message}), retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+
   async function safeStorageSet(data) {
     try {
       await chrome.storage.local.set(data);
@@ -1025,7 +1041,7 @@
       const csrf = csrfMatch ? csrfMatch[1] : '';
       if (!csrf) return false;
 
-      const res = await fetchWithTimeout(
+      const res = await fetchWithRetry(
         'https://www.linkedin.com/voyager/api/me',
         {
           headers: {
@@ -1035,11 +1051,8 @@
             'x-li-lang': 'es_ES',
           },
           credentials: 'include',
-        },
-        10000  // 10s timeout
+        }
       );
-
-      if (!res.ok) return false;
       const data = await res.json();
 
       // El perfil puede estar en data.included o data.data

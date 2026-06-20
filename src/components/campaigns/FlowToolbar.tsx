@@ -49,6 +49,8 @@ export interface FlowToolbarProps {
   onToggleAB: () => void;
   onPreview: () => void;
   onLaunch: () => void;
+  totalLeads?:     number;
+  completedLeads?: number;
 }
 
 // -- Status badge map ----------------------------------------------------------
@@ -76,6 +78,8 @@ export function FlowToolbar({
   onToggleAB,
   onPreview,
   onLaunch,
+  totalLeads,
+  completedLeads,
 }: FlowToolbarProps) {
   const badge = STATUS_BADGE[campaignStatus] ?? STATUS_BADGE.draft;
 
@@ -107,6 +111,18 @@ export function FlowToolbar({
         <Layers className="h-3.5 w-3.5" />
         {nodeCount} nodo{nodeCount !== 1 ? "s" : ""}
       </div>
+
+      {/* Lead progress badge */}
+      {totalLeads !== undefined && totalLeads > 0 && (
+        <div className="flex items-center gap-1.5 rounded-full bg-[var(--background)] border border-[var(--border)] px-3 py-1 text-xs">
+          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-[var(--foreground-muted)]">
+            {completedLeads ?? 0}
+            <span className="text-[var(--foreground-faint)]">/{totalLeads}</span>
+            <span className="ml-1 text-[var(--foreground-faint)]">leads</span>
+          </span>
+        </div>
+      )}
 
       {/* Save indicator */}
       <div className="flex items-center gap-1 text-[10px]">

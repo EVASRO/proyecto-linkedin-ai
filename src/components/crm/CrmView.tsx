@@ -222,7 +222,7 @@ export function CrmView({ initialLeads, initialColumns, initialAutomations, work
     return `$${n}`;
   }
 
-  function handleWizardComplete(data: WizardData, _template: Template | null) {
+  async function handleWizardComplete(data: WizardData, _template: Template | null) {
     setCampaignSuccess(data.campaignName);
     setWizardOpen(false);
     setTimeout(() => {

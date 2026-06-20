@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ArrowLeft, ArrowRight, Check, Link2, Loader2, Mail, X, FileText,
   Sparkles, Users,
@@ -37,6 +37,7 @@ const EMPTY_WIZARD: WizardData = {
   automationName: "",
   selectedTemplateId: null,
   estimatedLeads: 0,
+  maxLeads: null,
 };
 
 // -- Step 1 — Identity ---------------------------------------------------------
@@ -156,13 +157,16 @@ function Step2({
         setCountState({ status: "manual" });
         return;
       }
-      const resp = await chrome!.runtime.sendMessage({ type: "NEXUSAI_COUNT_LEADS" }) as {
+      const resp = await chrome!.runtime.sendMessage({
+        type: "NEXUSAI_COUNT_LEADS",
+        searchUrl: data.segmentationUrl,
+      }) as {
         count: number | null;
         needsNavigation?: boolean;
         error?: string;
       };
-      if (resp.needsNavigation) {
-        setCountState({ status: "needs_nav" });
+      if (resp.needsNavigation || resp.error === 'NO_URL') {
+        setCountState({ status: "manual" });
         return;
       }
       if (resp.count && resp.count > 0) {
@@ -259,6 +263,29 @@ function Step2({
           <li>Aplica tus filtros: sector, cargo, ubicación, empresa</li>
           <li>Copia la URL completa del navegador y pégala aquí</li>
         </ol>
+      </div>
+
+      {/* Máximo de leads a contactar */}
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-[var(--foreground-muted)]">
+          Máximo de leads a contactar
+          <span className="ml-1 text-[var(--foreground-muted)] font-normal">(opcional — deja vacío para usar todos)</span>
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={data.estimatedLeads > 0 ? data.estimatedLeads : undefined}
+          placeholder={data.estimatedLeads > 0 ? `Máx: ${data.estimatedLeads}` : "Ej: 100"}
+          value={data.maxLeads ?? ""}
+          onChange={(e) => {
+            const val = e.target.value ? parseInt(e.target.value, 10) : null;
+            onChange({ maxLeads: val });
+          }}
+          className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+        {data.maxLeads !== null && data.estimatedLeads > 0 && data.maxLeads > data.estimatedLeads && (
+          <p className="text-xs text-amber-500">El máximo supera los leads estimados</p>
+        )}
       </div>
 
       {/* Count leads panel */}
@@ -479,7 +506,7 @@ const STEPS = [
 ];
 
 interface CampaignWizardProps {
-  onComplete: (data: WizardData, template: Template | null) => void;
+  onComplete: (data: WizardData, template: Template | null) => Promise<void>;
   onClose: () => void;
 }
 
@@ -496,14 +523,24 @@ function canAdvance(step: number, data: WizardData): boolean {
 export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
   const [step, setStep] = useState(1);
   const [data, setData] = useState<WizardData>(EMPTY_WIZARD);
+  const isSubmitting = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
 
   function patch(partial: Partial<WizardData>) {
     setData((prev) => ({ ...prev, ...partial }));
   }
 
-  function handleComplete() {
-    const template = CAMPAIGN_TEMPLATES.find((t) => t.id === data.selectedTemplateId) ?? null;
-    onComplete(data, template);
+  async function handleComplete() {
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
+    setSubmitting(true);
+    try {
+      const template = CAMPAIGN_TEMPLATES.find((t) => t.id === data.selectedTemplateId) ?? null;
+      await onComplete(data, template);
+    } finally {
+      isSubmitting.current = false;
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -575,12 +612,24 @@ export function CampaignWizard({ onComplete, onClose }: CampaignWizardProps) {
             </button>
           ) : (
             <button
-              disabled={!canAdvance(3, data)}
+              disabled={!canAdvance(3, data) || submitting}
               onClick={handleComplete}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-2 text-sm font-semibold text-white shadow-[0_0_16px_rgba(37,99,235,0.35)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#06B6D4] px-5 py-2 text-sm font-semibold text-white shadow-[0_0_16px_rgba(37,99,235,0.35)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              <Sparkles className="h-4 w-4" />
-              Crear y abrir Flow Builder
+              {submitting ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  Creando...
+                </span>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Crear y abrir Flow Builder
+                </>
+              )}
             </button>
           )}
         </div>
