@@ -4706,4 +4706,114 @@
     return true; // async
   });
 
+  // ── Detector de mensajes en tiempo real (método Waalaxy) ─────────────────────
+  (function initRealtimeMessageDetector() {
+    if (!window.location.hostname.includes('linkedin.com')) return;
+    if (window.location.hostname.includes('sales.')) return;
+
+    let lastTitleUnreadCount = 0;
+    let syncDebounceTimer    = null;
+    let lastSyncAt           = 0;
+    const MIN_SYNC_INTERVAL  = 30 * 1000;
+
+    function triggerRealtimeSync(reason) {
+      const now = Date.now();
+      if (now - lastSyncAt < MIN_SYNC_INTERVAL) return;
+      lastSyncAt = now;
+      console.log(`[cazary.ai][Realtime] Nuevo mensaje detectado (${reason}) → disparando sync`);
+      chrome.runtime.sendMessage({ type: 'FORCE_INBOX_SYNC' }).catch(() => {});
+    }
+
+    // ── SEÑAL 1: Observar cambios en document.title ─────────────────────────
+    const titleObserver = new MutationObserver(() => {
+      const title = document.title || '';
+      const match = title.match(/^\((\d+)\)/);
+      const count = match ? parseInt(match[1], 10) : 0;
+      if (count > lastTitleUnreadCount) {
+        clearTimeout(syncDebounceTimer);
+        syncDebounceTimer = setTimeout(() => triggerRealtimeSync('title_badge'), 1500);
+      }
+      lastTitleUnreadCount = count;
+    });
+
+    const titleEl = document.querySelector('title');
+    if (titleEl) {
+      titleObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
+    }
+
+    const headObserver = new MutationObserver(() => {
+      const newTitle = document.querySelector('title');
+      if (newTitle && !titleEl) {
+        titleObserver.observe(newTitle, { childList: true, characterData: true, subtree: true });
+        headObserver.disconnect();
+      }
+    });
+    if (!titleEl) {
+      headObserver.observe(document.head ?? document.documentElement, { childList: true });
+    }
+
+    // ── SEÑAL 2: Observar el badge de mensajes en el nav ────────────────────
+    function observeNavBadge() {
+      const NAV_BADGE_SELECTORS = [
+        'li[data-alias="messaging"] .notification-badge__count',
+        'li[data-alias="messaging"] .nav-item__badge-count',
+        '[href*="/messaging/"] .notification-badge',
+        '.notification-badge--show',
+        '.msg-overlay-bubble-header__badge',
+      ];
+
+      let lastBadgeValue = '';
+
+      const badgeObserver = new MutationObserver(() => {
+        for (const selector of NAV_BADGE_SELECTORS) {
+          const el = document.querySelector(selector);
+          if (el) {
+            const currentValue = el.textContent?.trim() ?? '';
+            if (currentValue && currentValue !== lastBadgeValue && currentValue !== '0') {
+              lastBadgeValue = currentValue;
+              clearTimeout(syncDebounceTimer);
+              syncDebounceTimer = setTimeout(() => triggerRealtimeSync('nav_badge'), 1500);
+              break;
+            }
+          }
+        }
+      });
+
+      const navEl = document.querySelector('nav#global-nav')
+                 ?? document.querySelector('header')
+                 ?? document.body;
+
+      if (navEl) {
+        badgeObserver.observe(navEl, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ['class', 'aria-label', 'data-count'],
+        });
+      }
+    }
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      observeNavBadge();
+    } else {
+      window.addEventListener('load', observeNavBadge, { once: true });
+    }
+
+    // ── SEÑAL 3: Interceptar visibilidad de página ───────────────────────────
+    let hiddenAt = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        hiddenAt = Date.now();
+      } else {
+        const awayMs = Date.now() - hiddenAt;
+        if (hiddenAt > 0 && awayMs > 2 * 60 * 1000) {
+          triggerRealtimeSync('tab_focus_return');
+        }
+      }
+    });
+
+    console.log('[cazary.ai][Realtime] Detector de mensajes en tiempo real activo ✓');
+  })();
+
 })();
