@@ -4391,23 +4391,37 @@
             // Función robusta: extrae el número de resultados del DOM
             function readResultCount() {
               // 1. Selectores específicos conocidos (orden de confiabilidad)
+              // NOTA: SalesNav post-rebrand 2025 usa clases CSS modules con hash
+              // ej: span._regular-search-count_lkl67o → usar [class*="_regular-search-count"]
               const knownSelectors = [
-                '[data-view-name="search-results-header"] span',
+                // SalesNav post-rebrand 2025 (confirmado por inspección DOM)
+                '[class*="_regular-search-count"]',
+                // SalesNav legacy
                 '.search-results__total-results',
                 '.list-header-count',
                 '[data-anonymize="result-count"]',
+                // LinkedIn regular
                 '.search-results-container .pb2 h2',
                 '.search-results-container h2',
                 '.artdeco-card h2',
-                '.search-result-count',
+                '[data-view-name="search-results-header"] span',
+                // Genéricos
                 '[class*="result-count"]',
                 '[class*="results-count"]',
                 '[class*="total-results"]',
+                '[class*="search-count"]',
               ];
               for (const sel of knownSelectors) {
                 const el = document.querySelector(sel);
                 if (!el) continue;
                 const txt = (el.innerText || el.textContent || '').trim();
+                // Manejar formatos: "6 resultados", "65 mills.+ resultados", "1,500 results"
+                // "mills." = millones abreviado en SalesNav en español
+                const millsMatch = txt.match(/([\d,.]+)\s*mills?\.\+?\s*resultado/i);
+                if (millsMatch) {
+                  const n = parseFloat(millsMatch[1].replace(/[,.]/g, '')) * 1_000_000;
+                  if (n > 0) return Math.round(n);
+                }
                 const m = txt.match(/([\d,. ]+)/);
                 if (m) {
                   const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
