@@ -305,79 +305,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       case 'NEXUSAI_COUNT_LEADS': {
         const searchUrl = msg.searchUrl;
-        if (!searchUrl) {
-          sendResponse({ count: null, error: 'NO_URL' });
-          break;
-        }
+        if (!searchUrl) { sendResponse({ count: null, error: 'NO_URL' }); break; }
         try {
-          // Función autónoma que lee el conteo inyectando código directamente en la tab
-          // (no depende del content script — más confiable)
-          async function readCountFromTab(tabId) {
-            try {
-              const results = await chrome.scripting.executeScript({
-                target: { tabId },
-                func: () => {
-                  function parseCount(txt) {
-                    if (!txt) return null;
-                    // "65 mills.+ resultados" → 65000000
-                    const millsM = txt.match(/([\d,.]+)\s*mills?\.\+?/i);
-                    if (millsM) return Math.round(parseFloat(millsM[1].replace(/[,.]/g, '')) * 1_000_000);
-                    const m = txt.match(/([\d,.]+)/);
-                    if (m) {
-                      const n = parseInt(m[1].replace(/[^0-9]/g, ''), 10);
-                      if (!isNaN(n) && n > 0) return n;
-                    }
-                    return null;
-                  }
-                  // SalesNav post-rebrand 2025 (confirmado por inspección DOM)
-                  const snNew = document.querySelector('[class*="_regular-search-count"]');
-                  if (snNew) { const n = parseCount(snNew.innerText); if (n) return n; }
-                  // Selectores legacy
-                  for (const sel of [
-                    '.search-results__total-results', '.list-header-count',
-                    '[data-anonymize="result-count"]', '.search-results-container h2',
-                    '[class*="result-count"]', '[class*="results-count"]',
-                    '[class*="total-results"]', '[class*="search-count"]',
-                  ]) {
-                    const el = document.querySelector(sel);
-                    if (el) { const n = parseCount(el.innerText); if (n) return n; }
-                  }
-                  // TreeWalker: escanear todos los nodos de texto visibles
-                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-                  let node;
-                  while ((node = walker.nextNode())) {
-                    const t = (node.nodeValue || '').trim();
-                    if (t.length > 1 && t.length < 80 && /resultado|result/i.test(t) && /\d/.test(t)) {
-                      const n = parseCount(t);
-                      if (n) return n;
-                    }
-                  }
-                  return null;
-                },
-              });
-              return results?.[0]?.result ?? null;
-            } catch (e) {
-              console.warn('[cazary.ai] scripting.executeScript error:', e.message);
-              return null;
-            }
-          }
-
-          // 1. Buscar tab existente de SalesNav/LinkedIn ya abierta
+          // 1. Buscar tabs existentes de SalesNav/LinkedIn
           const existingTabs = await chrome.tabs.query({
             url: ['*://*.linkedin.com/sales/search/*', '*://*.linkedin.com/search/results/*']
           });
 
-          // 2. Intentar leer SIN navegar primero (si el usuario ya tiene la búsqueda abierta)
+          // 2. Intentar leer SIN navegar (si el usuario ya tiene la búsqueda abierta)
           if (existingTabs.length > 0) {
-            const quickCount = await readCountFromTab(existingTabs[0].id);
+            const quickCount = await readSalesNavCount(existingTabs[0].id);
             if (quickCount) {
-              console.log('[cazary.ai] count_leads: leído de tab existente sin navegar →', quickCount);
+              console.log('[cazary.ai] COUNT sin navegar →', quickCount);
               sendResponse({ count: quickCount });
               break;
             }
           }
 
-          // 3. Navegar a la URL de búsqueda — ACTIVA para que SalesNav renderice
+          // 3. Navegar — tab ACTIVA para que SalesNav renderice el DOM
           let tabId;
           if (existingTabs.length > 0) {
             tabId = existingTabs[0].id;
@@ -387,25 +332,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             tabId = newTab.id;
           }
 
-          // Esperar que la tab termine de cargar HTML
-          await new Promise((resolve) => {
-            const listener = (updatedId, changeInfo) => {
-              if (updatedId === tabId && changeInfo.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-                resolve();
-              }
-            };
-            chrome.tabs.onUpdated.addListener(listener);
-            setTimeout(resolve, 12000);
-          });
+          // 4. Esperar carga HTML completa
+          await waitForTabComplete(tabId, 12000);
 
-          // 4. Reintentar con scripting.executeScript hasta 5 veces
-          //    (SalesNav tarda hasta ~4s en renderizar el conteo tras carga)
+          // 5. Reintentar cada 2s hasta 6 intentos (SalesNav tarda ~3-5s en renderizar)
           let count = null;
-          for (let attempt = 1; attempt <= 5; attempt++) {
-            await new Promise(r => setTimeout(r, attempt === 1 ? 2000 : 1500));
-            count = await readCountFromTab(tabId);
-            console.log(`[cazary.ai] count attempt ${attempt}:`, count);
+          for (let i = 1; i <= 6; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            count = await readSalesNavCount(tabId);
             if (count) break;
           }
 
@@ -789,6 +723,51 @@ async function scheduleFollowUpMessage(leadId, campaignId, wsId, acceptedAt) {
 }
 
 // ── Helpers de comunicación con content script ────────────────────────────────
+
+// ── Leer conteo de resultados de búsqueda en una tab de LinkedIn/SalesNav ─────
+// Función top-level para que executeScript pueda serializarla correctamente.
+async function readSalesNavCount(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',   // acceso al DOM principal de la página
+      func: () => {
+        // SalesNav post-rebrand 2025: span con clase que empieza con "_regular-search-count"
+        const snEl = Array.from(document.querySelectorAll('span')).find(
+          el => /^_regular-search-count/.test(el.className)
+        );
+        const raw = snEl?.innerText
+          // Fallbacks legacy
+          || document.querySelector('.search-results__total-results')?.innerText
+          || document.querySelector('.list-header-count')?.innerText
+          || document.querySelector('[data-anonymize="result-count"]')?.innerText
+          || document.querySelector('.search-results-container h2')?.innerText
+          || (() => {
+            // TreeWalker: busca texto "X resultados" en todo el DOM
+            const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let n;
+            while ((n = w.nextNode())) {
+              const t = (n.nodeValue || '').trim();
+              if (t.length > 1 && t.length < 80 && /\d/.test(t) && /resultado|result/i.test(t)) return t;
+            }
+            return null;
+          })();
+        if (!raw) return null;
+        // Parse "65 mills.+ resultados" → 65000000
+        const millsM = raw.match(/([\d,.]+)\s*mills?\.\+?/i);
+        if (millsM) return Math.round(parseFloat(millsM[1].replace(/[,.]/g, '')) * 1_000_000);
+        const m = raw.match(/([\d,.]+)/);
+        return m ? parseInt(m[1].replace(/[^0-9]/g, ''), 10) || null : null;
+      },
+    });
+    const count = results?.[0]?.result ?? null;
+    console.log('[cazary.ai] readSalesNavCount tabId', tabId, '→', count);
+    return count;
+  } catch (e) {
+    console.warn('[cazary.ai] readSalesNavCount error:', e.message);
+    return null;
+  }
+}
 
 async function waitForTabComplete(tabId, timeout = 15000) {
   return new Promise((resolve) => {

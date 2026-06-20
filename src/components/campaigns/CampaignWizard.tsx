@@ -162,19 +162,35 @@ function Step2({
   async function handleCount() {
     setCountState({ status: "counting" });
     try {
-      if (typeof chrome === "undefined" || !chrome?.runtime?.sendMessage) {
-        setCountState({ status: "manual" });
-        return;
-      }
-      const resp = await chrome!.runtime.sendMessage({
-        type: "NEXUSAI_COUNT_LEADS",
-        searchUrl: data.segmentationUrl,
-      }) as {
-        count: number | null;
-        needsNavigation?: boolean;
-        error?: string;
-      };
-      if (resp.needsNavigation || resp.error === 'NO_URL') {
+      // Enviar mensaje via bridge (postMessage → content script bridge.js → background.js)
+      // Esto funciona desde vercel.app donde chrome.runtime.sendMessage no está disponible directamente
+      const resp = await new Promise<{ count: number | null; error?: string; needsNavigation?: boolean }>(
+        (resolve, reject) => {
+          const requestId = Math.random().toString(36).slice(2);
+          const timeout = setTimeout(() => {
+            window.removeEventListener("message", handler);
+            reject(new Error("BRIDGE_TIMEOUT"));
+          }, 30000);
+
+          function handler(event: MessageEvent) {
+            if (event.source !== window) return;
+            if (event.data?.type !== `CAZARY_RES_${requestId}`) return;
+            clearTimeout(timeout);
+            window.removeEventListener("message", handler);
+            if (event.data.error) reject(new Error(event.data.error));
+            else resolve(event.data.response ?? { count: null });
+          }
+
+          window.addEventListener("message", handler);
+          window.postMessage({
+            type: "CAZARY_REQ_NEXUSAI_COUNT_LEADS",
+            payload: { searchUrl: data.segmentationUrl },
+            requestId,
+          }, "*");
+        }
+      );
+
+      if (resp.needsNavigation || resp.error === "NO_URL") {
         setCountState({ status: "manual" });
         return;
       }
